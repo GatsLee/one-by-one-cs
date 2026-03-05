@@ -1,0 +1,756 @@
+---
+title: "클라우드와 쿠버네티스 (Cloud & Kubernetes)"
+topic: "07-infra"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. 클라우드 서비스 모델
+
+클라우드 컴퓨팅은 인터넷을 통해 컴퓨팅 자원을 제공하는 서비스다.
+사용한 만큼만 비용을 지불하고(Pay-as-you-go), 필요에 따라 즉시 확장/축소할 수 있다.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              클라우드 서비스 모델 비교                             │
+│                                                                 │
+│  관리 영역    On-Premise    IaaS       PaaS       SaaS          │
+│  ─────────────────────────────────────────────────────          │
+│  Application │ 사용자  │  사용자  │  사용자  │  제공자  │         │
+│  Data        │ 사용자  │  사용자  │  사용자  │  제공자  │         │
+│  Runtime     │ 사용자  │  사용자  │  제공자  │  제공자  │         │
+│  Middleware  │ 사용자  │  사용자  │  제공자  │  제공자  │         │
+│  OS          │ 사용자  │  사용자  │  제공자  │  제공자  │         │
+│  ─────────────────────────────────────────────────────          │
+│  Virtualize  │ 사용자  │  제공자  │  제공자  │  제공자  │         │
+│  Servers     │ 사용자  │  제공자  │  제공자  │  제공자  │         │
+│  Storage     │ 사용자  │  제공자  │  제공자  │  제공자  │         │
+│  Networking  │ 사용자  │  제공자  │  제공자  │  제공자  │         │
+│  ─────────────────────────────────────────────────────          │
+│                                                                 │
+│  사용자 관리 범위:  많음 ◀───────────────────────▶ 적음          │
+│  제공자 관리 범위:  적음 ◀───────────────────────▶ 많음          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### IaaS (Infrastructure as a Service) — 인프라 제공
+
+```
+┌────────────────────────────────────────────────────────┐
+│  IaaS: 가상 서버, 스토리지, 네트워크를 제공              │
+│                                                        │
+│  사용자가 관리: OS, 런타임, 애플리케이션, 데이터           │
+│  제공자가 관리: 물리 서버, 네트워크, 가상화               │
+│                                                        │
+│  예시:                                                  │
+│  - AWS EC2: 가상 서버 인스턴스                            │
+│  - AWS S3: 오브젝트 스토리지                              │
+│  - GCP Compute Engine                                   │
+│  - Azure Virtual Machines                               │
+│                                                        │
+│  특징: 최대 유연성, 인프라 제어권                         │
+│  적합: 커스텀 환경 필요, 복잡한 네트워크 구성              │
+└────────────────────────────────────────────────────────┘
+```
+
+#### PaaS (Platform as a Service) — 플랫폼 제공
+
+```
+┌────────────────────────────────────────────────────────┐
+│  PaaS: 애플리케이션 실행 플랫폼을 제공                    │
+│                                                        │
+│  사용자가 관리: 애플리케이션 코드, 데이터                  │
+│  제공자가 관리: OS, 런타임, 미들웨어, 서버, 네트워크       │
+│                                                        │
+│  예시:                                                  │
+│  - Heroku: 코드만 push하면 자동 배포                     │
+│  - AWS Elastic Beanstalk                               │
+│  - Google App Engine                                    │
+│  - Vercel / Netlify (프론트엔드)                         │
+│                                                        │
+│  특징: 인프라 관리 불필요, 빠른 배포                      │
+│  적합: 빠른 프로토타이핑, 인프라 운영 인력 부족            │
+└────────────────────────────────────────────────────────┘
+```
+
+#### SaaS (Software as a Service) — 소프트웨어 제공
+
+```
+┌────────────────────────────────────────────────────────┐
+│  SaaS: 완성된 소프트웨어를 제공                           │
+│                                                        │
+│  사용자가 관리: 데이터 입력, 설정 커스터마이즈              │
+│  제공자가 관리: 전부 (인프라 + 소프트웨어)                 │
+│                                                        │
+│  예시:                                                  │
+│  - Gmail, Google Docs                                   │
+│  - Slack, Notion                                        │
+│  - Salesforce                                           │
+│  - GitHub                                               │
+│                                                        │
+│  특징: 설치/관리 불필요, 브라우저로 접근                   │
+│  적합: 일반 사용자, 빠른 도입                             │
+└────────────────────────────────────────────────────────┘
+```
+
+### 2. 주요 AWS 서비스
+
+| 서비스 | 카테고리 | 설명 | 유사 서비스 (GCP) |
+|--------|---------|------|-------------------|
+| **EC2** | 컴퓨팅 | 가상 서버 인스턴스. 다양한 타입(범용/메모리/GPU) 선택 | Compute Engine |
+| **S3** | 스토리지 | 오브젝트 스토리지. 무제한 저장, 정적 웹 호스팅 가능 | Cloud Storage |
+| **RDS** | 데이터베이스 | 관리형 관계형 DB (PostgreSQL, MySQL 등). 백업/복제 자동화 | Cloud SQL |
+| **Lambda** | 서버리스 | 함수 단위 코드 실행. 이벤트 기반, 사용한 만큼만 과금 | Cloud Functions |
+| **ECS** | 컨테이너 | Docker 컨테이너 오케스트레이션 (AWS 자체 서비스) | Cloud Run |
+| **EKS** | 컨테이너 | 관리형 Kubernetes 서비스 | GKE |
+| **CloudFront** | CDN | 글로벌 콘텐츠 전송 네트워크. 정적 파일 캐싱, HTTPS | Cloud CDN |
+| **SQS** | 메시징 | 메시지 큐 서비스. 비동기 작업 처리, 서비스 간 디커플링 | Cloud Pub/Sub |
+| **IAM** | 보안 | 사용자/권한 관리. 역할 기반 접근 제어 (RBAC) | Cloud IAM |
+| **VPC** | 네트워크 | 가상 사설 네트워크. 서브넷, 라우팅, 보안 그룹 | VPC |
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              전형적인 AWS 웹 서비스 아키텍처                    │
+│                                                              │
+│   사용자                                                     │
+│     │                                                        │
+│     ▼                                                        │
+│  ┌────────────┐                                              │
+│  │ CloudFront │  ← CDN (정적 파일 캐싱)                       │
+│  └──────┬─────┘                                              │
+│         │                                                    │
+│         ▼                                                    │
+│  ┌────────────┐     ┌────────────┐                           │
+│  │    ALB     │────▶│   EC2/ECS  │  ← 애플리케이션 서버       │
+│  │ (로드밸런서)│     │  (Auto     │                           │
+│  └────────────┘     │  Scaling)  │                           │
+│                     └──────┬─────┘                           │
+│                            │                                 │
+│                    ┌───────┼───────┐                         │
+│                    ▼       ▼       ▼                         │
+│               ┌──────┐ ┌──────┐ ┌──────┐                    │
+│               │ RDS  │ │  S3  │ │ SQS  │                    │
+│               │ (DB) │ │(파일)│ │(큐)  │                     │
+│               └──────┘ └──────┘ └──────┘                    │
+│                                    │                         │
+│                                    ▼                         │
+│                               ┌──────┐                      │
+│                               │Lambda│  ← 비동기 처리        │
+│                               └──────┘                      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 3. 쿠버네티스 개요
+
+#### 왜 컨테이너 오케스트레이션이 필요한가?
+
+Docker만으로는 다음 문제를 해결하기 어렵다:
+- 수십~수백 개 컨테이너를 여러 서버에 걸쳐 관리
+- 컨테이너가 죽으면 자동으로 재시작
+- 트래픽 증가 시 자동으로 컨테이너 수 확장
+- 무중단 배포 (Rolling Update)
+- 서비스 디스커버리와 로드 밸런싱
+
+**쿠버네티스(K8s)**: 컨테이너화된 워크로드를 자동으로 배포, 스케일링, 관리하는 오케스트레이션 플랫폼.
+
+#### K8s 아키텍처
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                   Kubernetes 클러스터                              │
+│                                                                  │
+│  ┌────────────────────────────────────────────┐                  │
+│  │           Control Plane (마스터)             │                  │
+│  │                                            │                  │
+│  │  ┌──────────────┐  ┌───────────────────┐   │                  │
+│  │  │ API Server   │  │  etcd             │   │                  │
+│  │  │ (kube-       │  │  (클러스터 상태   │    │                  │
+│  │  │  apiserver)  │  │   저장소, KV DB)  │    │                  │
+│  │  └──────────────┘  └───────────────────┘   │                  │
+│  │  ┌──────────────┐  ┌───────────────────┐   │                  │
+│  │  │ Scheduler    │  │ Controller        │   │                  │
+│  │  │ (Pod 배치    │  │ Manager           │   │                  │
+│  │  │  결정)       │  │ (상태 유지 관리)   │   │                  │
+│  │  └──────────────┘  └───────────────────┘   │                  │
+│  └────────────────────────────────────────────┘                  │
+│         │                                                        │
+│         │  kubectl / API 호출                                     │
+│         ▼                                                        │
+│  ┌──────────────────────┐  ┌──────────────────────┐              │
+│  │   Worker Node 1      │  │   Worker Node 2      │              │
+│  │                      │  │                      │              │
+│  │  ┌────────────────┐  │  │  ┌────────────────┐  │              │
+│  │  │ kubelet        │  │  │  │ kubelet        │  │              │
+│  │  │ (Node 에이전트) │  │  │  │ (Node 에이전트) │  │              │
+│  │  └────────────────┘  │  │  └────────────────┘  │              │
+│  │  ┌────────────────┐  │  │  ┌────────────────┐  │              │
+│  │  │ kube-proxy     │  │  │  │ kube-proxy     │  │              │
+│  │  │ (네트워크)      │  │  │  │ (네트워크)      │  │              │
+│  │  └────────────────┘  │  │  └────────────────┘  │              │
+│  │                      │  │                      │              │
+│  │  ┌──────┐ ┌──────┐  │  │  ┌──────┐ ┌──────┐  │              │
+│  │  │ Pod  │ │ Pod  │  │  │  │ Pod  │ │ Pod  │  │              │
+│  │  │┌────┐│ │┌────┐│  │  │  │┌────┐│ │┌────┐│  │              │
+│  │  ││ C1 ││ ││ C2 ││  │  │  ││ C3 ││ ││ C4 ││  │              │
+│  │  │└────┘│ │└────┘│  │  │  │└────┘│ │└────┘│  │              │
+│  │  └──────┘ └──────┘  │  │  └──────┘ └──────┘  │              │
+│  └──────────────────────┘  └──────────────────────┘              │
+│                                                                  │
+│  C1~C4 = 컨테이너 (Docker 등)                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Control Plane 구성 요소:**
+- **API Server**: K8s의 게이트웨이. 모든 요청이 여기를 통과 (`kubectl` → API Server)
+- **etcd**: 클러스터의 모든 상태 데이터를 저장하는 분산 키-값 저장소
+- **Scheduler**: 새 Pod를 어느 Node에 배치할지 결정
+- **Controller Manager**: 원하는 상태(desired state)를 실제 상태(current state)와 일치시키는 컨트롤러들
+
+**Worker Node 구성 요소:**
+- **kubelet**: Node에서 Pod를 실행/관리하는 에이전트
+- **kube-proxy**: 네트워크 프록시. Service의 네트워크 규칙 관리
+- **Container Runtime**: 컨테이너를 실행하는 엔진 (containerd, CRI-O 등)
+
+### 4. K8s 핵심 리소스
+
+#### Pod
+
+K8s에서 배포 가능한 **가장 작은 단위**. 하나 이상의 컨테이너를 포함한다.
+
+```
+┌──────────────────────────────────────────────┐
+│                    Pod                        │
+│                                              │
+│  ┌──────────────┐  ┌──────────────┐          │
+│  │  Container 1 │  │  Container 2 │ (사이드카)│
+│  │  (메인 앱)    │  │  (로그 수집)  │          │
+│  └──────────────┘  └──────────────┘          │
+│                                              │
+│  공유 자원:                                   │
+│  - 같은 네트워크 네임스페이스 (localhost 통신) │
+│  - 같은 IP 주소                              │
+│  - 볼륨 공유 가능                             │
+│                                              │
+│  IP: 10.244.1.15 (클러스터 내부 IP)           │
+└──────────────────────────────────────────────┘
+
+주의: Pod는 일시적(ephemeral)이다.
+죽으면 새 Pod가 생성되며, IP도 변경된다.
+→ 따라서 Service가 필요하다.
+```
+
+#### Service
+
+Pod에 안정적인 네트워크 엔드포인트를 제공한다. Pod가 재시작되어 IP가 바뀌어도 Service는 동일한 주소를 유지한다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Service 타입                               │
+│                                                              │
+│  1) ClusterIP (기본값)                                        │
+│     클러스터 내부에서만 접근 가능한 가상 IP                      │
+│                                                              │
+│     ┌────────┐     ┌──────────────┐     ┌──────┐            │
+│     │다른 Pod │────▶│ ClusterIP    │────▶│ Pod  │            │
+│     └────────┘     │ Service      │  ┌─▶│      │            │
+│                    │ 10.96.0.1:80 │  │  └──────┘            │
+│                    └──────────────┘  │  ┌──────┐            │
+│                         │            └─▶│ Pod  │            │
+│                         │               └──────┘            │
+│                    (내부 로드밸런싱)                           │
+│                                                              │
+│  2) NodePort                                                 │
+│     각 Node의 특정 포트를 통해 외부에서 접근                    │
+│                                                              │
+│     외부 ──▶ NodeIP:30080 ──▶ Service ──▶ Pod               │
+│     (포트 범위: 30000-32767)                                  │
+│                                                              │
+│  3) LoadBalancer                                             │
+│     클라우드 로드밸런서를 자동 생성하여 외부 접근                │
+│                                                              │
+│     외부 ──▶ LB (공인 IP) ──▶ NodePort ──▶ Service ──▶ Pod  │
+│     (AWS ALB/NLB, GCP LB 등)                                │
+│                                                              │
+│  4) ExternalName                                             │
+│     외부 DNS 이름을 클러스터 내부 이름으로 매핑                  │
+│     my-db.default.svc → external-db.example.com              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### Deployment
+
+Pod의 선언적 업데이트를 관리한다. 원하는 상태(replicas, 이미지 버전 등)를 선언하면 K8s가 자동으로 맞춘다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                   Deployment 구조                             │
+│                                                              │
+│  Deployment (선언적 관리)                                     │
+│    └── ReplicaSet (Pod 복제본 관리)                           │
+│          ├── Pod 1                                           │
+│          ├── Pod 2                                           │
+│          └── Pod 3                                           │
+│                                                              │
+│  원하는 상태: replicas=3, image=myapp:v2                      │
+│                                                              │
+│  현재 상태         K8s 자동 조정        목표 상태              │
+│  ┌────┐ ┌────┐    ──────────▶     ┌────┐ ┌────┐ ┌────┐     │
+│  │ v1 │ │ v1 │     Rolling        │ v2 │ │ v2 │ │ v2 │     │
+│  └────┘ └────┘     Update         └────┘ └────┘ └────┘     │
+│  (2개, v1)                         (3개, v2)                 │
+│                                                              │
+│  Deployment vs StatefulSet:                                  │
+│  - Deployment: 상태 없는(stateless) 앱 (웹 서버 등)           │
+│  - StatefulSet: 상태 있는(stateful) 앱 (DB, 캐시 등)         │
+│    → 고정된 네트워크 이름, 순서대로 생성/삭제, 영속 볼륨        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### ConfigMap & Secret
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ConfigMap: 비밀이 아닌 설정 데이터 저장                   │
+│  Secret: 비밀번호, 토큰, 키 등 민감 데이터 저장            │
+│                                                          │
+│  ConfigMap                          Secret               │
+│  ┌───────────────────┐             ┌──────────────────┐  │
+│  │ DATABASE_HOST:    │             │ DB_PASSWORD:     │  │
+│  │   "postgres"      │             │   (base64 인코딩) │  │
+│  │ LOG_LEVEL:        │             │ API_KEY:         │  │
+│  │   "info"          │             │   (base64 인코딩) │  │
+│  └───────────────────┘             └──────────────────┘  │
+│         │                                 │              │
+│         └──────────┬──────────────────────┘              │
+│                    ▼                                     │
+│              ┌──────────┐                                │
+│              │   Pod    │  환경변수 또는 파일로 주입       │
+│              └──────────┘                                │
+│                                                          │
+│  주의: Secret은 base64 인코딩일 뿐, 암호화가 아니다!       │
+│  → etcd 암호화, RBAC 설정 등 추가 보안 필요               │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### Namespace
+
+클러스터를 논리적으로 분리하는 가상 구획이다.
+
+```
+┌──────────────────────────────────────────────┐
+│  Kubernetes Cluster                          │
+│                                              │
+│  ┌──────────────────┐                        │
+│  │ namespace: dev   │  ← 개발 환경           │
+│  │  Pod, Service... │                        │
+│  └──────────────────┘                        │
+│  ┌──────────────────┐                        │
+│  │ namespace: staging│ ← 스테이징 환경        │
+│  │  Pod, Service... │                        │
+│  └──────────────────┘                        │
+│  ┌──────────────────┐                        │
+│  │ namespace: prod  │  ← 프로덕션 환경        │
+│  │  Pod, Service... │                        │
+│  └──────────────────┘                        │
+│  ┌──────────────────┐                        │
+│  │ namespace: kube-system│ ← K8s 시스템      │
+│  │  CoreDNS, kube-proxy  │                   │
+│  └──────────────────┘                        │
+│                                              │
+│  같은 namespace 내 서비스: my-svc             │
+│  다른 namespace 서비스: my-svc.prod.svc       │
+└──────────────────────────────────────────────┘
+```
+
+### 5. K8s 워크플로우
+
+#### kubectl 주요 명령어
+
+```bash
+# ─── 클러스터 정보 ───
+kubectl cluster-info                    # 클러스터 정보
+kubectl get nodes                       # 노드 목록
+kubectl get nodes -o wide               # 상세 노드 정보
+
+# ─── Pod 관리 ───
+kubectl get pods                        # 현재 namespace의 Pod 목록
+kubectl get pods -A                     # 모든 namespace의 Pod 목록
+kubectl get pods -o wide                # Pod의 Node, IP 등 상세 정보
+kubectl describe pod <pod-name>         # Pod 상세 정보 (이벤트 포함)
+kubectl logs <pod-name>                 # Pod 로그
+kubectl logs -f <pod-name>              # 실시간 로그
+kubectl exec -it <pod-name> -- /bin/sh  # Pod 내부 셸 접속
+kubectl delete pod <pod-name>           # Pod 삭제
+
+# ─── Deployment 관리 ───
+kubectl get deployments                 # Deployment 목록
+kubectl describe deployment <name>      # 상세 정보
+kubectl scale deployment <name> --replicas=5  # 수동 스케일링
+kubectl rollout status deployment <name>      # 배포 상태 확인
+kubectl rollout history deployment <name>     # 배포 이력
+kubectl rollout undo deployment <name>        # 롤백 (이전 버전)
+kubectl rollout undo deployment <name> --to-revision=2  # 특정 리비전
+
+# ─── Service 관리 ───
+kubectl get services                    # Service 목록
+kubectl describe service <name>         # 상세 정보
+
+# ─── 리소스 적용 ───
+kubectl apply -f deployment.yaml        # YAML 매니페스트 적용
+kubectl apply -f ./k8s/                 # 디렉터리 내 모든 YAML 적용
+kubectl delete -f deployment.yaml       # YAML 기반 삭제
+
+# ─── 디버깅 ───
+kubectl get events --sort-by=.metadata.creationTimestamp  # 이벤트 확인
+kubectl top pods                        # Pod CPU/메모리 사용량
+kubectl top nodes                       # Node CPU/메모리 사용량
+```
+
+#### YAML 매니페스트
+
+K8s는 **선언적(declarative)** 방식으로 동작한다. 원하는 상태를 YAML로 정의하면 K8s가 이를 실현한다.
+
+```yaml
+# 모든 K8s YAML의 공통 구조:
+# apiVersion: API 그룹/버전
+# kind: 리소스 종류 (Pod, Service, Deployment 등)
+# metadata: 이름, 라벨, 네임스페이스
+# spec: 원하는 상태 정의
+```
+
+#### Rolling Update & Scaling
+
+```
+Rolling Update 과정 (replicas=3, maxSurge=1, maxUnavailable=0):
+
+Step 1: v2 Pod 하나 추가
+  v1  v1  v1  v2(시작중)          ← 총 4개 (3+maxSurge)
+
+Step 2: v2 준비 완료, v1 하나 종료
+  v1  v1  v2  v1(종료중)          ← 항상 3개는 서비스 가능
+
+Step 3: 반복
+  v1  v2  v2  v1(종료중)
+
+Step 4: 완료
+  v2  v2  v2                      ← 모두 v2로 교체
+```
+
+#### HPA (Horizontal Pod Autoscaler)
+
+트래픽에 따라 Pod 수를 자동으로 조정한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                HPA 동작 원리                              │
+│                                                          │
+│  CPU 사용률 모니터링:                                     │
+│                                                          │
+│  CPU 30%  → replicas: 2 (최소)                           │
+│  CPU 50%  → replicas: 2 (목표 이하)                      │
+│  CPU 70%  → replicas: 3 (스케일 업)                      │
+│  CPU 90%  → replicas: 5 (더 스케일 업)                   │
+│  CPU 40%  → replicas: 2 (스케일 다운, 쿨다운 기간 후)     │
+│                                                          │
+│  계산식:                                                  │
+│  원하는 replicas = 현재 replicas ×                        │
+│                    (현재 메트릭 / 목표 메트릭)             │
+│                                                          │
+│  예: 현재 3개, CPU 90%, 목표 50%                          │
+│      → 3 × (90/50) = 5.4 → 올림 → 6개                   │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 6. Helm
+
+Helm은 K8s의 **패키지 매니저**다. apt나 brew처럼 복잡한 K8s 리소스를 패키지(Chart)로 관리한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Helm Chart 구조                        │
+│                                                          │
+│  mychart/                                                │
+│  ├── Chart.yaml          ← 차트 메타데이터 (이름, 버전)   │
+│  ├── values.yaml         ← 기본 설정값                    │
+│  ├── templates/          ← K8s YAML 템플릿               │
+│  │   ├── deployment.yaml                                 │
+│  │   ├── service.yaml                                    │
+│  │   ├── configmap.yaml                                  │
+│  │   ├── ingress.yaml                                    │
+│  │   ├── hpa.yaml                                        │
+│  │   └── _helpers.tpl    ← 공통 템플릿 함수              │
+│  └── charts/             ← 의존 차트                      │
+│                                                          │
+│  values.yaml에서 설정값을 바꿔가며                         │
+│  같은 차트를 dev/staging/prod에 배포 가능                  │
+└──────────────────────────────────────────────────────────┘
+```
+
+```bash
+# Helm 기본 명령어
+helm repo add bitnami https://charts.bitnami.com/bitnami  # 저장소 추가
+helm repo update                       # 저장소 업데이트
+helm search repo nginx                 # 차트 검색
+
+# 차트 설치
+helm install my-nginx bitnami/nginx    # 설치 (릴리스 이름: my-nginx)
+helm install my-nginx bitnami/nginx -f custom-values.yaml  # 커스텀 설정
+
+# 릴리스 관리
+helm list                              # 설치된 릴리스 목록
+helm upgrade my-nginx bitnami/nginx    # 업그레이드
+helm rollback my-nginx 1               # 리비전 1로 롤백
+helm uninstall my-nginx                # 삭제
+```
+
+### 7. 모니터링
+
+운영 환경에서는 시스템의 상태를 실시간으로 관찰하고 문제를 조기에 발견해야 한다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                   모니터링 스택                                │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │  메트릭 (Metrics): Prometheus + Grafana               │   │
+│  │                                                       │   │
+│  │  ┌────────┐   수집    ┌────────────┐  시각화  ┌──────┐│   │
+│  │  │ 앱/Pod │ ────────▶│ Prometheus │────────▶│Grafana││   │
+│  │  │(메트릭 │  pull     │ (시계열 DB) │         │(대시  ││   │
+│  │  │ 노출)  │  방식     └────────────┘         │ 보드) ││   │
+│  │  └────────┘                │                 └──────┘│   │
+│  │                            │ 알림                      │   │
+│  │                            ▼                          │   │
+│  │                    ┌──────────────┐                   │   │
+│  │                    │ AlertManager │                   │   │
+│  │                    │ (Slack/이메일)│                   │   │
+│  │                    └──────────────┘                   │   │
+│  └───────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │  로깅 (Logging): ELK 또는 Loki                        │   │
+│  │                                                       │   │
+│  │  옵션 1: ELK Stack                                    │   │
+│  │  ┌──────────┐  ┌──────────────┐  ┌──────┐            │   │
+│  │  │Filebeat/ │─▶│Elasticsearch │─▶│Kibana│            │   │
+│  │  │Fluentd   │  │ (검색 엔진)   │  │(UI)  │            │   │
+│  │  └──────────┘  └──────────────┘  └──────┘            │   │
+│  │                                                       │   │
+│  │  옵션 2: Loki + Grafana (경량)                         │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────┐               │   │
+│  │  │Promtail  │─▶│  Loki    │─▶│Grafana│               │   │
+│  │  │(로그수집) │  │(로그저장) │  │(UI)  │               │   │
+│  │  └──────────┘  └──────────┘  └──────┘               │   │
+│  └───────────────────────────────────────────────────────┘   │
+│                                                              │
+│  주요 모니터링 지표:                                          │
+│  - CPU/메모리 사용률                                         │
+│  - 요청 수 (RPS), 응답 시간 (Latency)                        │
+│  - 에러율 (4xx, 5xx)                                        │
+│  - Pod 상태 (Running, Pending, Failed)                      │
+│  - 디스크 사용량                                             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 코드 예시
+
+### K8s Deployment YAML
+
+```yaml
+# deployment.yaml — 웹 애플리케이션 배포
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app                        # Deployment 이름
+  namespace: production                # 네임스페이스
+  labels:
+    app: web-app
+    version: v2
+spec:
+  replicas: 3                          # Pod 복제본 수
+  selector:
+    matchLabels:
+      app: web-app                     # 이 라벨을 가진 Pod를 관리
+  strategy:
+    type: RollingUpdate                # 배포 전략
+    rollingUpdate:
+      maxSurge: 1                      # 추가로 생성할 수 있는 최대 Pod 수
+      maxUnavailable: 0                # 배포 중 사용 불가능한 최대 Pod 수
+  template:                            # Pod 템플릿
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+        - name: web
+          image: myregistry/web-app:v2.1.0   # 컨테이너 이미지
+          ports:
+            - containerPort: 8080
+          resources:                   # 리소스 제한
+            requests:                  # 최소 보장 리소스
+              cpu: "100m"              # 0.1 CPU 코어
+              memory: "128Mi"          # 128 MiB 메모리
+            limits:                    # 최대 사용 가능 리소스
+              cpu: "500m"              # 0.5 CPU 코어
+              memory: "512Mi"          # 512 MiB 메모리
+          env:                         # 환경변수
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: url
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: log_level
+          readinessProbe:              # 트래픽 수신 준비 확인
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:               # 컨테이너 생존 확인
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      imagePullSecrets:                # 프라이빗 레지스트리 인증
+        - name: registry-credentials
+```
+
+### Service YAML
+
+```yaml
+# service.yaml — 웹 애플리케이션 Service
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app-service
+  namespace: production
+spec:
+  type: LoadBalancer                   # 외부 로드밸런서 생성
+  selector:
+    app: web-app                       # 이 라벨의 Pod로 트래픽 전달
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80                         # Service 포트 (외부에서 접근)
+      targetPort: 8080                 # Pod 포트 (컨테이너)
+
+---
+# 내부용 Service (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-service
+  namespace: production
+spec:
+  type: ClusterIP                      # 클러스터 내부만 접근 가능
+  selector:
+    app: database
+  ports:
+    - port: 5432
+      targetPort: 5432
+```
+
+### HPA YAML
+
+```yaml
+# hpa.yaml — 오토스케일링 설정
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-app-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-app                      # 스케일링 대상 Deployment
+  minReplicas: 2                       # 최소 Pod 수
+  maxReplicas: 10                      # 최대 Pod 수
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50       # CPU 50% 기준 스케일링
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70       # 메모리 70% 기준
+  behavior:                            # 스케일링 동작 세부 설정
+    scaleUp:
+      stabilizationWindowSeconds: 60   # 스케일 업 안정화 기간
+      policies:
+        - type: Pods
+          value: 2                     # 한번에 최대 2개 추가
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 스케일 다운 안정화 기간 (5분)
+      policies:
+        - type: Pods
+          value: 1                     # 한번에 최대 1개 제거
+          periodSeconds: 120
+```
+
+### kubectl 치트시트
+
+```bash
+# ════════════════════════════════════════════════════
+#              kubectl 치트시트
+# ════════════════════════════════════════════════════
+
+# ─── 컨텍스트/네임스페이스 전환 ───
+kubectl config get-contexts                    # 컨텍스트 목록
+kubectl config use-context my-cluster          # 컨텍스트 전환
+kubectl config set-context --current --namespace=prod  # 기본 namespace 변경
+
+# ─── 리소스 조회 (get) ───
+kubectl get all                                # 주요 리소스 전체
+kubectl get pods,svc,deploy                    # 여러 종류 조회
+kubectl get pods -l app=web-app                # 라벨로 필터링
+kubectl get pods -o yaml                       # YAML 형식 출력
+kubectl get pods -o json | jq '.items[].metadata.name'  # JSON + jq
+
+# ─── 디버깅 ───
+kubectl describe pod <name>                    # 상세 정보 + 이벤트
+kubectl logs <pod> -c <container>              # 특정 컨테이너 로그
+kubectl logs <pod> --previous                  # 이전(크래시) 컨테이너 로그
+kubectl port-forward svc/web-app 8080:80       # 로컬 포트포워딩
+kubectl exec -it <pod> -- /bin/sh              # 셸 접속
+
+# ─── 리소스 적용/삭제 ───
+kubectl apply -f manifest.yaml                 # 적용 (선언적)
+kubectl apply -f ./k8s/ -R                     # 디렉터리 재귀 적용
+kubectl delete -f manifest.yaml                # 삭제
+kubectl delete pod <name> --grace-period=0     # 즉시 삭제
+
+# ─── 스케일링/업데이트 ───
+kubectl scale deploy web-app --replicas=5      # 수동 스케일링
+kubectl set image deploy/web-app web=myapp:v3  # 이미지 업데이트
+kubectl rollout restart deploy/web-app         # Pod 재시작
+
+# ─── 유용한 별칭 ───
+# ~/.bashrc에 추가:
+# alias k='kubectl'
+# alias kgp='kubectl get pods'
+# alias kgs='kubectl get services'
+# alias kgd='kubectl get deployments'
+# alias kaf='kubectl apply -f'
+# alias kl='kubectl logs -f'
+```
+
+---

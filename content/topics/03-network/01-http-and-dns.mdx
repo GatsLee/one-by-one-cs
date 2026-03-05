@@ -1,0 +1,514 @@
+---
+title: "인터넷과 HTTP"
+topic: "03-network"
+order: 01
+---
+
+
+## 핵심 개념
+
+### 인터넷은 어떻게 동작하는가?
+
+인터넷은 전 세계의 컴퓨터들이 **네트워크로 연결**되어 데이터를 주고받는 거대한 시스템이다.
+
+**클라이언트-서버 모델:**
+인터넷의 기본 통신 구조다. 서비스를 요청하는 쪽(클라이언트)과 서비스를 제공하는 쪽(서버)으로 나뉜다.
+
+```
+클라이언트 (웹 브라우저)              서버 (웹 서버)
+┌─────────────┐                   ┌─────────────┐
+│             │  ── 요청(Request) ──>│             │
+│  Chrome,    │                   │  nginx,     │
+│  Firefox    │  <── 응답(Response)──│  Apache     │
+│             │                   │             │
+└─────────────┘                   └─────────────┘
+
+예) 브라우저에 naver.com을 입력하면:
+1. 브라우저(클라이언트)가 네이버 서버에 "메인 페이지를 주세요" 요청
+2. 서버가 HTML, CSS, JS 등을 응답으로 보냄
+3. 브라우저가 받은 내용을 화면에 표시
+```
+
+**IP 주소와 포트:**
+- **IP 주소**: 인터넷에서 컴퓨터를 식별하는 주소. 예: `223.130.200.107` (IPv4)
+- **포트**: 한 컴퓨터 안에서 어떤 프로그램(서비스)인지 구분. 예: `:80` (HTTP), `:443` (HTTPS)
+- 비유: IP 주소는 아파트 건물 주소, 포트는 호수
+
+```
+전체 주소: 223.130.200.107:443
+           ─────────────── ───
+           IP 주소 (건물)    포트 (호수)
+
+주요 포트:
+  80  → HTTP (웹)
+  443 → HTTPS (보안 웹)
+  22  → SSH (원격 접속)
+  3306 → MySQL (데이터베이스)
+  5432 → PostgreSQL
+```
+
+### URL의 구조
+
+```
+https://www.example.com:443/products/shoes?color=red&size=270#reviews
+──────  ───────────────  ─── ──────────── ──────────────────── ───────
+프로토콜    호스트(도메인)   포트    경로           쿼리 파라미터     프래그먼트
+
+- 프로토콜: 통신 방법 (http, https, ftp 등)
+- 호스트: 서버의 도메인 이름
+- 포트: 생략 시 http=80, https=443
+- 경로: 서버 내 리소스 위치
+- 쿼리 파라미터: ?key=value 형식, &로 여러 개 연결
+- 프래그먼트: 페이지 내 특정 위치 (#으로 시작)
+```
+
+### HTTP (HyperText Transfer Protocol)
+
+HTTP는 클라이언트와 서버 간에 데이터를 주고받는 **규약(프로토콜)**이다. 웹의 기반 기술이다.
+
+**HTTP의 특징:**
+1. **비연결성(Connectionless)**: 요청-응답이 끝나면 연결을 끊는다 (HTTP/1.0 기준. HTTP/1.1부터는 Keep-Alive로 재사용 가능)
+2. **무상태(Stateless)**: 서버는 클라이언트의 이전 요청을 기억하지 않는다. 각 요청은 독립적이다
+3. **텍스트 기반**: 사람이 읽을 수 있는 형태
+
+무상태의 문제와 해결:
+- 로그인 상태를 유지하려면? → **쿠키(Cookie)**, **세션(Session)**, **토큰(JWT)** 사용
+
+### HTTP 요청 (Request) 구조
+
+```
+┌─────────────────────────────────────────────┐
+│ GET /products/shoes?color=red HTTP/1.1       │ ← 요청 라인
+│─────────────────────────────────────────────│
+│ Host: www.example.com                        │ ← 헤더
+│ Accept: text/html                            │
+│ User-Agent: Mozilla/5.0                      │
+│ Cookie: session_id=abc123                    │
+│─────────────────────────────────────────────│
+│                                              │ ← 빈 줄 (헤더와 본문 구분)
+│ (본문 - GET에서는 보통 없음)                    │ ← 요청 본문 (Body)
+└─────────────────────────────────────────────┘
+```
+
+**요청 라인 구성:**
+```
+GET /products/shoes HTTP/1.1
+─── ──────────────  ────────
+메서드    경로(URI)    HTTP 버전
+```
+
+### HTTP 메서드
+
+| 메서드 | 의미 | 용도 | 본문 | 멱등성 |
+|--------|------|------|------|--------|
+| **GET** | 조회 | 리소스를 가져온다 | 없음 | 멱등 |
+| **POST** | 생성 | 새 리소스를 만든다 | 있음 | 비멱등 |
+| **PUT** | 전체 수정 | 리소스를 완전히 교체한다 | 있음 | 멱등 |
+| **PATCH** | 부분 수정 | 리소스의 일부만 수정한다 | 있음 | 비멱등 |
+| **DELETE** | 삭제 | 리소스를 삭제한다 | 없음/있음 | 멱등 |
+
+**멱등성(Idempotent):** 같은 요청을 여러 번 보내도 결과가 동일한 성질.
+- GET: 상품 조회를 10번 해도 같은 결과 → 멱등
+- POST: 주문을 10번 하면 10개의 주문이 생성 → 비멱등
+- PUT: "이름을 Alice로 변경"을 10번 해도 결과는 Alice → 멱등
+- DELETE: 삭제 요청을 여러 번 해도 결과는 "삭제됨" → 멱등
+
+**CRUD와 HTTP 메서드 매핑:**
+```
+Create → POST   /users         (새 사용자 생성)
+Read   → GET    /users/123     (사용자 123 조회)
+Update → PUT    /users/123     (사용자 123 정보 전체 교체)
+         PATCH  /users/123     (사용자 123 정보 일부 수정)
+Delete → DELETE /users/123     (사용자 123 삭제)
+```
+
+### HTTP 응답 (Response) 구조
+
+```
+┌─────────────────────────────────────────────┐
+│ HTTP/1.1 200 OK                              │ ← 상태 라인
+│─────────────────────────────────────────────│
+│ Content-Type: text/html; charset=utf-8       │ ← 헤더
+│ Content-Length: 1234                          │
+│ Set-Cookie: session_id=xyz789                │
+│─────────────────────────────────────────────│
+│                                              │ ← 빈 줄
+│ <html>                                       │ ← 응답 본문 (Body)
+│   <head><title>신발 목록</title></head>        │
+│   <body>...</body>                           │
+│ </html>                                      │
+└─────────────────────────────────────────────┘
+```
+
+### HTTP 상태 코드
+
+상태 코드는 서버의 응답 결과를 3자리 숫자로 나타낸다. 첫 번째 숫자로 범주를 구분한다.
+
+**1xx — 정보 (Informational)**
+요청을 받았으며 처리 중이다. 실전에서 자주 보지 않는다.
+- `100 Continue`: 계속 요청하세요
+- `101 Switching Protocols`: 프로토콜 변경 (WebSocket 업그레이드)
+
+**2xx — 성공 (Success)**
+| 코드 | 이름 | 의미 |
+|------|------|------|
+| 200 | OK | 요청 성공 (가장 일반적) |
+| 201 | Created | 리소스 생성 성공 (POST 응답) |
+| 204 | No Content | 성공했지만 응답 본문 없음 (DELETE 응답) |
+
+**3xx — 리다이렉션 (Redirection)**
+| 코드 | 이름 | 의미 |
+|------|------|------|
+| 301 | Moved Permanently | 리소스가 영구적으로 이동됨 |
+| 302 | Found | 리소스가 임시로 다른 위치에 있음 |
+| 304 | Not Modified | 캐시된 버전 사용 가능 (변경 없음) |
+
+**4xx — 클라이언트 에러 (Client Error)**
+| 코드 | 이름 | 의미 |
+|------|------|------|
+| 400 | Bad Request | 잘못된 요청 (문법 오류 등) |
+| 401 | Unauthorized | 인증 필요 (로그인 안 됨) |
+| 403 | Forbidden | 권한 없음 (로그인은 됐지만 접근 불가) |
+| 404 | Not Found | 리소스를 찾을 수 없음 |
+| 405 | Method Not Allowed | 허용되지 않는 HTTP 메서드 |
+| 429 | Too Many Requests | 요청이 너무 많음 (Rate Limit) |
+
+**5xx — 서버 에러 (Server Error)**
+| 코드 | 이름 | 의미 |
+|------|------|------|
+| 500 | Internal Server Error | 서버 내부 오류 |
+| 502 | Bad Gateway | 게이트웨이/프록시 서버 오류 |
+| 503 | Service Unavailable | 서버 과부하 또는 점검 중 |
+| 504 | Gateway Timeout | 게이트웨이 시간 초과 |
+
+**기억법:**
+- 2xx: "성공했습니다" (서버가 행복)
+- 3xx: "다른 곳으로 가세요" (이사했어요)
+- 4xx: "너(클라이언트)의 잘못이야"
+- 5xx: "나(서버)의 잘못이야"
+
+### DNS (Domain Name System)
+
+DNS는 사람이 읽기 쉬운 **도메인 이름**을 컴퓨터가 이해하는 **IP 주소**로 변환하는 시스템이다. "인터넷의 전화번호부"라고 불린다.
+
+```
+도메인:  www.google.com
+              │
+     ┌────────┴────────┐
+     │   DNS 서버에 질의  │
+     └────────┬────────┘
+              │
+IP 주소: 142.250.196.100
+```
+
+**DNS 동작 과정 (재귀적 질의):**
+
+```
+1. 브라우저: "www.example.com의 IP가 뭐지?"
+2. 로컬 DNS 캐시 확인 → 없으면 계속
+3. OS의 hosts 파일 확인 → 없으면 계속
+4. ISP의 DNS 서버(리졸버)에 질의
+
+   리졸버가 모르면 계층적으로 질의:
+
+   ┌──────────────┐
+   │ 루트 DNS 서버  │  "com은 여기서 관리해요"
+   │ (전 세계 13개)  │──────────────────┐
+   └──────────────┘                   │
+                                      v
+                            ┌──────────────────┐
+                            │ .com TLD DNS 서버   │  "example.com은 여기서"
+                            │ (Top Level Domain) │──────────────────┐
+                            └──────────────────┘                   │
+                                                                   v
+                                                    ┌──────────────────────┐
+                                                    │ example.com 권한 서버  │
+                                                    │ (Authoritative)      │
+                                                    │ "IP는 93.184.216.34" │
+                                                    └──────────────────────┘
+
+5. 리졸버가 IP 주소를 캐시하고 클라이언트에 반환
+6. 브라우저가 해당 IP로 HTTP 요청 전송
+```
+
+**DNS 캐싱:** 매번 이 전체 과정을 거치면 느리므로, 여러 단계에서 결과를 캐시한다.
+- 브라우저 캐시 (수 분)
+- OS 캐시
+- ISP DNS 서버 캐시 (TTL에 따라 수 시간~수 일)
+
+### HTTPS와 TLS
+
+**HTTPS = HTTP + TLS(Transport Layer Security)**
+
+HTTP는 데이터를 **평문(plaintext)**으로 전송한다. 누군가 중간에서 데이터를 가로채면 (중간자 공격) 내용을 그대로 볼 수 있다. HTTPS는 TLS를 사용하여 데이터를 **암호화**한다.
+
+```
+HTTP (위험):
+클라이언트 ──── "비밀번호: 1234" ────> 서버
+                     ^
+                  도청 가능!
+
+HTTPS (안전):
+클라이언트 ──── "a7$k!f2#..." ────> 서버
+                     ^
+               암호화되어 해독 불가!
+```
+
+**TLS 핸드셰이크 (간소화):**
+```
+1. 클라이언트 → 서버: "안녕, 나는 이런 암호화 방식을 지원해"
+2. 서버 → 클라이언트: "이 인증서를 확인해봐" (공개키 포함)
+3. 클라이언트: 인증서를 검증 (신뢰할 수 있는 CA가 발급했는지)
+4. 양쪽이 대칭키(세션키)를 생성하여 이후 통신에 사용
+5. 암호화된 데이터 전송 시작
+```
+
+**핵심 개념:**
+- **대칭키 암호화**: 같은 키로 암호화/복호화. 빠르지만 키를 안전하게 전달해야 함
+- **비대칭키 암호화**: 공개키로 암호화, 개인키로 복호화. 느리지만 키 전달이 안전
+- **TLS**: 비대칭키로 대칭키를 안전하게 교환한 후, 대칭키로 실제 데이터를 암호화
+- **인증서(Certificate)**: 서버의 신원을 보증. CA(Certificate Authority)가 발급
+
+### 웹 페이지 로딩의 전체 과정
+
+브라우저에 `https://www.example.com`을 입력하면:
+
+```
+1. URL 파싱
+   → 프로토콜: https, 호스트: www.example.com
+
+2. DNS 조회
+   → www.example.com → 93.184.216.34
+
+3. TCP 연결 (3-way handshake)
+   → 클라이언트와 서버 간 연결 수립
+   SYN → SYN-ACK → ACK
+
+4. TLS 핸드셰이크 (HTTPS인 경우)
+   → 암호화 키 교환
+
+5. HTTP 요청 전송
+   → GET / HTTP/1.1
+
+6. 서버 처리 및 응답
+   → HTTP/1.1 200 OK + HTML 문서
+
+7. 브라우저 렌더링
+   → HTML 파싱 → CSS 적용 → JavaScript 실행 → 화면 표시
+   → 필요한 리소스(이미지, CSS, JS)에 대해 추가 HTTP 요청
+```
+
+---
+
+## 코드 예시
+
+### 1. Python으로 HTTP 요청 보내기
+
+```python
+import urllib.request
+import json
+
+# === GET 요청 ===
+# 공개 API에서 데이터 가져오기
+url = "https://jsonplaceholder.typicode.com/posts/1"
+
+with urllib.request.urlopen(url) as response:
+    # 응답 상태 코드
+    print(f"상태 코드: {response.status}")  # 200
+
+    # 응답 헤더
+    print(f"Content-Type: {response.getheader('Content-Type')}")
+
+    # 응답 본문 (JSON)
+    data = json.loads(response.read().decode('utf-8'))
+    print(f"제목: {data['title']}")
+    print(f"본문: {data['body'][:50]}...")
+```
+
+### 2. requests 라이브러리 활용 (더 쉬운 방법)
+
+```python
+# pip install requests 필요
+
+import requests
+
+# === GET 요청 ===
+response = requests.get("https://jsonplaceholder.typicode.com/posts/1")
+print(f"상태 코드: {response.status_code}")      # 200
+print(f"JSON 데이터: {response.json()['title']}")  # 자동 JSON 파싱
+
+# === POST 요청 (리소스 생성) ===
+new_post = {
+    "title": "새 글 제목",
+    "body": "글 내용입니다",
+    "userId": 1
+}
+response = requests.post(
+    "https://jsonplaceholder.typicode.com/posts",
+    json=new_post  # 자동으로 JSON 직렬화 + Content-Type 설정
+)
+print(f"상태 코드: {response.status_code}")  # 201 Created
+print(f"생성된 ID: {response.json()['id']}")
+
+# === PUT 요청 (전체 수정) ===
+updated_post = {
+    "title": "수정된 제목",
+    "body": "수정된 내용",
+    "userId": 1
+}
+response = requests.put(
+    "https://jsonplaceholder.typicode.com/posts/1",
+    json=updated_post
+)
+print(f"PUT 상태 코드: {response.status_code}")  # 200
+
+# === DELETE 요청 ===
+response = requests.delete("https://jsonplaceholder.typicode.com/posts/1")
+print(f"DELETE 상태 코드: {response.status_code}")  # 200
+
+# === 헤더 확인 ===
+response = requests.get("https://httpbin.org/get")
+print(f"\n요청 헤더:")
+for key, value in response.request.headers.items():
+    print(f"  {key}: {value}")
+
+print(f"\n응답 헤더:")
+for key, value in response.headers.items():
+    print(f"  {key}: {value}")
+```
+
+### 3. 상태 코드 확인
+
+```python
+import requests
+
+# 다양한 상태 코드 테스트 (httpbin.org 사용)
+test_urls = [
+    ("https://httpbin.org/status/200", "200 OK"),
+    ("https://httpbin.org/status/201", "201 Created"),
+    ("https://httpbin.org/status/301", "301 Moved Permanently"),
+    ("https://httpbin.org/status/404", "404 Not Found"),
+    ("https://httpbin.org/status/500", "500 Internal Server Error"),
+]
+
+for url, description in test_urls:
+    try:
+        response = requests.get(url, allow_redirects=False)
+        print(f"{description}: 상태 코드 = {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"{description}: 에러 = {e}")
+
+# 상태 코드 범주 확인
+response = requests.get("https://httpbin.org/status/200")
+print(f"\n성공 여부: {response.ok}")            # True (2xx)
+print(f"상태 코드: {response.status_code}")      # 200
+print(f"이유: {response.reason}")               # OK
+
+# 에러 발생시키기
+response = requests.get("https://httpbin.org/status/404")
+print(f"\n성공 여부: {response.ok}")  # False
+# response.raise_for_status()  # HTTPError 예외 발생!
+```
+
+### 4. DNS 조회
+
+```python
+import socket
+
+# 도메인 → IP 주소 변환
+domains = ["google.com", "naver.com", "github.com"]
+
+for domain in domains:
+    try:
+        ip = socket.gethostbyname(domain)
+        print(f"{domain:20s} → {ip}")
+    except socket.gaierror as e:
+        print(f"{domain:20s} → 조회 실패: {e}")
+
+# 더 상세한 정보
+info = socket.getaddrinfo("google.com", 443)
+for result in info[:3]:
+    family, socktype, proto, canonname, sockaddr = result
+    print(f"  주소 체계: {family.name}, IP: {sockaddr[0]}, 포트: {sockaddr[1]}")
+```
+
+### 5. 간단한 HTTP 요청/응답 흐름 시뮬레이션
+
+```python
+def simulate_http_flow():
+    """HTTP 요청/응답 흐름을 문자열로 시뮬레이션"""
+
+    # HTTP 요청 생성
+    request = """GET /api/users/123 HTTP/1.1
+Host: api.example.com
+Accept: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+User-Agent: Python/3.12"""
+
+    print("=" * 60)
+    print("📨 HTTP 요청")
+    print("=" * 60)
+    print(request)
+
+    # 요청 파싱
+    lines = request.strip().split('\n')
+    method, path, version = lines[0].split(' ')
+
+    headers = {}
+    for line in lines[1:]:
+        if ':' in line:
+            key, value = line.split(':', 1)
+            headers[key.strip()] = value.strip()
+
+    print(f"\n파싱 결과:")
+    print(f"  메서드: {method}")
+    print(f"  경로: {path}")
+    print(f"  버전: {version}")
+    print(f"  헤더: {headers}")
+
+    # HTTP 응답 생성
+    response_body = {
+        "id": 123,
+        "name": "Alice",
+        "email": "alice@example.com"
+    }
+
+    import json
+    body_str = json.dumps(response_body, indent=2, ensure_ascii=False)
+
+    response = f"""HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Content-Length: {len(body_str)}
+Cache-Control: max-age=3600
+
+{body_str}"""
+
+    print(f"\n{'=' * 60}")
+    print("📩 HTTP 응답")
+    print("=" * 60)
+    print(response)
+
+
+simulate_http_flow()
+```
+
+---
+
+## 정리
+
+| 항목 | 설명 |
+|------|------|
+| HTTP | 클라이언트-서버 간 데이터 전송 프로토콜. 비연결성, 무상태 |
+| HTTPS | HTTP + TLS 암호화. 데이터를 암호화하여 안전하게 전송 |
+| GET | 리소스 조회. 본문 없음. 멱등 |
+| POST | 리소스 생성. 본문 있음. 비멱등 |
+| PUT | 리소스 전체 수정. 본문 있음. 멱등 |
+| DELETE | 리소스 삭제. 멱등 |
+| 2xx | 성공. 200(OK), 201(Created), 204(No Content) |
+| 4xx | 클라이언트 에러. 400(Bad Request), 401(Unauthorized), 404(Not Found) |
+| 5xx | 서버 에러. 500(Internal Server Error), 503(Service Unavailable) |
+| DNS | 도메인 이름을 IP 주소로 변환하는 시스템 |
+| TLS | 데이터 암호화 프로토콜. 비대칭키로 대칭키 교환 후 대칭키로 통신 |
+| URL | 프로토콜 + 호스트 + 포트 + 경로 + 쿼리 파라미터 + 프래그먼트 |
+
+---

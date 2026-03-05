@@ -1,0 +1,550 @@
+---
+title: "NoSQL과 분산 DB (NoSQL & Distributed Databases)"
+topic: "04-database"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. NoSQL이란?
+
+NoSQL(Not Only SQL)은 **관계형 데이터베이스(RDBMS)의 한계를 극복하기 위해 등장한 비관계형 데이터베이스**의 총칭이다. 고정된 스키마 없이 유연한 데이터 모델을 제공하며, 수평 확장에 유리하다.
+
+```
+RDBMS vs NoSQL:
+
+RDBMS (MySQL, PostgreSQL):
+┌──────┬────────┬─────┬────────────┐
+│  id  │  name  │ age │   email    │
+├──────┼────────┼─────┼────────────┤
+│  1   │ 김철수  │ 25  │ kim@a.com  │ ← 고정 스키마
+│  2   │ 이영희  │ 30  │ lee@b.com  │ ← 모든 행이 같은 구조
+│  3   │ 박민수  │ 28  │ park@c.com │
+└──────┴────────┴─────┴────────────┘
+
+NoSQL (MongoDB):
+{
+  "_id": 1,
+  "name": "김철수",
+  "age": 25,
+  "email": "kim@a.com",
+  "hobbies": ["코딩", "독서"]  ← 유연한 스키마
+}
+{
+  "_id": 2,
+  "name": "이영희",
+  "company": "테크사",          ← 다른 필드 가능!
+  "skills": {"python": 5, "java": 3}
+}
+```
+
+**NoSQL이 필요한 상황**:
+- 데이터 구조가 자주 변경되거나 비정형 데이터 처리
+- 대규모 데이터의 수평 확장이 필요
+- 매우 빠른 읽기/쓰기 성능이 요구됨
+- 복잡한 JOIN이 필요 없는 경우
+
+### 2. NoSQL 4가지 유형
+
+#### (1) Key-Value 저장소
+
+가장 단순한 형태. **키(Key)로 값(Value)을 조회**한다.
+
+```
+구조:
+  ┌────────────────┬───────────────────────────────┐
+  │     Key        │            Value              │
+  ├────────────────┼───────────────────────────────┤
+  │ "user:1"       │ {"name":"김철수","age":25}      │
+  │ "session:abc"  │ "user_id_42"                   │
+  │ "config:theme" │ "dark"                         │
+  └────────────────┴───────────────────────────────┘
+
+  - 값은 문자열, JSON, 이진 데이터 등 무엇이든 가능
+  - 키로만 조회 가능 (값 기반 검색 불가)
+```
+
+- **대표**: Redis, Amazon DynamoDB, Memcached
+- **용도**: 캐싱, 세션 관리, 설정 저장
+- **장점**: 극도로 빠른 읽기/쓰기 (O(1)), 단순한 구조
+- **단점**: 값 기반 검색 불가, 복잡한 쿼리 불가
+
+#### (2) Document 저장소
+
+**JSON/BSON 형태의 문서(Document)를 저장**한다. 문서 내부 필드로 검색 가능.
+
+```
+구조:
+  컬렉션: users
+  ┌──────────────────────────────────────────────┐
+  │ {                                             │
+  │   "_id": ObjectId("507f1f77bcf86cd799439011"),│
+  │   "name": "김철수",                            │
+  │   "age": 25,                                  │
+  │   "address": {                                │
+  │     "city": "서울",                             │
+  │     "district": "강남"                          │
+  │   },                                          │
+  │   "hobbies": ["코딩", "독서"]                   │
+  │ }                                             │
+  ├──────────────────────────────────────────────┤
+  │ {                                             │
+  │   "_id": ObjectId("507f1f77bcf86cd799439012"),│
+  │   "name": "이영희",                            │
+  │   "skills": ["python", "java"]                │
+  │   // age 필드 없음 — 괜찮음! (유연한 스키마)      │
+  │ }                                             │
+  └──────────────────────────────────────────────┘
+```
+
+- **대표**: MongoDB, CouchDB, Amazon DocumentDB
+- **용도**: 콘텐츠 관리, 사용자 프로필, 카탈로그
+- **장점**: 유연한 스키마, 중첩 구조 자연스러움, 필드 기반 검색
+- **단점**: JOIN 불가(비정규화 필요), 트랜잭션 제한적
+
+#### (3) Column-Family 저장소
+
+**행(Row)이 아닌 열(Column) 단위로 데이터를 저장**한다. 같은 열의 데이터가 연속으로 저장되어 분석 쿼리에 유리하다.
+
+```
+행 기반 저장 (RDBMS):
+  행 1: [김철수, 25, 서울]  행 2: [이영희, 30, 부산]  행 3: [박민수, 28, 대구]
+  → 한 행의 모든 컬럼을 빠르게 읽음
+
+열 기반 저장 (Column-Family):
+  이름 열: [김철수, 이영희, 박민수]
+  나이 열: [25, 30, 28]
+  도시 열: [서울, 부산, 대구]
+  → 특정 열의 모든 값을 빠르게 읽음 (분석에 유리)
+
+Column-Family 구조:
+  ┌─────────┬──────────────────────────────────────┐
+  │ Row Key │        Column Family: "info"          │
+  │         │   name    │   age    │    city        │
+  ├─────────┼───────────┼──────────┼────────────────┤
+  │ user:1  │ 김철수     │ 25       │ 서울           │
+  │ user:2  │ 이영희     │ 30       │ 부산           │
+  └─────────┴───────────┴──────────┴────────────────┘
+```
+
+- **대표**: Apache Cassandra, HBase, Google Bigtable
+- **용도**: 시계열 데이터, 로그 분석, IoT 데이터
+- **장점**: 대규모 분산 처리, 쓰기 성능 우수, 특정 열 집계 빠름
+- **단점**: 복잡한 쿼리 어려움, 학습 곡선 높음
+
+#### (4) Graph 저장소
+
+**노드(Node)와 엣지(Edge)로 데이터 간 관계를 표현**한다.
+
+```
+구조:
+  (김철수)──친구──→(이영희)
+     │                │
+   좋아요            팔로우
+     ↓                ↓
+  (게시글1)        (박민수)──작성──→(게시글2)
+
+  노드: 엔티티 (사용자, 게시글, 상품)
+  엣지: 관계 (친구, 팔로우, 구매)
+  속성: 노드/엣지의 부가 정보
+```
+
+- **대표**: Neo4j, Amazon Neptune, ArangoDB
+- **용도**: 소셜 네트워크, 추천 시스템, 지식 그래프, 사기 탐지
+- **장점**: 관계 탐색이 매우 빠름, 복잡한 관계 쿼리 자연스러움
+- **단점**: 대량 데이터 집계에 부적합, 분산 어려움
+
+### 3. 주요 NoSQL DB 특징 비교
+
+| 특징 | MongoDB | Redis | Cassandra |
+|------|---------|-------|-----------|
+| 유형 | Document | Key-Value | Column-Family |
+| 데이터 모델 | JSON/BSON 문서 | 다양한 자료구조 | Wide Column |
+| 스키마 | 유연 (Schema-less) | 없음 | 유연 |
+| 쿼리 언어 | MQL (MongoDB Query) | 명령어 기반 | CQL (Cassandra Query) |
+| 확장성 | 수평 확장 (샤딩) | 클러스터 모드 | 수평 확장 (분산 해시) |
+| 일관성 | 강한 일관성 (기본) | 강한 일관성 | 최종 일관성 (조절 가능) |
+| 저장 위치 | 디스크 + 메모리 캐시 | 메모리 (인메모리) | 디스크 |
+| 트랜잭션 | 다중 문서 지원 (4.0+) | 제한적 (MULTI) | 경량 트랜잭션 |
+| 적합 용도 | 범용, 콘텐츠 관리 | 캐싱, 실시간 처리 | 대규모 쓰기, 시계열 |
+
+### 4. 샤딩(Sharding)
+
+샤딩은 **데이터를 여러 서버(샤드)에 수평으로 분할하여 저장하는 기법**이다.
+
+```
+샤딩 전:
+  ┌────────────────────────────────┐
+  │        단일 서버 (DB)           │
+  │  사용자 1 ~ 1,000,000          │
+  │  (부하 집중, 용량 한계)          │
+  └────────────────────────────────┘
+
+샤딩 후:
+  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+  │   샤드 1      │  │   샤드 2      │  │   샤드 3      │
+  │ 사용자 1~33만  │  │ 사용자 33~66만 │  │ 사용자 66~100만│
+  └──────────────┘  └──────────────┘  └──────────────┘
+  부하 분산, 각 서버 용량 여유
+```
+
+#### 샤딩 전략
+
+**(1) 범위 기반 샤딩 (Range Sharding)**:
+
+```
+샤드 키: user_id
+  샤드 1: user_id 1 ~ 100,000
+  샤드 2: user_id 100,001 ~ 200,000
+  샤드 3: user_id 200,001 ~ 300,000
+```
+
+- 장점: 범위 쿼리 효율적
+- 단점: 핫스팟 발생 가능 (특정 범위에 트래픽 집중)
+
+**(2) 해시 기반 샤딩 (Hash Sharding)**:
+
+```
+샤드 키: hash(user_id) % 3
+  user_id=1 → hash(1) % 3 = 1 → 샤드 1
+  user_id=2 → hash(2) % 3 = 2 → 샤드 2
+  user_id=3 → hash(3) % 3 = 0 → 샤드 0
+```
+
+- 장점: 균등 분배, 핫스팟 방지
+- 단점: 범위 쿼리 비효율 (모든 샤드 스캔 필요)
+
+**(3) 디렉토리 기반 샤딩 (Directory Sharding)**:
+
+```
+조회 테이블(Lookup Table):
+  user_id 1 → 샤드 A
+  user_id 2 → 샤드 C
+  user_id 3 → 샤드 B
+  ...
+```
+
+- 장점: 유연한 매핑
+- 단점: 조회 테이블이 병목/단일장애점
+
+### 5. 복제(Replication)
+
+복제는 **같은 데이터를 여러 서버에 복사하여 가용성과 읽기 성능을 높이는 기법**이다.
+
+#### (1) Master-Slave (Primary-Secondary)
+
+```
+                  ┌─────────────┐
+   쓰기 요청 ────→ │   Master    │
+                  │ (읽기+쓰기)  │
+                  └──────┬──────┘
+                         │ 복제 (비동기/동기)
+              ┌──────────┼──────────┐
+              ▼          ▼          ▼
+        ┌──────────┐┌──────────┐┌──────────┐
+  읽기 →│ Slave 1  ││ Slave 2  ││ Slave 3  │
+        │(읽기전용) ││(읽기전용) ││(읽기전용) │
+        └──────────┘└──────────┘└──────────┘
+```
+
+- **쓰기**: Master에서만 가능
+- **읽기**: Slave에서 분산 처리 (읽기 성능 향상)
+- **장점**: 구현 간단, 읽기 확장 용이
+- **단점**: Master 장애 시 쓰기 불가 (페일오버 필요), 복제 지연(Replication Lag)
+
+#### (2) Master-Master (Multi-Master)
+
+```
+        ┌──────────────┐     ┌──────────────┐
+  쓰기 →│  Master 1    │←──→│  Master 2    │← 쓰기
+  읽기 →│ (읽기+쓰기)   │ 동기 │ (읽기+쓰기)   │← 읽기
+        └──────────────┘     └──────────────┘
+              양방향 복제
+```
+
+- **쓰기**: 모든 Master에서 가능
+- **장점**: 쓰기 고가용성, 지역 분산 가능
+- **단점**: 충돌 해결 복잡 (동시에 같은 데이터를 다른 곳에서 수정하면?), 일관성 유지 어려움
+
+### 6. CAP 정리 (미리보기)
+
+CAP 정리는 **분산 시스템에서 다음 세 가지를 동시에 만족할 수 없다**는 이론이다.
+
+```
+            Consistency (일관성)
+                 ╱╲
+                ╱  ╲
+               ╱    ╲
+              ╱  CP  ╲
+             ╱        ╲
+            ╱──────────╲
+           ╱            ╲
+    CA    ╱      AP      ╲
+         ╱                ╲
+        ╱──────────────────╲
+  Availability           Partition
+  (가용성)             Tolerance
+                      (분할 내성)
+```
+
+| 속성 | 설명 | 비유 |
+|------|------|------|
+| **C (Consistency)** | 모든 노드가 같은 시점에 같은 데이터를 반환 | 모든 은행 지점의 잔고가 동일 |
+| **A (Availability)** | 모든 요청이 (에러 없이) 응답을 받음 | 은행이 항상 영업 중 |
+| **P (Partition Tolerance)** | 네트워크 분할(노드 간 통신 불가)에도 동작 | 지점 간 전화가 끊겨도 영업 계속 |
+
+**현실**: 네트워크 분할(P)은 불가피하므로, 실질적으로 **CP vs AP** 중 선택해야 한다.
+
+| 선택 | 특징 | 예시 |
+|------|------|------|
+| CP | 일관성 우선, 분할 시 일부 요청 거부 | MongoDB, HBase, Redis Cluster |
+| AP | 가용성 우선, 분할 시 오래된 데이터 반환 가능 | Cassandra, DynamoDB, CouchDB |
+
+## 코드 예시
+
+### MongoDB CRUD 작업 (Python - PyMongo)
+
+```python
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+
+# MongoDB 연결
+client = MongoClient("mongodb://localhost:27017")
+db = client["myapp"]             # 데이터베이스 선택 (없으면 자동 생성)
+users = db["users"]              # 컬렉션 선택 (RDBMS의 테이블에 해당)
+
+# === Create (삽입) ===
+# 문서 하나 삽입 — 스키마가 고정되지 않음
+user1 = {
+    "name": "김철수",
+    "age": 25,
+    "email": "kim@example.com",
+    "hobbies": ["코딩", "독서"],       # 배열 가능
+    "address": {                       # 중첩 문서 가능
+        "city": "서울",
+        "district": "강남"
+    }
+}
+result = users.insert_one(user1)
+print(f"삽입된 ID: {result.inserted_id}")
+
+# 여러 문서 삽입 — 각 문서의 구조가 다를 수 있음!
+users.insert_many([
+    {"name": "이영희", "age": 30, "skills": ["python", "java"]},
+    {"name": "박민수", "age": 28, "company": "테크사"},
+])
+
+# === Read (조회) ===
+# 단일 문서 조회
+user = users.find_one({"name": "김철수"})
+print(f"조회 결과: {user}")
+
+# 조건 검색 (나이 28 이상)
+# MongoDB 쿼리 연산자: $gt(초과), $gte(이상), $lt(미만), $lte(이하)
+for user in users.find({"age": {"$gte": 28}}):
+    print(f"  {user['name']}, {user['age']}세")
+
+# 중첩 필드 검색 (서울 거주자)
+seoul_users = users.find({"address.city": "서울"})
+
+# 프로젝션 (특정 필드만 반환)
+for user in users.find({}, {"name": 1, "age": 1, "_id": 0}):
+    print(f"  {user}")  # {"name": "김철수", "age": 25}
+
+# === Update (수정) ===
+# 단일 문서 수정
+users.update_one(
+    {"name": "김철수"},            # 필터
+    {"$set": {"age": 26},         # $set: 필드 값 변경
+     "$push": {"hobbies": "운동"}} # $push: 배열에 추가
+)
+
+# 여러 문서 수정
+users.update_many(
+    {"age": {"$lt": 30}},         # 30세 미만 모두
+    {"$inc": {"age": 1}}          # $inc: 값 증가
+)
+
+# === Delete (삭제) ===
+users.delete_one({"name": "박민수"})
+delete_result = users.delete_many({"age": {"$gt": 50}})
+print(f"삭제된 문서 수: {delete_result.deleted_count}")
+
+# === 인덱스 ===
+# 자주 검색하는 필드에 인덱스를 생성하면 조회 성능이 크게 향상된다
+users.create_index("email", unique=True)   # 유니크 인덱스
+users.create_index([("age", 1)])           # 오름차순 인덱스
+
+# === 집계(Aggregation) ===
+# SQL의 GROUP BY + 집계 함수에 해당
+pipeline = [
+    {"$match": {"age": {"$gte": 20}}},           # WHERE age >= 20
+    {"$group": {
+        "_id": "$address.city",                   # GROUP BY city
+        "avg_age": {"$avg": "$age"},              # AVG(age)
+        "count": {"$sum": 1}                      # COUNT(*)
+    }},
+    {"$sort": {"count": -1}}                      # ORDER BY count DESC
+]
+for result in users.aggregate(pipeline):
+    print(f"  도시: {result['_id']}, 평균 나이: {result['avg_age']}, 인원: {result['count']}")
+```
+
+### 샤딩 시뮬레이션 (해시 기반)
+
+```python
+import hashlib
+
+
+class HashShardRouter:
+    """
+    해시 기반 샤딩 라우터.
+    데이터의 키를 해시하여 어떤 샤드에 저장할지 결정한다.
+    """
+
+    def __init__(self, shard_count: int):
+        self.shard_count = shard_count
+        # 각 샤드를 딕셔너리로 시뮬레이션
+        self.shards: list[dict] = [{} for _ in range(shard_count)]
+
+    def _get_shard_index(self, key: str) -> int:
+        """키를 해시하여 샤드 인덱스를 결정한다."""
+        hash_value = int(hashlib.md5(key.encode()).hexdigest(), 16)
+        return hash_value % self.shard_count
+
+    def put(self, key: str, value: dict) -> None:
+        """데이터를 적절한 샤드에 저장한다."""
+        shard_idx = self._get_shard_index(key)
+        self.shards[shard_idx][key] = value
+        print(f"  [저장] '{key}' → 샤드 {shard_idx}")
+
+    def get(self, key: str) -> dict | None:
+        """키에 해당하는 샤드에서 데이터를 조회한다."""
+        shard_idx = self._get_shard_index(key)
+        result = self.shards[shard_idx].get(key)
+        print(f"  [조회] '{key}' → 샤드 {shard_idx} → {result}")
+        return result
+
+    def stats(self) -> None:
+        """각 샤드의 데이터 분포를 출력한다."""
+        print("\n  === 샤드 분포 ===")
+        for i, shard in enumerate(self.shards):
+            print(f"  샤드 {i}: {len(shard)}개 항목")
+
+
+# === 사용 예시 ===
+router = HashShardRouter(shard_count=3)
+
+# 데이터 저장
+users = {
+    "user:1": {"name": "김철수", "age": 25},
+    "user:2": {"name": "이영희", "age": 30},
+    "user:3": {"name": "박민수", "age": 28},
+    "user:4": {"name": "최지원", "age": 22},
+    "user:5": {"name": "정수진", "age": 27},
+    "user:6": {"name": "한동훈", "age": 35},
+}
+
+print("=== 데이터 저장 ===")
+for key, value in users.items():
+    router.put(key, value)
+
+print("\n=== 데이터 조회 ===")
+router.get("user:3")
+router.get("user:5")
+
+router.stats()
+```
+
+### Master-Slave 복제 시뮬레이션
+
+```python
+import time
+from threading import Thread, Lock
+
+
+class ReplicatedDB:
+    """
+    Master-Slave 복제를 시뮬레이션한다.
+    - 쓰기는 Master에서만 가능
+    - 읽기는 Slave에서 분산 처리
+    - 비동기 복제로 인한 지연(Replication Lag) 시뮬레이션
+    """
+
+    def __init__(self, slave_count: int = 2, replication_delay: float = 0.5):
+        self.master: dict = {}
+        self.slaves: list[dict] = [{} for _ in range(slave_count)]
+        self.replication_delay = replication_delay
+        self.lock = Lock()
+        self._read_counter = 0  # 라운드 로빈용 카운터
+
+    def write(self, key: str, value: str) -> None:
+        """
+        Master에 쓰기. 이후 비동기적으로 Slave에 복제한다.
+        """
+        with self.lock:
+            self.master[key] = value
+            print(f"  [Master 쓰기] {key} = {value}")
+
+        # 비동기 복제 시작
+        thread = Thread(target=self._replicate, args=(key, value))
+        thread.start()
+
+    def _replicate(self, key: str, value: str) -> None:
+        """Slave에 비동기 복제 (지연 포함)"""
+        time.sleep(self.replication_delay)  # 복제 지연 시뮬레이션
+        with self.lock:
+            for i, slave in enumerate(self.slaves):
+                slave[key] = value
+                print(f"  [Slave {i} 복제 완료] {key} = {value}")
+
+    def read(self, key: str) -> str | None:
+        """
+        Slave에서 라운드 로빈으로 읽기.
+        복제 지연으로 인해 최신 데이터가 아닐 수 있다!
+        """
+        slave_idx = self._read_counter % len(self.slaves)
+        self._read_counter += 1
+        result = self.slaves[slave_idx].get(key, "(없음)")
+        print(f"  [Slave {slave_idx} 읽기] {key} = {result}")
+        return result
+
+    def read_from_master(self, key: str) -> str | None:
+        """강한 일관성이 필요할 때 Master에서 직접 읽기"""
+        result = self.master.get(key, "(없음)")
+        print(f"  [Master 읽기] {key} = {result}")
+        return result
+
+
+# === 복제 지연 데모 ===
+db = ReplicatedDB(slave_count=2, replication_delay=1.0)
+
+print("=== 쓰기 직후 읽기 (복제 지연 문제) ===")
+db.write("user:1", "김철수")
+
+print("\n즉시 읽기 (Slave — 아직 복제 안 됨):")
+db.read("user:1")  # "(없음)" — 복제 지연!
+
+print("\n즉시 읽기 (Master — 항상 최신):")
+db.read_from_master("user:1")  # "김철수"
+
+time.sleep(1.5)  # 복제 완료 대기
+
+print("\n1.5초 후 읽기 (Slave — 이제 복제 완료):")
+db.read("user:1")  # "김철수"
+```
+
+## 정리
+
+| 개념 | 핵심 포인트 |
+|------|------------|
+| NoSQL | 비관계형 DB, 유연한 스키마, 수평 확장 용이 |
+| Key-Value | 키로 값 조회, 가장 빠름 (Redis, DynamoDB) |
+| Document | JSON 문서 저장, 필드 검색 가능 (MongoDB) |
+| Column-Family | 열 단위 저장, 분석/시계열에 적합 (Cassandra) |
+| Graph | 관계 중심, 소셜 네트워크에 적합 (Neo4j) |
+| 샤딩 | 데이터를 여러 서버에 분할, 해시/범위/디렉토리 방식 |
+| Master-Slave | 읽기 분산, 쓰기는 Master만, 복제 지연 존재 |
+| Master-Master | 양쪽 쓰기 가능, 충돌 해결 필요 |
+| CAP 정리 | C(일관성), A(가용성), P(분할내성) 중 2가지만 보장 가능 |

@@ -1,0 +1,642 @@
+---
+title: "시스템 설계 실전: URL 단축기 (URL Shortener)"
+topic: "05-system-design"
+order: 06
+---
+
+
+## 핵심 개념
+
+URL 단축기는 시스템 설계 면접에서 가장 자주 출제되는 문제 중 하나이다. 단순해 보이지만, 해시 설계, 충돌 처리, 캐싱, 확장성 등 핵심 개념을 종합적으로 다룬다.
+
+### 1. 요구사항 정의
+
+시스템 설계의 첫 단계는 **기능적 요구사항(FR)과 비기능적 요구사항(NFR)을 명확히** 하는 것이다.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  기능적 요구사항 (FR)                       │
+├─────────────────────────────────────────────────────────┤
+│ 1. 긴 URL을 입력하면 짧은 URL을 생성한다                    │
+│    예: https://example.com/very/long/path                │
+│    →   https://short.ly/abc123                           │
+│                                                         │
+│ 2. 짧은 URL로 접근하면 원본 URL로 리다이렉션한다             │
+│                                                         │
+│ 3. 짧은 URL에는 만료 기간을 설정할 수 있다 (선택)            │
+│                                                         │
+│ 4. 동일한 원본 URL은 동일한 짧은 URL을 반환한다 (선택)       │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                비기능적 요구사항 (NFR)                       │
+├─────────────────────────────────────────────────────────┤
+│ 1. 고가용성: 리다이렉션은 항상 동작해야 한다                  │
+│ 2. 저지연: 리다이렉션 응답 시간 < 100ms                     │
+│ 3. 단축 URL은 예측 불가능해야 한다 (보안)                    │
+│ 4. 확장 가능: 수십억 개의 URL 처리 가능                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 2. 용량 추산 (Back-of-the-Envelope Estimation)
+
+시스템 설계에서 **용량 추산**은 필요한 서버 수, 저장 공간, 네트워크 대역폭을 개략적으로 계산하는 과정이다. 정확한 숫자보다 **규모의 감(order of magnitude)**을 잡는 것이 중요하다.
+
+```
+가정:
+  - 하루 URL 생성: 1억 건 (100M)
+  - 읽기:쓰기 비율 = 100:1 (읽기가 압도적)
+  - 서비스 기간: 5년
+  - 평균 URL 길이: 200 bytes
+
+QPS (Queries Per Second) 계산:
+  ┌────────────────────────────────────────────────┐
+  │ 쓰기 QPS:                                      │
+  │   100,000,000 / (24 × 3600) ≈ 1,160 QPS       │
+  │                                                │
+  │ 읽기 QPS:                                      │
+  │   1,160 × 100 = 116,000 QPS (약 12만)          │
+  │                                                │
+  │ 피크 시간 (평균의 2~3배):                        │
+  │   쓰기: ~3,500 QPS                             │
+  │   읽기: ~350,000 QPS                           │
+  └────────────────────────────────────────────────┘
+
+저장 공간 계산:
+  ┌────────────────────────────────────────────────┐
+  │ 5년간 총 URL 수:                                │
+  │   100M × 365 × 5 = 182.5B (약 1,825억 건)      │
+  │                                                │
+  │ 레코드당 크기 (대략):                             │
+  │   - short_key: 7 bytes                         │
+  │   - original_url: 200 bytes                    │
+  │   - created_at: 8 bytes                        │
+  │   - expires_at: 8 bytes                        │
+  │   합계: ~250 bytes                             │
+  │                                                │
+  │ 총 저장 공간:                                    │
+  │   1,825억 × 250 bytes ≈ 45 TB                  │
+  └────────────────────────────────────────────────┘
+
+캐시 메모리 계산 (80/20 법칙):
+  ┌────────────────────────────────────────────────┐
+  │ 하루 읽기 요청의 20%를 캐싱하면 80% 트래픽 처리:   │
+  │   읽기/일: 116,000 × 86,400 ≈ 100억            │
+  │   캐시 항목: 100억 × 0.2 = 20억                 │
+  │   캐시 크기: 20억 × 250 bytes ≈ 500 GB          │
+  │                                                │
+  │ → Redis 클러스터로 분산 저장 가능                  │
+  └────────────────────────────────────────────────┘
+```
+
+### 3. 해시 함수 설계
+
+단축 URL의 핵심은 **긴 URL을 짧은 고유 키로 변환하는 해시 함수**이다. 짧은 키의 길이에 따라 지원 가능한 URL 수가 결정된다.
+
+```
+키 길이와 경우의 수:
+  Base62 = [0-9, a-z, A-Z] = 62 문자
+
+  키 길이 6: 62^6 = 56,800,235,584 (약 568억)
+  키 길이 7: 62^7 = 3,521,614,606,208 (약 3.5조)
+  키 길이 8: 62^8 = 218,340,105,584,896 (약 218조)
+
+  → 5년간 1,825억 건이므로 키 길이 7이면 충분
+```
+
+#### 방법 1: 해시 + 절단 (Hash and Truncate)
+
+```
+MD5/SHA-256으로 해시한 뒤 일부만 사용:
+
+  원본 URL: "https://example.com/very/long/path"
+     │
+     ▼ MD5 해시
+  "d41d8cd98f00b204e9800998ecf8427e" (128비트, 32자)
+     │
+     ▼ 앞 7자만 사용
+  "d41d8cd"
+     │
+     ▼ Base62로 인코딩
+  "aB3kX9p"
+
+  문제: 해시 충돌 가능!
+  해결: 충돌 시 salt 추가하여 재해시
+        "https://example.com/..." + "_1" → 재해시
+```
+
+#### 방법 2: Base62 인코딩 (Auto-Increment ID)
+
+```
+DB의 자동 증가 ID를 Base62로 변환:
+
+  ID: 125        → Base62: "21"
+  ID: 1000000    → Base62: "4c92"
+  ID: 3521614606 → Base62: "aB3kX9p" (7자)
+
+  변환 과정:
+  125 ÷ 62 = 2 나머지 1  → 문자[1] = '1'
+  2   ÷ 62 = 0 나머지 2  → 문자[2] = '2'
+  결과: "21"
+
+  장점: 충돌 없음 (ID가 고유)
+  단점: 순차적이라 예측 가능 → 보안 약점
+        분산 환경에서 고유 ID 생성이 복잡
+```
+
+#### 방법 3: 사전 생성된 키 (Pre-generated Keys)
+
+```
+미리 고유한 키를 대량 생성하여 DB에 저장:
+
+  ┌────────────────────────┐
+  │    Key Generation      │
+  │    Service (KGS)       │
+  │                        │
+  │  미사용 키 풀:           │
+  │  [aB3kX9p, bC4lY0q,   │
+  │   cD5mZ1r, ...]       │
+  │                        │
+  │  사용 완료 키:           │
+  │  [xY7nA2s, ...]       │
+  └────────────────────────┘
+
+  URL 생성 요청 시:
+  1. KGS에서 미사용 키 하나를 가져옴
+  2. 해당 키를 사용 완료로 표시
+  3. 키 + 원본 URL을 매핑 테이블에 저장
+
+  장점: 충돌 없음, 해시 계산 불필요
+  단점: KGS가 SPOF, 키 동기화 필요
+```
+
+### 4. 데이터 저장 설계
+
+```
+핵심 테이블:
+
+  ┌──────────────────────────────────┐
+  │         url_mappings              │
+  ├──────────────────────────────────┤
+  │ short_key   VARCHAR(7) PK        │  ← "aB3kX9p"
+  │ original_url TEXT NOT NULL        │  ← "https://example.com/..."
+  │ user_id     BIGINT (nullable)     │  ← 생성한 사용자 (선택)
+  │ created_at  TIMESTAMP             │
+  │ expires_at  TIMESTAMP (nullable)  │  ← 만료 시간 (선택)
+  │ click_count BIGINT DEFAULT 0      │  ← 클릭 통계
+  └──────────────────────────────────┘
+
+  인덱스:
+  - PK: short_key (모든 리다이렉션 요청의 키)
+  - INDEX: original_url (동일 URL 중복 생성 방지용, 선택)
+
+DB 선택:
+  ┌─────────────────────────────────────────────────────┐
+  │ 관계형 DB (PostgreSQL, MySQL):                       │
+  │   - ACID 트랜잭션 보장                                │
+  │   - 성숙한 기술, 운영 경험 풍부                         │
+  │   - 샤딩 필요 시 복잡도 증가                           │
+  │                                                     │
+  │ NoSQL (DynamoDB, Cassandra):                        │
+  │   - 수평 확장 용이                                    │
+  │   - 키-값 조회에 최적화                                │
+  │   - 단순한 스키마에 적합                               │
+  │                                                     │
+  │ → URL 단축기는 단순 KV 조회이므로 NoSQL도 적합          │
+  └─────────────────────────────────────────────────────┘
+```
+
+### 5. 캐시 레이어 (Redis)
+
+읽기 QPS가 12만에 달하므로, DB에 직접 쿼리하면 병목이 된다. **Redis를 캐시로** 사용하여 Hot URL을 메모리에서 바로 응답한다.
+
+```
+캐시 흐름 (Cache-Aside 패턴):
+
+  사용자 → short.ly/aB3kX9p
+       │
+       ▼
+  ┌───────────┐
+  │ API 서버   │
+  └─────┬─────┘
+        │ 1. Redis에서 aB3kX9p 조회
+        ▼
+  ┌───────────┐
+  │   Redis    │ ── Hit → 원본 URL 반환 → 301/302 리다이렉트
+  │  (캐시)    │
+  └─────┬─────┘
+        │ Miss
+        ▼
+  ┌───────────┐
+  │    DB      │ → 원본 URL 조회 → Redis에 캐시 → 301/302 리다이렉트
+  └───────────┘
+
+캐시 정책:
+  - TTL: 24시간 (자주 접근되는 URL은 자동 갱신)
+  - LRU: 메모리 부족 시 가장 오래 사용되지 않은 항목 제거
+  - 캐시 크기: ~500GB (Redis 클러스터로 분산)
+```
+
+### 6. 리다이렉션 흐름 (301 vs 302)
+
+단축 URL을 클릭하면 서버가 원본 URL로 리다이렉션한다. 이때 HTTP 상태 코드 선택이 중요하다.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    301 vs 302 비교                        │
+├───────────────────────┬─────────────────────────────────┤
+│     301 Moved         │     302 Found                   │
+│     Permanently       │     (Temporary Redirect)        │
+├───────────────────────┼─────────────────────────────────┤
+│ 브라우저가 캐싱        │ 브라우저가 캐싱하지 않음          │
+│ 다음 요청부터          │ 매번 서버를 경유                 │
+│ 서버를 거치지 않음     │                                 │
+├───────────────────────┼─────────────────────────────────┤
+│ 서버 부하 감소         │ 클릭 통계 수집 가능              │
+│ 트래픽 추적 불가       │ 서버 부하 증가                   │
+├───────────────────────┼─────────────────────────────────┤
+│ 변하지 않는 URL에 적합 │ 분석/통계가 필요한 경우 적합      │
+└───────────────────────┴─────────────────────────────────┘
+
+  실제 서비스에서는 대부분 302를 사용한다.
+  → 클릭 수, 유입 경로, 지역 등의 분석 데이터가 비즈니스에 중요하기 때문.
+```
+
+```
+리다이렉션 전체 흐름:
+
+  1. 사용자 클릭: GET https://short.ly/aB3kX9p
+  2. DNS 해석 → short.ly 서버 IP
+  3. 로드 밸런서 → API 서버 중 하나로 분배
+  4. API 서버:
+     a. Redis에서 "aB3kX9p" 조회
+     b. Cache Hit → 원본 URL 획득
+        Cache Miss → DB 조회 → Redis 캐시 → 원본 URL 획득
+     c. 클릭 통계 비동기 기록 (Kafka/Redis 큐)
+     d. HTTP 302 응답, Location 헤더에 원본 URL 설정
+  5. 브라우저가 Location URL로 자동 이동
+```
+
+### 7. 전체 아키텍처 다이어그램
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    URL 단축기 전체 아키텍처                     │
+└──────────────────────────────────────────────────────────────┘
+
+                       ┌──────────┐
+                       │  사용자   │
+                       └────┬─────┘
+                            │
+                       ┌────▼─────┐
+                       │   CDN    │ (정적 리소스: UI, JS, CSS)
+                       └────┬─────┘
+                            │
+                       ┌────▼─────┐
+                       │ DNS/LB   │ (로드 밸런서: Nginx/ALB)
+                       └────┬─────┘
+                ┌───────────┼───────────┐
+                ▼           ▼           ▼
+          ┌──────────┐┌──────────┐┌──────────┐
+          │ API 서버 1 ││ API 서버 2 ││ API 서버 3 │ (수평 확장)
+          └─────┬────┘└─────┬────┘└─────┬────┘
+                │           │           │
+        ┌───────┴───────────┴───────────┴───────┐
+        │              Redis 클러스터              │
+        │     (캐시: short_key → original_url)     │
+        └───────────────────┬───────────────────┘
+                            │ Cache Miss
+                ┌───────────┼───────────┐
+                ▼           ▼           ▼
+          ┌──────────┐┌──────────┐┌──────────┐
+          │  DB 샤드 1 ││  DB 샤드 2 ││  DB 샤드 3 │
+          │(short_key │ │(short_key │ │(short_key │
+          │ a~i)      ││ j~r)      ││ s~z,0~9)  │
+          └──────────┘└──────────┘└──────────┘
+
+                ┌───────────────────────────┐
+                │   비동기 처리 파이프라인     │
+                │                           │
+                │  API 서버 → Kafka → 통계   │
+                │            서비스          │
+                │             ↓             │
+                │       Analytics DB        │
+                │    (클릭 수, 유입 경로 등)   │
+                └───────────────────────────┘
+
+URL 생성 흐름:
+  ① 사용자가 원본 URL 제출
+  ② API 서버가 해시/KGS로 short_key 생성
+  ③ DB에 (short_key, original_url) 저장
+  ④ Redis에 캐시
+  ⑤ 짧은 URL 반환: https://short.ly/{short_key}
+
+URL 리다이렉션 흐름:
+  ① 사용자가 짧은 URL 클릭
+  ② LB → API 서버로 라우팅
+  ③ Redis에서 short_key 조회 (Cache Hit → ⑤로)
+  ④ Cache Miss → DB 조회 → Redis 캐시
+  ⑤ 302 응답 + Location: 원본 URL
+  ⑥ 클릭 이벤트를 Kafka로 비동기 발행
+```
+
+## 코드 예시
+
+### URL 단축기 핵심 로직 구현
+
+```python
+import hashlib
+import string
+import time
+from dataclasses import dataclass
+
+
+# === Base62 인코딩/디코딩 ===
+
+BASE62_CHARS = string.digits + string.ascii_lowercase + string.ascii_uppercase
+
+
+def base62_encode(num: int) -> str:
+    """정수를 Base62 문자열로 변환한다."""
+    if num == 0:
+        return BASE62_CHARS[0]
+
+    result = []
+    while num > 0:
+        result.append(BASE62_CHARS[num % 62])
+        num //= 62
+    return "".join(reversed(result))
+
+
+def base62_decode(s: str) -> int:
+    """Base62 문자열을 정수로 변환한다."""
+    num = 0
+    for char in s:
+        num = num * 62 + BASE62_CHARS.index(char)
+    return num
+
+
+# === 해시 기반 단축 키 생성 ===
+
+def generate_short_key_hash(url: str, length: int = 7) -> str:
+    """
+    MD5 해시의 일부를 Base62로 인코딩하여 단축 키를 만든다.
+    충돌 시 salt를 추가하여 재시도한다.
+    """
+    md5_hash = hashlib.md5(url.encode()).hexdigest()
+    # 해시의 앞 12자를 정수로 변환 (48비트, 충분한 공간)
+    num = int(md5_hash[:12], 16)
+    short_key = base62_encode(num)
+    return short_key[:length]
+
+
+# === Auto-Increment ID 기반 단축 키 생성 ===
+
+class IDGenerator:
+    """분산 환경에서의 고유 ID 생성기 (Snowflake 방식 간소화)"""
+
+    def __init__(self, machine_id: int = 0):
+        self.machine_id = machine_id
+        self.sequence = 0
+        self.last_timestamp = 0
+
+    def next_id(self) -> int:
+        """타임스탬프 + 머신ID + 시퀀스로 고유 ID를 생성한다."""
+        timestamp = int(time.time() * 1000)  # 밀리초
+
+        if timestamp == self.last_timestamp:
+            self.sequence += 1
+        else:
+            self.sequence = 0
+            self.last_timestamp = timestamp
+
+        # 41비트 타임스탬프 + 10비트 머신ID + 12비트 시퀀스
+        uid = ((timestamp & 0x1FFFFFFFFFF) << 22) | \
+              ((self.machine_id & 0x3FF) << 12) | \
+              (self.sequence & 0xFFF)
+        return uid
+
+
+# === URL 단축 서비스 ===
+
+@dataclass
+class URLMapping:
+    short_key: str
+    original_url: str
+    created_at: float
+    expires_at: float | None = None
+    click_count: int = 0
+
+
+class URLShortener:
+    """
+    URL 단축 서비스의 핵심 로직.
+    실제 서비스에서는 DB와 Redis를 사용하지만,
+    여기서는 딕셔너리로 시뮬레이션한다.
+    """
+
+    def __init__(self):
+        self.key_to_url: dict[str, URLMapping] = {}  # short_key → mapping
+        self.url_to_key: dict[str, str] = {}  # original_url → short_key
+        self.id_gen = IDGenerator(machine_id=1)
+
+    def shorten(self, original_url: str, method: str = "id") -> str:
+        """
+        긴 URL을 단축 URL로 변환한다.
+        method: "id" (ID 기반) 또는 "hash" (해시 기반)
+        """
+        # 이미 단축된 URL인지 확인 (중복 생성 방지)
+        if original_url in self.url_to_key:
+            existing_key = self.url_to_key[original_url]
+            print(f"  [중복] 기존 단축 키 반환: {existing_key}")
+            return existing_key
+
+        if method == "id":
+            uid = self.id_gen.next_id()
+            short_key = base62_encode(uid)[:7]
+        elif method == "hash":
+            short_key = generate_short_key_hash(original_url)
+            # 충돌 처리
+            salt = 0
+            while short_key in self.key_to_url:
+                salt += 1
+                short_key = generate_short_key_hash(
+                    original_url + f"_salt{salt}"
+                )
+                print(f"  [충돌] salt={salt}로 재해시")
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        # 매핑 저장
+        mapping = URLMapping(
+            short_key=short_key,
+            original_url=original_url,
+            created_at=time.time(),
+        )
+        self.key_to_url[short_key] = mapping
+        self.url_to_key[original_url] = short_key
+
+        return short_key
+
+    def redirect(self, short_key: str) -> str | None:
+        """
+        단축 키로 원본 URL을 조회한다.
+        실제 서비스에서는 302 응답을 반환한다.
+        """
+        mapping = self.key_to_url.get(short_key)
+        if not mapping:
+            return None
+
+        # 만료 확인
+        if mapping.expires_at and time.time() > mapping.expires_at:
+            print(f"  [만료] {short_key}는 만료되었습니다")
+            return None
+
+        # 클릭 카운트 증가 (실제로는 비동기 처리)
+        mapping.click_count += 1
+
+        return mapping.original_url
+
+
+# === 실행 예시 ===
+if __name__ == "__main__":
+    service = URLShortener()
+
+    # URL 단축 (ID 기반)
+    print("=== URL 단축 (ID 기반) ===")
+    urls = [
+        "https://example.com/articles/2026/system-design-interview",
+        "https://example.com/products/12345/details?ref=homepage",
+        "https://example.com/users/profile/settings",
+    ]
+    for url in urls:
+        key = service.shorten(url, method="id")
+        print(f"  {url}")
+        print(f"  → https://short.ly/{key}\n")
+
+    # 중복 URL 요청
+    print("=== 중복 URL 요청 ===")
+    key = service.shorten(urls[0], method="id")
+    print(f"  → https://short.ly/{key}\n")
+
+    # 리다이렉션
+    print("=== 리다이렉션 ===")
+    original = service.redirect(key)
+    print(f"  short.ly/{key} → {original}")
+
+    # Base62 변환 예시
+    print("\n=== Base62 변환 예시 ===")
+    test_nums = [125, 1000000, 3521614606]
+    for num in test_nums:
+        encoded = base62_encode(num)
+        decoded = base62_decode(encoded)
+        print(f"  {num} → '{encoded}' → {decoded}")
+```
+
+### Redis 캐시 통합 예시
+
+```python
+import redis
+import json
+import time
+
+
+class URLShortenerWithCache:
+    """Redis 캐시를 활용한 URL 단축 서비스"""
+
+    def __init__(self):
+        self.cache = redis.Redis(
+            host='localhost', port=6379, db=0, decode_responses=True
+        )
+        # DB는 딕셔너리로 시뮬레이션
+        self.db: dict[str, dict] = {}
+        self.cache_ttl = 86400  # 24시간
+
+    def _save_to_db(self, short_key: str, original_url: str) -> None:
+        """DB에 매핑을 저장한다."""
+        self.db[short_key] = {
+            "original_url": original_url,
+            "created_at": time.time(),
+            "click_count": 0,
+        }
+
+    def _get_from_db(self, short_key: str) -> str | None:
+        """DB에서 원본 URL을 조회한다."""
+        time.sleep(0.005)  # DB 조회 지연 시뮬레이션 (5ms)
+        record = self.db.get(short_key)
+        return record["original_url"] if record else None
+
+    def redirect(self, short_key: str) -> str | None:
+        """
+        Cache-Aside 패턴으로 리다이렉션을 처리한다.
+        1. Redis 캐시 확인
+        2. Miss이면 DB 조회 후 캐시에 저장
+        """
+        # 1단계: Redis 캐시 확인
+        cached_url = self.cache.get(f"url:{short_key}")
+        if cached_url:
+            print(f"  [Cache HIT] {short_key} → {cached_url}")
+            # 클릭 수 비동기 증가 (Redis INCR은 원자적)
+            self.cache.incr(f"clicks:{short_key}")
+            return cached_url
+
+        # 2단계: DB 조회
+        print(f"  [Cache MISS] {short_key} → DB 조회 중...")
+        original_url = self._get_from_db(short_key)
+
+        if original_url:
+            # 3단계: 캐시에 저장
+            self.cache.setex(
+                f"url:{short_key}",
+                self.cache_ttl,
+                original_url
+            )
+            self.cache.incr(f"clicks:{short_key}")
+            print(f"  [캐시 저장] {short_key} (TTL: {self.cache_ttl}초)")
+
+        return original_url
+
+    def get_stats(self, short_key: str) -> dict:
+        """단축 URL의 클릭 통계를 반환한다."""
+        clicks = self.cache.get(f"clicks:{short_key}")
+        return {
+            "short_key": short_key,
+            "clicks": int(clicks) if clicks else 0,
+        }
+
+
+# === 실행 예시 ===
+if __name__ == "__main__":
+    service = URLShortenerWithCache()
+
+    # DB에 테스트 데이터 삽입
+    service._save_to_db("aB3kX9p", "https://example.com/long/article")
+
+    # 첫 번째 요청 (Cache Miss)
+    print("=== 첫 번째 리다이렉션 ===")
+    url = service.redirect("aB3kX9p")
+    print(f"  결과: {url}\n")
+
+    # 두 번째 요청 (Cache Hit)
+    print("=== 두 번째 리다이렉션 ===")
+    url = service.redirect("aB3kX9p")
+    print(f"  결과: {url}\n")
+
+    # 통계 조회
+    stats = service.get_stats("aB3kX9p")
+    print(f"=== 통계 ===\n  {stats}")
+```
+
+## 정리
+
+| 개념 | 핵심 포인트 |
+|------|------------|
+| 요구사항 정의 | 기능(FR)과 비기능(NFR) 요구사항을 먼저 명확히 한다 |
+| 용량 추산 | QPS, 저장공간, 캐시 크기를 개략적으로 계산하여 규모를 파악 |
+| Base62 인코딩 | [0-9, a-z, A-Z] 62문자로 숫자를 짧은 문자열로 변환 |
+| 해시 절단 | MD5/SHA의 일부를 사용, 충돌 시 salt 추가 재해시 |
+| 사전 키 생성 | KGS가 미리 키를 생성해 풀에서 할당, 충돌 없음 |
+| 301 리다이렉트 | 영구 이동, 브라우저 캐싱, 트래픽 추적 불가 |
+| 302 리다이렉트 | 임시 이동, 매번 서버 경유, 클릭 통계 수집 가능 |
+| Redis 캐시 | Hot URL을 메모리에 저장하여 12만 QPS 읽기 처리 |
+| 비동기 통계 | 클릭 이벤트를 Kafka로 발행하여 실시간 분석 파이프라인 구축 |

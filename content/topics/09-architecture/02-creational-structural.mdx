@@ -1,0 +1,856 @@
+---
+title: "생성 패턴과 구조 패턴"
+topic: "09-architecture"
+order: 02
+---
+
+
+## 핵심 개념
+
+### 1. 생성 패턴 개요
+
+생성 패턴(Creational Patterns)은 **객체 생성 로직을 캡슐화**하여, 시스템이 어떤 구체 클래스를 사용하는지 감추는 패턴이다. 클라이언트 코드가 `new` 키워드에 직접 의존하지 않도록 만들어, **유연성과 재사용성**을 높인다.
+
+```
+┌─────────────────────────────────────────────────────┐
+│              생성 패턴의 핵심 목적                      │
+│                                                     │
+│  1. 객체 생성 과정을 추상화                             │
+│  2. 클라이언트와 구체 클래스 간 결합도 감소               │
+│  3. 객체 생성 방식의 변경이 클라이언트에 영향 없음         │
+│                                                     │
+│  ┌──────────┐     ┌──────────┐     ┌──────────┐    │
+│  │ Factory  │     │ Builder  │     │Singleton │    │
+│  │ Method   │     │          │     │          │    │
+│  └────┬─────┘     └────┬─────┘     └────┬─────┘    │
+│       │                │                │           │
+│       ▼                ▼                ▼           │
+│  서브클래스가       단계별 생성       전역 단일        │
+│  생성 결정          복잡한 객체      인스턴스 보장      │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. Factory Method 패턴
+
+> **서브클래스가 생성할 객체의 타입을 결정한다.**
+
+팩토리 메서드는 객체 생성을 서브클래스에 위임한다. 상위 클래스는 인터페이스만 정의하고, 구체적인 생성은 하위 클래스가 담당한다.
+
+```
+┌─────────────────────────────────────────────────┐
+│              Factory Method UML                  │
+│                                                  │
+│  ┌───────────────────┐                           │
+│  │   Creator         │  (추상 클래스)             │
+│  │                   │                           │
+│  │ + factory_method()│──── 추상 메서드            │
+│  │ + operation()     │──── factory_method() 호출  │
+│  └────────┬──────────┘                           │
+│           │ 상속                                  │
+│     ┌─────┴──────┐                               │
+│     │            │                               │
+│  ┌──▼──────┐  ┌──▼──────┐                        │
+│  │CreatorA │  │CreatorB │  (구체 클래스)          │
+│  │         │  │         │                        │
+│  │+factory │  │+factory │                        │
+│  │_method()│  │_method()│                        │
+│  └────┬────┘  └────┬────┘                        │
+│       │            │                             │
+│       ▼            ▼                             │
+│  ProductA     ProductB                           │
+└─────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === Product 인터페이스 ===
+class Notification(ABC):
+    """알림 메시지의 추상 클래스"""
+
+    @abstractmethod
+    def send(self, message: str) -> None:
+        pass
+
+
+# === 구체 Product ===
+class EmailNotification(Notification):
+    def send(self, message: str) -> None:
+        print(f"[이메일 발송] {message}")
+
+
+class SMSNotification(Notification):
+    def send(self, message: str) -> None:
+        print(f"[SMS 발송] {message}")
+
+
+class PushNotification(Notification):
+    def send(self, message: str) -> None:
+        print(f"[푸시 알림] {message}")
+
+
+# === Creator 추상 클래스 ===
+class NotificationCreator(ABC):
+    """팩토리 메서드를 선언하는 추상 Creator"""
+
+    @abstractmethod
+    def create_notification(self) -> Notification:
+        """서브클래스가 구현할 팩토리 메서드"""
+        pass
+
+    def notify(self, message: str) -> None:
+        """팩토리 메서드를 사용하는 비즈니스 로직"""
+        notification = self.create_notification()
+        notification.send(message)
+
+
+# === 구체 Creator ===
+class EmailNotificationCreator(NotificationCreator):
+    def create_notification(self) -> Notification:
+        return EmailNotification()
+
+
+class SMSNotificationCreator(NotificationCreator):
+    def create_notification(self) -> Notification:
+        return SMSNotification()
+
+
+# === 사용 ===
+def send_alert(creator: NotificationCreator, msg: str):
+    """Creator 타입에 따라 다른 알림이 발송된다"""
+    creator.notify(msg)
+
+send_alert(EmailNotificationCreator(), "서버 점검 안내")
+send_alert(SMSNotificationCreator(), "긴급 장애 알림")
+```
+
+**핵심**: 새로운 알림 채널(Slack, 카카오톡 등)을 추가할 때 기존 코드를 수정하지 않고 새로운 Creator 서브클래스만 추가하면 된다. 이는 **개방-폐쇄 원칙(OCP)** 을 따른다.
+
+---
+
+### 3. Abstract Factory 패턴
+
+> **관련된 객체 패밀리를 일관되게 생성한다.**
+
+Abstract Factory는 서로 관련 있는 객체 그룹을 한 번에 생성하는 인터페이스를 제공한다. 예를 들어 UI 테마(Light/Dark)에 따라 버튼, 텍스트 필드, 체크박스 등을 일관되게 생성한다.
+
+```
+┌──────────────────────────────────────────────────────┐
+│            Abstract Factory 구조                      │
+│                                                      │
+│  ┌──────────────────┐                                │
+│  │ AbstractFactory   │  create_button()               │
+│  │                  │  create_input()                 │
+│  └──────┬───────────┘                                │
+│         │                                            │
+│    ┌────┴────────┐                                   │
+│    │             │                                   │
+│  ┌─▼───────┐  ┌─▼───────┐                           │
+│  │ Light   │  │ Dark    │                            │
+│  │ Factory │  │ Factory │                            │
+│  └────┬────┘  └────┬────┘                            │
+│       │            │                                 │
+│       ▼            ▼                                 │
+│  LightButton   DarkButton    ← 같은 인터페이스       │
+│  LightInput    DarkInput     ← 다른 구현             │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === 추상 제품 ===
+class Button(ABC):
+    @abstractmethod
+    def render(self) -> str:
+        pass
+
+class TextField(ABC):
+    @abstractmethod
+    def render(self) -> str:
+        pass
+
+
+# === 라이트 테마 제품 ===
+class LightButton(Button):
+    def render(self) -> str:
+        return "[ 밝은 버튼 ]"
+
+class LightTextField(TextField):
+    def render(self) -> str:
+        return "| 밝은 입력 필드 |"
+
+
+# === 다크 테마 제품 ===
+class DarkButton(Button):
+    def render(self) -> str:
+        return "[ 어두운 버튼 ]"
+
+class DarkTextField(TextField):
+    def render(self) -> str:
+        return "| 어두운 입력 필드 |"
+
+
+# === 추상 팩토리 ===
+class UIFactory(ABC):
+    @abstractmethod
+    def create_button(self) -> Button:
+        pass
+
+    @abstractmethod
+    def create_text_field(self) -> TextField:
+        pass
+
+
+# === 구체 팩토리 ===
+class LightThemeFactory(UIFactory):
+    def create_button(self) -> Button:
+        return LightButton()
+
+    def create_text_field(self) -> TextField:
+        return LightTextField()
+
+class DarkThemeFactory(UIFactory):
+    def create_button(self) -> Button:
+        return DarkButton()
+
+    def create_text_field(self) -> TextField:
+        return DarkTextField()
+
+
+# === 클라이언트: 팩토리에만 의존 ===
+def build_ui(factory: UIFactory):
+    button = factory.create_button()
+    text_field = factory.create_text_field()
+    print(button.render())
+    print(text_field.render())
+
+# 테마 전환이 팩토리 교체만으로 가능
+build_ui(LightThemeFactory())
+build_ui(DarkThemeFactory())
+```
+
+---
+
+### 4. Builder 패턴
+
+> **복잡한 객체를 단계별로 생성한다.**
+
+생성자에 많은 매개변수가 필요한 경우, Builder 패턴으로 가독성과 유연성을 확보할 수 있다.
+
+```
+┌────────────────────────────────────────────────┐
+│              Builder 흐름                       │
+│                                                │
+│  Director                                      │
+│    │                                           │
+│    ├── builder.set_cpu("i9")                   │
+│    ├── builder.set_ram(64)                     │
+│    ├── builder.set_storage("2TB SSD")          │
+│    ├── builder.set_gpu("RTX 4090")             │
+│    │                                           │
+│    └── builder.build()  →  Computer 객체       │
+│                                                │
+│  동일한 Builder로 다양한 구성을 만들 수 있음      │
+└────────────────────────────────────────────────┘
+```
+
+```python
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Computer:
+    """완성된 컴퓨터 객체"""
+    cpu: str = ""
+    ram: int = 0
+    storage: str = ""
+    gpu: Optional[str] = None
+    os: str = "Linux"
+
+
+class ComputerBuilder:
+    """단계별로 Computer를 조립하는 Builder"""
+
+    def __init__(self):
+        self._computer = Computer()
+
+    def set_cpu(self, cpu: str) -> "ComputerBuilder":
+        self._computer.cpu = cpu
+        return self  # 메서드 체이닝 지원
+
+    def set_ram(self, ram: int) -> "ComputerBuilder":
+        self._computer.ram = ram
+        return self
+
+    def set_storage(self, storage: str) -> "ComputerBuilder":
+        self._computer.storage = storage
+        return self
+
+    def set_gpu(self, gpu: str) -> "ComputerBuilder":
+        self._computer.gpu = gpu
+        return self
+
+    def set_os(self, os: str) -> "ComputerBuilder":
+        self._computer.os = os
+        return self
+
+    def build(self) -> Computer:
+        """최종 객체 반환"""
+        result = self._computer
+        self._computer = Computer()  # 재사용 대비 초기화
+        return result
+
+
+# === 메서드 체이닝으로 가독성 높은 생성 ===
+gaming_pc = (
+    ComputerBuilder()
+    .set_cpu("i9-13900K")
+    .set_ram(64)
+    .set_storage("2TB NVMe SSD")
+    .set_gpu("RTX 4090")
+    .set_os("Windows 11")
+    .build()
+)
+
+office_pc = (
+    ComputerBuilder()
+    .set_cpu("i5-13400")
+    .set_ram(16)
+    .set_storage("512GB SSD")
+    .build()
+)
+
+print(gaming_pc)  # gpu="RTX 4090" 포함
+print(office_pc)  # gpu=None, os="Linux"
+```
+
+---
+
+### 5. Singleton 패턴
+
+> **클래스의 인스턴스가 단 하나만 존재하도록 보장한다.**
+
+```
+┌──────────────────────────────────────────────┐
+│              Singleton 구조                    │
+│                                              │
+│  클라이언트A ──┐                              │
+│               │                              │
+│  클라이언트B ──┼──▶  [ Singleton 인스턴스 ]    │
+│               │       (단 하나만 존재)         │
+│  클라이언트C ──┘                              │
+│                                              │
+│  getInstance() 호출 → 항상 같은 객체 반환      │
+└──────────────────────────────────────────────┘
+```
+
+```python
+class DatabaseConnection:
+    """Singleton 패턴으로 DB 연결 관리"""
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self, host: str = "localhost", port: int = 5432):
+        if self._initialized:
+            return
+        self.host = host
+        self.port = port
+        self._connection = None
+        self._initialized = True
+        print(f"DB 연결 생성: {host}:{port}")
+
+    def query(self, sql: str) -> str:
+        return f"실행: {sql} on {self.host}:{self.port}"
+
+
+# === 항상 같은 인스턴스 ===
+db1 = DatabaseConnection("prod-db", 5432)
+db2 = DatabaseConnection()  # 이미 생성됨, 초기화 스킵
+
+print(db1 is db2)  # True — 동일 객체
+```
+
+#### Singleton의 문제점
+
+| 문제 | 설명 |
+|------|------|
+| **테스트 어려움** | 전역 상태를 가지므로 테스트 간 격리가 안 됨 |
+| **높은 결합도** | 어디서든 접근 가능 → 의존 관계 추적 어려움 |
+| **멀티스레드 위험** | 동시 접근 시 인스턴스가 중복 생성될 수 있음 |
+| **SRP 위반** | 본래 기능 + 인스턴스 관리 = 두 가지 책임 |
+
+#### Singleton 대안
+
+```python
+# === 대안 1: 의존성 주입(DI) ===
+# 싱글톤 대신 외부에서 하나의 인스턴스를 주입한다
+
+class UserService:
+    def __init__(self, db: DatabaseConnection):
+        self.db = db  # 외부에서 주입받음
+
+# 컨테이너가 단일 인스턴스를 관리
+db = DatabaseConnection("prod-db", 5432)
+service = UserService(db)
+
+
+# === 대안 2: 모듈 수준 싱글톤 (Python 전용) ===
+# Python에서는 모듈 자체가 싱글톤처럼 동작한다
+# config.py
+settings = {"host": "localhost", "port": 5432}
+# 다른 파일에서 from config import settings → 항상 같은 객체
+```
+
+---
+
+### 6. 구조 패턴 개요
+
+구조 패턴(Structural Patterns)은 **클래스와 객체를 더 큰 구조로 조합**하는 방법을 다룬다. 인터페이스 호환, 기능 확장, 복잡도 은닉 등이 핵심 목적이다.
+
+```
+┌──────────────────────────────────────────────────┐
+│              구조 패턴 분류                         │
+│                                                  │
+│  ┌─────────┐  인터페이스 변환    : Adapter        │
+│  │ 호환성  │  접근 제어/대리     : Proxy          │
+│  └─────────┘                                     │
+│                                                  │
+│  ┌─────────┐  동적 기능 추가     : Decorator      │
+│  │ 확장성  │  트리 구조 표현     : Composite      │
+│  └─────────┘                                     │
+│                                                  │
+│  ┌─────────┐  복잡도 은닉       : Facade          │
+│  │ 단순화  │                                     │
+│  └─────────┘                                     │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+### 7. Adapter 패턴
+
+> **호환되지 않는 인터페이스를 변환하여 함께 동작하게 한다.**
+
+레거시 코드, 외부 라이브러리, 서드파티 API 등 인터페이스가 다른 코드를 통합할 때 유용하다.
+
+```
+┌──────────────────────────────────────────────────┐
+│              Adapter 구조                         │
+│                                                  │
+│  Client ──▶ Target Interface                     │
+│                  ▲                               │
+│                  │ 구현                           │
+│              Adapter ──▶ Adaptee (레거시 코드)    │
+│                                                  │
+│  Client는 Target 인터페이스만 알고,               │
+│  Adapter가 Adaptee의 메서드를 변환해준다           │
+└──────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === 레거시 결제 시스템 (Adaptee) ===
+class OldPaymentGateway:
+    """기존 결제 시스템 — 인터페이스가 다르다"""
+
+    def process_payment_legacy(self, amount_cents: int, card_num: str) -> dict:
+        return {"status": "OK", "cents": amount_cents}
+
+
+# === 새로운 인터페이스 (Target) ===
+class PaymentProcessor(ABC):
+    @abstractmethod
+    def pay(self, amount: float, method: str) -> bool:
+        pass
+
+
+# === Adapter ===
+class PaymentAdapter(PaymentProcessor):
+    """레거시 시스템을 새로운 인터페이스에 맞게 변환"""
+
+    def __init__(self, legacy_gateway: OldPaymentGateway):
+        self._gateway = legacy_gateway
+
+    def pay(self, amount: float, method: str) -> bool:
+        # 금액 변환: 원(float) → 센트(int)
+        amount_cents = int(amount * 100)
+        result = self._gateway.process_payment_legacy(amount_cents, method)
+        return result["status"] == "OK"
+
+
+# === 클라이언트: 새 인터페이스만 사용 ===
+processor: PaymentProcessor = PaymentAdapter(OldPaymentGateway())
+success = processor.pay(49.99, "4111-1111-1111-1111")
+```
+
+---
+
+### 8. Decorator 패턴
+
+> **객체에 동적으로 기능을 추가한다. 상속의 유연한 대안이다.**
+
+```
+┌─────────────────────────────────────────────────────┐
+│              Decorator 체이닝                         │
+│                                                     │
+│  ┌───────────┐   ┌───────────┐   ┌──────────────┐  │
+│  │ Encryption│──▶│Compression│──▶│ FileWriter   │  │
+│  │ Decorator │   │ Decorator │   │ (원본 객체)   │  │
+│  └───────────┘   └───────────┘   └──────────────┘  │
+│                                                     │
+│  write("data")                                      │
+│    → 암호화("data")                                  │
+│      → 압축(encrypted)                               │
+│        → 파일 쓰기(compressed)                        │
+└─────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+class DataSource(ABC):
+    @abstractmethod
+    def write(self, data: str) -> None:
+        pass
+
+    @abstractmethod
+    def read(self) -> str:
+        pass
+
+
+class FileDataSource(DataSource):
+    """원본 객체: 파일에 데이터를 읽고 쓴다"""
+
+    def __init__(self, filename: str):
+        self.filename = filename
+        self._data = ""
+
+    def write(self, data: str) -> None:
+        self._data = data
+        print(f"[파일] '{self.filename}'에 저장: {data[:30]}...")
+
+    def read(self) -> str:
+        return self._data
+
+
+class DataSourceDecorator(DataSource):
+    """Decorator 기반 클래스"""
+
+    def __init__(self, source: DataSource):
+        self._wrapped = source
+
+    def write(self, data: str) -> None:
+        self._wrapped.write(data)
+
+    def read(self) -> str:
+        return self._wrapped.read()
+
+
+class EncryptionDecorator(DataSourceDecorator):
+    """암호화 기능 추가"""
+
+    def write(self, data: str) -> None:
+        encrypted = f"[ENCRYPTED:{data}]"
+        print(f"[암호화] 데이터 암호화 완료")
+        super().write(encrypted)
+
+
+class CompressionDecorator(DataSourceDecorator):
+    """압축 기능 추가"""
+
+    def write(self, data: str) -> None:
+        compressed = f"[COMPRESSED:{data}]"
+        print(f"[압축] 데이터 압축 완료")
+        super().write(compressed)
+
+
+# === 데코레이터 조합: 암호화 + 압축 + 파일 저장 ===
+source = EncryptionDecorator(
+    CompressionDecorator(
+        FileDataSource("output.dat")
+    )
+)
+source.write("중요한 사용자 데이터")
+```
+
+Python의 `@decorator` 문법도 같은 원리다. 함수를 감싸서 기능을 추가한다.
+
+---
+
+### 9. Proxy 패턴
+
+> **다른 객체에 대한 접근을 제어하는 대리 객체를 제공한다.**
+
+```
+┌──────────────────────────────────────────────────────┐
+│              Proxy 종류                               │
+│                                                      │
+│  ┌─────────────┐  지연 로딩: 무거운 객체를 필요할 때   │
+│  │ Virtual     │  비로소 생성한다                      │
+│  │ Proxy       │  예: 이미지 프리뷰                    │
+│  └─────────────┘                                     │
+│                                                      │
+│  ┌─────────────┐  접근 권한 확인 후 실제 객체에         │
+│  │ Protection  │  요청을 전달한다                      │
+│  │ Proxy       │  예: 관리자 권한 체크                 │
+│  └─────────────┘                                     │
+│                                                      │
+│  ┌─────────────┐  결과를 캐싱하여 반복 요청             │
+│  │ Caching     │  시 실제 객체 호출을 줄인다            │
+│  │ Proxy       │  예: API 응답 캐싱                    │
+│  └─────────────┘                                     │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+import time
+
+
+class DataService(ABC):
+    @abstractmethod
+    def fetch(self, key: str) -> str:
+        pass
+
+
+class SlowDatabase(DataService):
+    """실제 서비스: 느린 DB 조회"""
+
+    def fetch(self, key: str) -> str:
+        time.sleep(1)  # 느린 조회 시뮬레이션
+        return f"DB 결과: {key}의 데이터"
+
+
+class CachingProxy(DataService):
+    """캐싱 프록시: 결과를 메모리에 저장"""
+
+    def __init__(self, real_service: DataService):
+        self._service = real_service
+        self._cache: dict[str, str] = {}
+
+    def fetch(self, key: str) -> str:
+        if key not in self._cache:
+            print(f"[캐시 MISS] DB에서 조회: {key}")
+            self._cache[key] = self._service.fetch(key)
+        else:
+            print(f"[캐시 HIT] 캐시에서 반환: {key}")
+        return self._cache[key]
+
+
+# === 클라이언트는 Proxy인지 Real인지 모른다 ===
+service: DataService = CachingProxy(SlowDatabase())
+print(service.fetch("user:1"))   # 캐시 MISS → DB 조회 (느림)
+print(service.fetch("user:1"))   # 캐시 HIT → 즉시 반환 (빠름)
+```
+
+---
+
+### 10. Facade 패턴
+
+> **복잡한 서브시스템에 대한 단순화된 인터페이스를 제공한다.**
+
+```
+┌────────────────────────────────────────────────────┐
+│              Facade 구조                            │
+│                                                    │
+│                ┌──────────┐                        │
+│  Client ──▶   │  Facade  │  ← 단순한 인터페이스    │
+│                └────┬─────┘                        │
+│                     │                              │
+│          ┌──────────┼──────────┐                   │
+│          │          │          │                   │
+│     ┌────▼───┐ ┌───▼────┐ ┌──▼─────┐             │
+│     │인코더  │ │파일     │ │네트워크│              │
+│     │시스템  │ │시스템   │ │시스템  │              │
+│     └────────┘ └────────┘ └────────┘              │
+│                                                    │
+│     복잡한 내부 시스템을 Facade가 감싸준다           │
+└────────────────────────────────────────────────────┘
+```
+
+```python
+# === 복잡한 서브시스템들 ===
+class VideoEncoder:
+    def encode(self, filename: str, fmt: str) -> str:
+        return f"{filename}.{fmt}"
+
+class AudioMixer:
+    def mix(self, tracks: list[str]) -> str:
+        return f"mixed_{'_'.join(tracks)}"
+
+class FileSystem:
+    def save(self, data: str, path: str) -> None:
+        print(f"저장 완료: {path}")
+
+class CloudUploader:
+    def upload(self, filepath: str) -> str:
+        return f"https://cdn.example.com/{filepath}"
+
+
+# === Facade: 복잡한 과정을 한 줄로 ===
+class VideoPublisher:
+    """비디오 퍼블리싱 퍼사드"""
+
+    def __init__(self):
+        self._encoder = VideoEncoder()
+        self._mixer = AudioMixer()
+        self._fs = FileSystem()
+        self._uploader = CloudUploader()
+
+    def publish(self, video: str, audio: list[str], fmt: str = "mp4") -> str:
+        """복잡한 퍼블리싱 과정을 하나의 메서드로 제공"""
+        encoded = self._encoder.encode(video, fmt)
+        mixed = self._mixer.mix(audio)
+        output = f"{encoded}__{mixed}"
+        self._fs.save(output, f"/output/{output}")
+        url = self._uploader.upload(output)
+        return url
+
+
+# === 클라이언트: 내부 구조를 알 필요 없음 ===
+publisher = VideoPublisher()
+url = publisher.publish("interview", ["bgm", "voice"], "mp4")
+print(url)
+```
+
+---
+
+### 11. Composite 패턴
+
+> **개별 객체와 복합 객체를 동일하게 취급한다. 트리 구조를 표현한다.**
+
+```
+┌──────────────────────────────────────────────────┐
+│              Composite 트리 구조                   │
+│                                                  │
+│              Directory (root/)                   │
+│              ├── File (readme.md)                │
+│              ├── Directory (src/)                │
+│              │   ├── File (main.py)              │
+│              │   └── File (utils.py)             │
+│              └── Directory (tests/)              │
+│                  └── File (test_main.py)         │
+│                                                  │
+│  root.size() → 모든 하위 요소의 크기 합산          │
+│  file.size() → 단일 파일 크기                     │
+│  → 동일한 인터페이스로 트리 전체를 순회             │
+└──────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+class FileSystemEntry(ABC):
+    """Component: 파일과 디렉토리의 공통 인터페이스"""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    @abstractmethod
+    def size(self) -> int:
+        pass
+
+    @abstractmethod
+    def display(self, indent: int = 0) -> None:
+        pass
+
+
+class File(FileSystemEntry):
+    """Leaf: 단일 파일"""
+
+    def __init__(self, name: str, file_size: int):
+        super().__init__(name)
+        self._size = file_size
+
+    def size(self) -> int:
+        return self._size
+
+    def display(self, indent: int = 0) -> None:
+        print(f"{'  ' * indent}📄 {self.name} ({self._size}B)")
+
+
+class Directory(FileSystemEntry):
+    """Composite: 하위 요소를 가지는 디렉토리"""
+
+    def __init__(self, name: str):
+        super().__init__(name)
+        self._children: list[FileSystemEntry] = []
+
+    def add(self, entry: FileSystemEntry) -> None:
+        self._children.append(entry)
+
+    def size(self) -> int:
+        return sum(child.size() for child in self._children)
+
+    def display(self, indent: int = 0) -> None:
+        print(f"{'  ' * indent}📁 {self.name}/ ({self.size()}B)")
+        for child in self._children:
+            child.display(indent + 1)
+
+
+# === 트리 구성 ===
+root = Directory("project")
+root.add(File("README.md", 1024))
+
+src = Directory("src")
+src.add(File("main.py", 2048))
+src.add(File("utils.py", 512))
+root.add(src)
+
+root.display()
+# 📁 project/ (3584B)
+#   📄 README.md (1024B)
+#   📁 src/ (2560B)
+#     📄 main.py (2048B)
+#     📄 utils.py (512B)
+```
+
+---
+
+### 12. 패턴 선택 가이드
+
+| 상황 | 적합한 패턴 | 이유 |
+|------|------------|------|
+| 객체 생성 로직이 복잡하고 변경될 수 있음 | **Factory Method** | 서브클래스가 생성 결정 |
+| 관련 객체군을 일관되게 생성해야 함 | **Abstract Factory** | 패밀리 단위 생성 보장 |
+| 생성자 매개변수가 많고 선택적 | **Builder** | 단계별 조립, 가독성 향상 |
+| 인터페이스가 다른 코드를 통합 | **Adapter** | 인터페이스 변환 |
+| 기능을 런타임에 유연하게 추가 | **Decorator** | 상속 없이 기능 확장 |
+| 객체 접근을 제어(캐싱, 권한, 지연) | **Proxy** | 대리 객체가 접근 관리 |
+| 복잡한 시스템을 단순하게 노출 | **Facade** | 통합 인터페이스 제공 |
+| 트리 구조, 전체-부분 관계 | **Composite** | 재귀적 동일 인터페이스 |
+| 전역 단일 인스턴스가 필요 (주의) | **Singleton** | 대안(DI) 우선 검토 |
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 생성 패턴 | 객체 생성 로직을 캡슐화하여 유연성 확보 |
+| Factory Method | 서브클래스가 생성할 객체 타입을 결정 |
+| Abstract Factory | 관련 객체 패밀리를 일관되게 생성 |
+| Builder | 복잡한 객체를 단계별로 조립 |
+| Singleton | 전역 단일 인스턴스 (테스트 어려움 주의) |
+| 구조 패턴 | 클래스/객체를 더 큰 구조로 조합 |
+| Adapter | 호환되지 않는 인터페이스 변환 |
+| Decorator | 동적 기능 추가, 상속의 유연한 대안 |
+| Proxy | 접근 제어, 캐싱, 지연 로딩 |
+| Facade | 복잡한 서브시스템의 단순화된 인터페이스 |
+| Composite | 트리 구조에서 개별/복합 객체 동일 취급 |
+| 핵심 원칙 | 패턴은 도구 — 문제에 맞게 선택, 과용 주의 |

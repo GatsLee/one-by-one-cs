@@ -1,0 +1,634 @@
+---
+title: "CAP 정리와 합의 알고리즘"
+topic: "05-system-design"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 1. 분산 시스템이란?
+
+분산 시스템은 네트워크로 연결된 여러 대의 컴퓨터(노드)가 협력하여 하나의 시스템처럼 동작하는 구조다. 사용자 입장에서는 하나의 서비스로 보이지만, 내부적으로는 여러 노드가 데이터를 나누어 저장하고 처리한다.
+
+```
+┌──────────────────────────────────────────────────┐
+│                   클라이언트                        │
+│              "하나의 시스템으로 보임"                  │
+└──────────────┬───────────────────┬────────────────┘
+               │                   │
+        ┌──────▼──────┐    ┌──────▼──────┐
+        │   노드 A     │    │   노드 B     │
+        │  (서울)      │◄──►│  (부산)      │
+        │  데이터 1,2  │    │  데이터 2,3  │
+        └──────┬──────┘    └──────┬──────┘
+               │                   │
+        ┌──────▼──────────────────▼──────┐
+        │            노드 C              │
+        │           (대전)               │
+        │         데이터 1,3             │
+        └────────────────────────────────┘
+```
+
+**왜 분산 시스템을 쓰는가?**
+- **확장성(Scalability)**: 트래픽이 늘면 노드를 추가하면 된다
+- **가용성(Availability)**: 한 노드가 죽어도 다른 노드가 서비스를 계속한다
+- **지리적 분산**: 사용자와 가까운 노드에서 빠르게 응답한다
+
+하지만 분산 시스템에는 근본적인 트레이드오프가 존재한다. 이것이 바로 CAP 정리다.
+
+---
+
+### 2. CAP 정리 (Brewer's Theorem)
+
+2000년 에릭 브루어(Eric Brewer)가 제안하고, 2002년 세스 길버트와 낸시 린치가 증명한 정리다.
+
+> **분산 시스템은 다음 세 가지 속성 중 최대 두 가지만 동시에 보장할 수 있다.**
+
+#### C — Consistency (일관성)
+모든 노드가 같은 시점에 같은 데이터를 보는 것. 노드 A에 쓴 데이터를 즉시 노드 B에서 읽을 수 있어야 한다.
+
+```
+[일관성 보장]
+클라이언트 → 노드A에 "x=5" 기록
+클라이언트 → 노드B에서 "x" 읽기 → 반드시 "5" 반환
+
+[일관성 미보장]
+클라이언트 → 노드A에 "x=5" 기록
+클라이언트 → 노드B에서 "x" 읽기 → "3" 반환 (이전 값)
+```
+
+#### A — Availability (가용성)
+장애가 나지 않은 모든 노드는 합리적인 시간 안에 응답을 반환해야 한다. "잠시 기다려 주세요"라는 무한 대기가 아니라, 반드시 성공 또는 실패 응답을 준다.
+
+#### P — Partition Tolerance (분단 허용성)
+네트워크 분단(partition)이 발생해도 시스템이 계속 동작해야 한다. 분단이란 노드 간 통신이 끊기는 상황이다.
+
+```
+[네트워크 분단 상황]
+┌──────────┐          X          ┌──────────┐
+│  노드 A   │ ──── 끊김 ──── │  노드 B   │
+│  (서울)   │                    │  (부산)   │
+└──────────┘                    └──────────┘
+   서로 통신 불가 → 각자 독립적으로 동작해야 함
+```
+
+#### 왜 세 가지를 동시에 못 하는가?
+
+실제 네트워크에서 분단(P)은 **반드시 발생**한다. 케이블이 끊기거나, 라우터가 고장나거나, 데이터센터가 격리되는 상황은 피할 수 없다. 따라서 P는 선택이 아닌 필수다.
+
+P가 발생한 상황에서:
+- **C를 선택하면 (CP)**: 분단된 노드 간 데이터 불일치를 막기 위해, 일부 요청을 거부한다 → A 포기
+- **A를 선택하면 (AP)**: 모든 노드가 응답하지만, 분단된 노드 간 데이터가 다를 수 있다 → C 포기
+
+```
+        P (분단 허용) — 실제 시스템에서 필수
+       / \
+      /   \
+    CP     AP
+   일관성   가용성
+   우선     우선
+```
+
+---
+
+### 3. CP 시스템 vs AP 시스템
+
+#### CP 시스템 (일관성 + 분단 허용)
+
+분단 발생 시 일관성을 보장하기 위해 일부 요청을 거부한다.
+
+| 시스템 | 설명 |
+|--------|------|
+| **ZooKeeper** | 분산 코디네이터. 과반수 노드 응답 필요 |
+| **etcd** | Kubernetes의 설정 저장소. Raft 합의 사용 |
+| **HBase** | 강한 일관성의 분산 데이터베이스 |
+| **MongoDB (기본 설정)** | Primary 노드 기반 읽기/쓰기 |
+
+**사용 사례**: 금융 거래, 재고 관리 등 데이터 정확성이 핵심인 시스템
+
+#### AP 시스템 (가용성 + 분단 허용)
+
+분단 발생 시에도 모든 노드가 응답하지만, 노드 간 데이터가 일시적으로 다를 수 있다.
+
+| 시스템 | 설명 |
+|--------|------|
+| **Cassandra** | 링 구조. 최종 일관성 |
+| **DynamoDB** | AWS의 Key-Value 저장소 |
+| **CouchDB** | 문서 기반 DB. 충돌 해결 메커니즘 |
+| **DNS** | 도메인 이름 시스템 |
+
+**사용 사례**: 소셜 미디어 타임라인, 상품 추천, 로그 수집 등 약간의 불일치가 허용되는 시스템
+
+```
+[은행 계좌 이체 — CP 필요]
+잔액 100만원 → 50만원 이체
+노드A: 잔액 50만원 (정확)
+노드B: 잔액 100만원 (불일치!)  ← 이러면 안 됨!
+→ CP: 분단 시 이체 거부 (안전)
+
+[SNS 좋아요 수 — AP 가능]
+게시글 좋아요 1000개 → +1
+노드A: 1001개
+노드B: 1000개 (잠시 불일치)  ← 잠깐은 괜찮음
+→ AP: 항상 응답, 나중에 동기화
+```
+
+---
+
+### 4. 일관성 모델 (Consistency Models)
+
+분산 시스템에서 "일관성"은 단순한 이분법이 아니라 스펙트럼이다.
+
+#### 강한 일관성 (Strong Consistency / Linearizability)
+- 쓰기 완료 후 어떤 노드에서든 최신 값을 읽을 수 있다
+- 마치 단일 서버처럼 동작
+- 대가: 높은 지연 시간 (모든 노드 동기화 필요)
+
+#### 순차 일관성 (Sequential Consistency)
+- 모든 노드가 같은 순서로 연산을 관찰
+- 실시간 순서는 보장하지 않음 (약간의 지연 허용)
+
+#### 인과적 일관성 (Causal Consistency)
+- 인과 관계가 있는 연산만 순서를 보장
+- "A가 B의 원인이면, A가 먼저 보여야 한다"
+
+#### 최종 일관성 (Eventual Consistency)
+- 더 이상 쓰기가 없으면, 결국 모든 노드가 같은 값으로 수렴
+- 수렴까지 시간이 걸릴 수 있음
+- 가장 약하지만 가장 빠르고 가용성 높음
+
+```
+강한 일관성 ←─────────────────────→ 최종 일관성
+  (느림, 정확)                        (빠름, 느슨)
+   │                                      │
+   ├─ 은행 거래                    ├─ DNS 전파
+   ├─ 재고 관리                    ├─ SNS 좋아요
+   └─ 분산 락                      └─ 추천 시스템
+```
+
+---
+
+### 5. Paxos 합의 알고리즘
+
+레슬리 램포트(Leslie Lamport)가 1989년에 제안한 합의 알고리즘이다. 분산 시스템에서 여러 노드가 하나의 값에 동의하는 방법을 정의한다.
+
+#### 핵심 역할
+- **Proposer**: 값을 제안하는 노드
+- **Acceptor**: 제안을 수락/거부하는 노드
+- **Learner**: 합의된 값을 학습하는 노드
+
+#### 2단계 프로토콜
+
+```
+[Phase 1: Prepare/Promise]
+Proposer                    Acceptor (3개)
+   │                         │
+   ├── Prepare(n=1) ────────►│ Acceptor1: Promise(n=1) ──►
+   ├── Prepare(n=1) ────────►│ Acceptor2: Promise(n=1) ──►
+   ├── Prepare(n=1) ────────►│ Acceptor3: Promise(n=1) ──►
+   │                         │
+   │  과반수(2개 이상) Promise 받음 → Phase 2 진행
+
+[Phase 2: Accept/Accepted]
+Proposer                    Acceptor
+   │                         │
+   ├── Accept(n=1, v="X") ──►│ Acceptor1: Accepted ──►
+   ├── Accept(n=1, v="X") ──►│ Acceptor2: Accepted ──►
+   ├── Accept(n=1, v="X") ──►│ Acceptor3: (장애) ──X
+   │                         │
+   │  과반수 Accepted → 합의 완료! 값 "X" 확정
+```
+
+**Paxos의 문제점**: 이해하기 어렵고, 구현이 복잡하며, 리더가 없어 여러 Proposer가 충돌할 수 있다(라이브락). 이 문제를 해결하기 위해 Raft가 등장했다.
+
+---
+
+### 6. Raft 합의 알고리즘
+
+디에고 옹가로(Diego Ongaro)가 2014년에 발표한 합의 알고리즘으로, Paxos와 동등한 안전성을 보장하면서도 이해하기 쉽게 설계되었다. etcd, Consul, CockroachDB 등에서 사용된다.
+
+#### 노드의 세 가지 상태
+
+```
+                 타임아웃 (heartbeat 없음)
+    ┌─────────────────────────────────────┐
+    │                                     ▼
+┌───┴────┐    투표 과반수 획득    ┌──────────┐
+│Follower│◄──────────────────── │Candidate │
+└────────┘                      └─────┬────┘
+    ▲                                 │
+    │         선거 승리                │
+    │    ┌──────────┐                 │
+    └────│  Leader  │◄────────────────┘
+         └──────────┘
+         새 리더 발견 시 Follower로 강등
+```
+
+#### (1) 리더 선출 (Leader Election)
+
+```
+시간 흐름 →
+
+Follower A: ─────────[타임아웃!]──► Candidate ──[투표 요청]──►
+Follower B: ─────────────────────── 투표 응답(찬성) ──►
+Follower C: ─────────────────────── 투표 응답(찬성) ──►
+
+A가 과반수(2/3) 득표 → Leader로 승격!
+
+Leader A:   ──[heartbeat]──[heartbeat]──[heartbeat]──►
+Follower B: ──────────────────────────────────────────►
+Follower C: ──────────────────────────────────────────►
+```
+
+**선거 규칙:**
+- 각 노드는 무작위 타임아웃(150~300ms)을 가짐
+- 타임아웃이 먼저 끝난 노드가 후보(Candidate)가 됨
+- 후보는 자기 자신에게 투표하고 다른 노드에 투표 요청
+- 과반수 득표하면 리더가 됨
+- 각 임기(Term)에서 한 노드는 한 번만 투표 가능
+
+#### (2) 로그 복제 (Log Replication)
+
+리더가 클라이언트의 쓰기 요청을 받아 다른 노드에 복제하는 과정이다.
+
+```
+클라이언트: "x=5 저장해줘"
+       │
+       ▼
+┌─────────────┐
+│  Leader (A)  │ ① 로그에 "x=5" 기록 (uncommitted)
+│  로그: [x=5] │
+└──────┬──────┘
+       │ ② 로그 복제 요청 (AppendEntries RPC)
+       ├──────────────────────┐
+       ▼                      ▼
+┌─────────────┐        ┌─────────────┐
+│ Follower (B) │        │ Follower (C) │
+│ 로그: [x=5]  │        │ 로그: [x=5]  │
+└──────┬──────┘        └──────┬──────┘
+       │ ③ 복제 성공 응답      │ ③ 복제 성공 응답
+       └──────┬───────────────┘
+              ▼
+┌─────────────┐
+│  Leader (A)  │ ④ 과반수 확인 → commit!
+│  x=5 확정    │ ⑤ 클라이언트에 성공 응답
+└─────────────┘
+```
+
+**커밋 규칙:**
+- 과반수(N/2 + 1) 노드에 복제되면 커밋
+- 커밋된 로그는 절대 삭제되지 않음
+- 리더는 주기적 heartbeat로 팔로워에 커밋 정보 전달
+
+#### (3) 안전성 보장
+
+- **선거 제한**: 로그가 최신이 아닌 후보에게는 투표하지 않음
+- **리더 완전성**: 커밋된 로그를 가진 노드만 리더가 될 수 있음
+- **로그 매칭**: 같은 인덱스와 같은 Term의 로그는 같은 명령을 가짐
+
+---
+
+## 코드 예시
+
+### Raft 리더 선출 시뮬레이션 (간단 버전)
+
+```python
+import random
+import time
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import Optional
+
+class State(Enum):
+    FOLLOWER = "follower"
+    CANDIDATE = "candidate"
+    LEADER = "leader"
+
+@dataclass
+class LogEntry:
+    """Raft 로그 엔트리"""
+    term: int          # 이 로그가 생성된 임기
+    command: str       # 실행할 명령 (예: "x=5")
+    index: int         # 로그 인덱스
+
+@dataclass
+class RaftNode:
+    """
+    Raft 합의 알고리즘의 노드를 시뮬레이션하는 클래스.
+    실제 Raft는 RPC 통신을 사용하지만, 여기서는 메서드 호출로 단순화한다.
+    """
+    node_id: int
+    state: State = State.FOLLOWER
+    current_term: int = 0           # 현재 임기 번호
+    voted_for: Optional[int] = None # 이번 임기에 투표한 노드 ID
+    log: list = field(default_factory=list)  # 로그 엔트리 리스트
+    commit_index: int = 0           # 커밋된 마지막 로그 인덱스
+
+    def start_election(self, all_nodes: list['RaftNode']) -> bool:
+        """
+        리더 선출 시작.
+        1) Term 증가
+        2) 자기 자신에게 투표
+        3) 다른 노드에 투표 요청
+        4) 과반수 득표 시 리더로 승격
+        """
+        self.current_term += 1
+        self.state = State.CANDIDATE
+        self.voted_for = self.node_id
+
+        # 자기 자신의 1표로 시작
+        votes_received = 1
+        majority = len(all_nodes) // 2 + 1
+
+        print(f"\n[선거] 노드 {self.node_id}이 Term {self.current_term}에서 선거 시작")
+
+        # 다른 노드에 투표 요청
+        for node in all_nodes:
+            if node.node_id == self.node_id:
+                continue  # 자기 자신은 건너뜀
+
+            vote_granted = node.receive_vote_request(
+                candidate_id=self.node_id,
+                candidate_term=self.current_term,
+                last_log_index=len(self.log),
+                last_log_term=self.log[-1].term if self.log else 0
+            )
+
+            if vote_granted:
+                votes_received += 1
+                print(f"  노드 {node.node_id} → 찬성 (현재 {votes_received}표)")
+            else:
+                print(f"  노드 {node.node_id} → 거부")
+
+        # 과반수 확인
+        if votes_received >= majority:
+            self.state = State.LEADER
+            print(f"[결과] 노드 {self.node_id}이 리더로 선출됨! ({votes_received}/{len(all_nodes)}표)")
+            return True
+        else:
+            self.state = State.FOLLOWER
+            print(f"[결과] 노드 {self.node_id} 선거 실패 ({votes_received}/{len(all_nodes)}표)")
+            return False
+
+    def receive_vote_request(
+        self, candidate_id: int, candidate_term: int,
+        last_log_index: int, last_log_term: int
+    ) -> bool:
+        """
+        투표 요청을 받았을 때의 처리.
+        조건:
+          1) 후보의 Term이 나보다 크거나 같아야 함
+          2) 이번 Term에 아직 투표하지 않았어야 함
+          3) 후보의 로그가 나보다 최신이거나 같아야 함
+        """
+        # Term이 낮은 후보는 거부
+        if candidate_term < self.current_term:
+            return False
+
+        # Term이 높으면 해당 Term으로 업데이트
+        if candidate_term > self.current_term:
+            self.current_term = candidate_term
+            self.voted_for = None
+            self.state = State.FOLLOWER
+
+        # 이미 다른 후보에게 투표했으면 거부
+        if self.voted_for is not None and self.voted_for != candidate_id:
+            return False
+
+        # 후보의 로그가 충분히 최신인지 확인
+        my_last_term = self.log[-1].term if self.log else 0
+        my_last_index = len(self.log)
+
+        log_ok = (last_log_term > my_last_term or
+                  (last_log_term == my_last_term and last_log_index >= my_last_index))
+
+        if log_ok:
+            self.voted_for = candidate_id
+            return True
+
+        return False
+
+    def append_entry(self, command: str, all_nodes: list['RaftNode']) -> bool:
+        """
+        리더가 새 로그 엔트리를 추가하고 복제하는 과정.
+        과반수 노드에 복제되면 커밋한다.
+        """
+        if self.state != State.LEADER:
+            print(f"노드 {self.node_id}은 리더가 아닙니다!")
+            return False
+
+        # 1) 리더의 로그에 추가 (아직 uncommitted)
+        entry = LogEntry(
+            term=self.current_term,
+            command=command,
+            index=len(self.log) + 1
+        )
+        self.log.append(entry)
+        print(f"\n[복제] 리더 {self.node_id}: '{command}' 로그 추가 (index={entry.index})")
+
+        # 2) 팔로워에게 복제 요청
+        replicated = 1  # 자기 자신 포함
+        majority = len(all_nodes) // 2 + 1
+
+        for node in all_nodes:
+            if node.node_id == self.node_id:
+                continue
+
+            success = node.receive_append_entries(
+                leader_term=self.current_term,
+                entry=entry
+            )
+            if success:
+                replicated += 1
+                print(f"  노드 {node.node_id}: 복제 성공")
+
+        # 3) 과반수 복제 확인 → 커밋
+        if replicated >= majority:
+            self.commit_index = entry.index
+            print(f"[커밋] '{command}' 커밋 완료! ({replicated}/{len(all_nodes)} 노드 복제)")
+            return True
+        else:
+            print(f"[실패] '{command}' 과반수 복제 실패")
+            return False
+
+    def receive_append_entries(self, leader_term: int, entry: LogEntry) -> bool:
+        """팔로워가 로그 복제 요청을 받았을 때의 처리"""
+        if leader_term < self.current_term:
+            return False
+
+        self.current_term = leader_term
+        self.state = State.FOLLOWER
+        self.log.append(entry)
+        return True
+
+
+# === 시뮬레이션 실행 ===
+
+def simulate_raft():
+    """Raft 합의 알고리즘 시뮬레이션"""
+    # 5개 노드로 구성된 클러스터
+    nodes = [RaftNode(node_id=i) for i in range(5)]
+
+    print("=" * 50)
+    print("Raft 합의 알고리즘 시뮬레이션")
+    print("=" * 50)
+    print(f"클러스터: {len(nodes)}개 노드, 과반수 = {len(nodes)//2 + 1}")
+
+    # 1단계: 리더 선출
+    # 실제로는 무작위 타임아웃으로 선거가 시작됨
+    # 여기서는 노드 2가 먼저 타임아웃된 상황을 시뮬레이션
+    leader_node = nodes[2]
+    leader_node.start_election(nodes)
+
+    # 2단계: 리더가 클라이언트 명령 처리
+    if leader_node.state == State.LEADER:
+        leader_node.append_entry("SET x = 5", nodes)
+        leader_node.append_entry("SET y = 10", nodes)
+
+    # 3단계: 노드 장애 시뮬레이션
+    print("\n" + "=" * 50)
+    print("노드 3, 4 장애 발생 시뮬레이션")
+    print("=" * 50)
+
+    # 3개 노드만 남은 상태 (여전히 과반수 유지)
+    active_nodes = nodes[:3]
+    if leader_node.state == State.LEADER:
+        leader_node.append_entry("SET z = 15", active_nodes)
+
+    # 4단계: 리더 장애 → 새 선거
+    print("\n" + "=" * 50)
+    print("리더(노드 2) 장애! 새 선거 시작")
+    print("=" * 50)
+
+    # 노드 0이 새 선거 시작 (노드 2는 응답 불가)
+    remaining = [nodes[0], nodes[1], nodes[3], nodes[4]]
+    nodes[0].start_election(remaining)
+
+
+if __name__ == "__main__":
+    simulate_raft()
+```
+
+### 일관성 모델 비교 시뮬레이션
+
+```python
+import threading
+import time
+from collections import defaultdict
+
+class DistributedStore:
+    """
+    분산 저장소의 일관성 모델을 시뮬레이션하는 클래스.
+    서로 다른 일관성 수준에서 데이터 읽기/쓰기가 어떻게 동작하는지 보여준다.
+    """
+
+    def __init__(self, num_replicas: int = 3):
+        self.num_replicas = num_replicas
+        # 각 복제본(노드)의 데이터 저장소
+        self.replicas = {i: {} for i in range(num_replicas)}
+        self.lock = threading.Lock()
+
+    def write_strong(self, key: str, value: str):
+        """
+        강한 일관성 쓰기: 모든 복제본에 동기적으로 쓴 후 응답.
+        장점: 읽기 시 항상 최신 값 보장
+        단점: 느림 (모든 노드 응답 대기)
+        """
+        print(f"\n[강한 일관성] '{key}={value}' 쓰기 시작")
+        with self.lock:
+            for replica_id in self.replicas:
+                self.replicas[replica_id][key] = value
+                time.sleep(0.1)  # 네트워크 지연 시뮬레이션
+                print(f"  복제본 {replica_id}: 쓰기 완료")
+        print(f"  → 모든 복제본 동기화 완료 후 응답")
+
+    def write_eventual(self, key: str, value: str):
+        """
+        최종 일관성 쓰기: 하나의 복제본에만 쓰고 즉시 응답.
+        백그라운드에서 나머지 복제본에 비동기 복제.
+        장점: 빠른 응답
+        단점: 읽기 시 stale 데이터 가능
+        """
+        print(f"\n[최종 일관성] '{key}={value}' 쓰기 시작")
+        # 첫 번째 복제본에만 즉시 쓰기
+        self.replicas[0][key] = value
+        print(f"  복제본 0: 즉시 쓰기 완료 → 클라이언트에 응답")
+
+        # 나머지 복제본에 비동기 복제 (백그라운드)
+        def async_replicate():
+            for replica_id in range(1, self.num_replicas):
+                time.sleep(0.3)  # 비동기 복제 지연
+                self.replicas[replica_id][key] = value
+                print(f"  [백그라운드] 복제본 {replica_id}: 비동기 복제 완료")
+
+        thread = threading.Thread(target=async_replicate)
+        thread.start()
+        return thread  # 복제 완료 대기용
+
+    def read(self, key: str, replica_id: int) -> str:
+        """특정 복제본에서 읽기"""
+        value = self.replicas[replica_id].get(key, "NOT_FOUND")
+        print(f"  복제본 {replica_id}에서 '{key}' 읽기 → '{value}'")
+        return value
+
+
+# === 시뮬레이션 ===
+
+def demo_consistency_models():
+    """일관성 모델 차이를 시뮬레이션"""
+
+    print("=" * 55)
+    print("강한 일관성 vs 최종 일관성 비교")
+    print("=" * 55)
+
+    # 1. 강한 일관성
+    store1 = DistributedStore(3)
+    store1.write_strong("user", "Alice")
+    print("\n쓰기 직후 읽기:")
+    store1.read("user", 0)  # Alice
+    store1.read("user", 1)  # Alice
+    store1.read("user", 2)  # Alice
+    print("→ 모든 복제본에서 같은 값!")
+
+    # 2. 최종 일관성
+    print("\n" + "-" * 55)
+    store2 = DistributedStore(3)
+    thread = store2.write_eventual("user", "Bob")
+
+    print("\n쓰기 직후 읽기:")
+    store2.read("user", 0)  # Bob (즉시 쓴 복제본)
+    store2.read("user", 1)  # NOT_FOUND (아직 복제 안 됨!)
+    store2.read("user", 2)  # NOT_FOUND
+    print("→ 복제본마다 다른 값! (불일치)")
+
+    # 시간이 지나면 수렴
+    thread.join()  # 비동기 복제 완료 대기
+    print("\n비동기 복제 완료 후 읽기:")
+    store2.read("user", 0)  # Bob
+    store2.read("user", 1)  # Bob
+    store2.read("user", 2)  # Bob
+    print("→ 결국 모든 복제본이 같은 값으로 수렴!")
+
+
+if __name__ == "__main__":
+    demo_consistency_models()
+```
+
+---
+
+## 정리
+
+| 개념 | 핵심 내용 | 사용 사례 |
+|------|-----------|-----------|
+| **CAP 정리** | C, A, P 중 2개만 동시 보장 가능 | 분산 시스템 설계의 기본 원칙 |
+| **CP 시스템** | 일관성 우선, 분단 시 일부 요청 거부 | 금융, 재고 (ZooKeeper, etcd) |
+| **AP 시스템** | 가용성 우선, 일시적 불일치 허용 | SNS, 추천 (Cassandra, DynamoDB) |
+| **강한 일관성** | 쓰기 후 어디서든 최신 값 보장 | 계좌 잔액, 분산 락 |
+| **최종 일관성** | 시간이 지나면 결국 같은 값으로 수렴 | DNS, 캐시, 로그 수집 |
+| **Paxos** | 최초의 합의 알고리즘, 이해 어려움 | 학술적 기반, Google Chubby |
+| **Raft** | 이해 쉬운 합의 알고리즘, 리더 기반 | etcd, Consul, CockroachDB |
+| **Raft 리더 선출** | 무작위 타임아웃, 과반수 투표 | 리더 장애 시 자동 복구 |
+| **Raft 로그 복제** | 리더→팔로워 복제, 과반수 커밋 | 분산 상태 머신 복제 |
+
+---

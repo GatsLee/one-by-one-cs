@@ -1,0 +1,715 @@
+---
+title: "탐욕 알고리즘"
+topic: "01-data-structures"
+order: 9
+---
+
+
+## 핵심 개념
+
+### 탐욕 알고리즘(Greedy Algorithm)이란?
+
+탐욕 알고리즘은 **매 단계에서 현재 상황에서의 최선의 선택**을 하는 알고리즘이다. 한 번 선택하면 번복하지 않으며, 이러한 지역적 최적 선택이 모이면 전체적으로도 최적 해가 되기를 기대한다.
+
+> **비유**: 등산할 때 항상 가장 가파른 방향으로만 올라간다. 대부분의 경우 정상에 도달할 수 있지만, 때로는 지역적 최고봉(local maximum)에 갇힐 수도 있다.
+
+```
+탐욕 알고리즘의 동작 과정:
+
+문제 → [선택지1, 선택지2, 선택지3]
+              ↓
+         현재 최선 선택 (선택지2)
+              ↓
+   축소된 문제 → [선택지A, 선택지B]
+                       ↓
+                  현재 최선 선택 (선택지A)
+                       ↓
+                     최종 해
+```
+
+### 탐욕 알고리즘의 두 가지 조건
+
+탐욕 알고리즘이 **최적 해를 보장**하려면 다음 두 조건이 필요하다.
+
+| 조건 | 설명 |
+|------|------|
+| **탐욕 선택 속성** (Greedy Choice Property) | 매 단계의 탐욕적 선택이 전체 최적 해에 포함될 수 있다 |
+| **최적 부분 구조** (Optimal Substructure) | 전체 최적 해가 부분 문제의 최적 해를 포함한다 |
+
+> **주의**: 탐욕 알고리즘이 항상 최적 해를 보장하는 것은 아니다. 문제의 특성에 따라 증명이 필요하다.
+
+### 탐욕이 실패하는 예: 거스름돈 문제
+
+```
+동전: [1, 3, 4]원,  거스름돈: 6원
+
+탐욕 (큰 동전부터): 4 + 1 + 1 = 3개
+최적:               3 + 3     = 2개
+
+→ 동전의 종류에 따라 탐욕이 최적이 아닐 수 있다!
+   (한국 동전 [10, 50, 100, 500]은 탐욕이 최적)
+```
+
+
+---
+
+## 활동 선택 문제 (Activity Selection)
+
+### 문제 정의
+
+여러 활동이 주어지고, 각 활동은 시작 시간과 종료 시간이 있다. **서로 겹치지 않는 최대 개수의 활동**을 선택하라.
+
+```
+활동:  A(1,4)  B(3,5)  C(0,6)  D(5,7)  E(3,9)  F(5,9)
+       G(6,10) H(8,11) I(8,12) J(2,14) K(12,16)
+
+시간축:
+0    2    4    6    8    10   12   14   16
+|----|----|----|----|----|----|----|----|
+A: [========]
+B:      [====]
+C: [============]
+D:           [====]
+E:      [============]
+F:           [========]
+G:                [========]
+H:                    [======]
+I:                    [========]
+J:   [========================]
+K:                         [========]
+```
+
+### 탐욕 전략: 종료 시간이 빠른 순서로 선택
+
+**핵심 아이디어**: 가장 빨리 끝나는 활동을 선택하면, 나머지 활동을 위한 시간이 최대한 많이 남는다.
+
+```
+종료 시간순 정렬: A(1,4) B(3,5) D(5,7) C(0,6) E(3,9) F(5,9)
+                  G(6,10) H(8,11) I(8,12) J(2,14) K(12,16)
+
+선택 과정:
+1. A(1,4) 선택 ✓      (첫 번째 활동)
+2. B(3,5) 충돌 ✗      (시작 3 < 종료 4)
+3. D(5,7) 선택 ✓      (시작 5 >= 종료 4)
+4. C(0,6) 충돌 ✗      (시작 0 < 종료 7)
+5. ... H(8,11) 선택 ✓  (시작 8 >= 종료 7)
+6. ... K(12,16) 선택 ✓  (시작 12 >= 종료 11)
+
+결과: A, D, H, K → 4개 (최대)
+```
+
+### Python 구현
+
+```python
+def activity_selection(activities):
+    """
+    활동 선택 문제 - O(n log n) (정렬 지배)
+    activities: [(시작시간, 종료시간), ...] 리스트
+    """
+    # 종료 시간 기준으로 정렬
+    sorted_acts = sorted(activities, key=lambda x: x[1])
+
+    selected = [sorted_acts[0]]  # 첫 번째 활동 선택
+    last_end = sorted_acts[0][1]
+
+    for start, end in sorted_acts[1:]:
+        if start >= last_end:  # 겹치지 않으면
+            selected.append((start, end))
+            last_end = end
+
+    return selected
+
+
+# 테스트
+activities = [
+    (1, 4), (3, 5), (0, 6), (5, 7), (3, 9),
+    (5, 9), (6, 10), (8, 11), (8, 12), (2, 14), (12, 16)
+]
+result = activity_selection(activities)
+print(f"선택된 활동 수: {len(result)}")  # 4
+print(f"선택된 활동: {result}")
+# [(1, 4), (5, 7), (8, 11), (12, 16)]
+```
+
+
+---
+
+## 분할 가능 배낭 문제 (Fractional Knapsack)
+
+### 0/1 배낭과의 차이
+
+0/1 배낭 문제에서는 물건을 넣거나 안 넣거나만 가능하지만, **분할 가능 배낭**에서는 물건을 **쪼개서** 일부만 넣을 수 있다. 이 경우 탐욕 알고리즘으로 최적 해를 구할 수 있다.
+
+```
+물건: A(w=10, v=60), B(w=20, v=100), C(w=30, v=120)
+배낭 용량: W = 50
+
+단위 가치(가치/무게):
+  A: 60/10 = 6.0
+  B: 100/20 = 5.0
+  C: 120/30 = 4.0
+
+탐욕 전략: 단위 가치 높은 순서로 넣기
+  A 전부 (10kg, 가치 60) → 남은 용량 40
+  B 전부 (20kg, 가치 100) → 남은 용량 20
+  C의 2/3 (20kg, 가치 80) → 남은 용량 0
+
+최대 가치: 60 + 100 + 80 = 240
+```
+
+### Python 구현
+
+```python
+def fractional_knapsack(items, capacity):
+    """
+    분할 가능 배낭 문제 - O(n log n)
+    items: [(무게, 가치), ...] 리스트
+    capacity: 배낭 용량
+    """
+    # 단위 가치(가치/무게) 기준 내림차순 정렬
+    sorted_items = sorted(items, key=lambda x: x[1] / x[0], reverse=True)
+
+    total_value = 0
+    remaining = capacity
+
+    for weight, value in sorted_items:
+        if remaining <= 0:
+            break
+        if weight <= remaining:
+            # 물건 전부 넣기
+            total_value += value
+            remaining -= weight
+        else:
+            # 물건 일부만 넣기 (분할)
+            fraction = remaining / weight
+            total_value += value * fraction
+            remaining = 0
+
+    return total_value
+
+
+# 테스트
+items = [(10, 60), (20, 100), (30, 120)]
+print(fractional_knapsack(items, 50))  # 240.0
+```
+
+| 항목 | 0/1 배낭 | 분할 가능 배낭 |
+|------|---------|---------------|
+| 물건 분할 | 불가 | 가능 |
+| 풀이 방법 | DP (O(nW)) | 탐욕 (O(n log n)) |
+| 최적 해 보장 | DP로 보장 | 탐욕으로 보장 |
+
+
+---
+
+## 허프만 코딩 (Huffman Coding)
+
+### 원리
+
+허프만 코딩은 **빈도가 높은 문자에 짧은 코드**를, 빈도가 낮은 문자에 긴 코드를 부여하는 **접두사 없는(prefix-free)** 가변 길이 인코딩이다.
+
+```
+문자별 빈도:
+  a: 45, b: 13, c: 12, d: 16, e: 9, f: 5
+
+고정 길이 인코딩: 각 문자 3비트 → 총 100 × 3 = 300 비트
+허프만 인코딩: 가변 길이 → 총 224 비트 (약 25% 절약)
+```
+
+### 허프만 트리 구축 과정
+
+```
+1단계: 빈도 기준 최소 힙에 모든 문자 삽입
+  [f:5] [e:9] [c:12] [b:13] [d:16] [a:45]
+
+2단계: 가장 작은 두 노드를 꺼내 합치고 다시 삽입 (반복)
+
+  f:5 + e:9 → (14)
+  [c:12] [b:13] (14) [d:16] [a:45]
+
+  c:12 + b:13 → (25)
+  (14) [d:16] (25) [a:45]
+
+  (14) + d:16 → (30)
+  (25) (30) [a:45]
+
+  (25) + (30) → (55)
+  [a:45] (55)
+
+  a:45 + (55) → (100)  ← 루트
+
+최종 허프만 트리:
+
+           (100)
+          /     \
+       a:45     (55)
+               /    \
+            (25)    (30)
+           /   \   /    \
+         c:12 b:13 (14) d:16
+                  /    \
+                f:5   e:9
+
+허프만 코드:
+  a: 0         (1비트)
+  c: 100       (3비트)
+  b: 101       (3비트)
+  f: 1100      (4비트)
+  e: 1101      (4비트)
+  d: 111       (3비트)
+```
+
+### Python 구현
+
+```python
+import heapq
+from collections import Counter
+
+
+class HuffmanNode:
+    """허프만 트리 노드"""
+
+    def __init__(self, char, freq):
+        self.char = char
+        self.freq = freq
+        self.left = None
+        self.right = None
+
+    def __lt__(self, other):
+        return self.freq < other.freq  # 힙 비교용
+
+
+def build_huffman_tree(text):
+    """허프만 트리 구축 - O(n log n)"""
+    # 1단계: 빈도 계산
+    freq = Counter(text)
+
+    # 2단계: 최소 힙에 삽입
+    heap = [HuffmanNode(char, f) for char, f in freq.items()]
+    heapq.heapify(heap)
+
+    # 3단계: 가장 작은 두 노드를 반복적으로 합치기
+    while len(heap) > 1:
+        left = heapq.heappop(heap)
+        right = heapq.heappop(heap)
+
+        merged = HuffmanNode(None, left.freq + right.freq)
+        merged.left = left
+        merged.right = right
+
+        heapq.heappush(heap, merged)
+
+    return heap[0]  # 루트 노드
+
+
+def build_codes(node, prefix="", codes=None):
+    """트리를 순회하며 코드 생성"""
+    if codes is None:
+        codes = {}
+    if node is None:
+        return codes
+
+    if node.char is not None:  # 리프 노드
+        codes[node.char] = prefix if prefix else "0"
+        return codes
+
+    build_codes(node.left, prefix + "0", codes)
+    build_codes(node.right, prefix + "1", codes)
+    return codes
+
+
+def huffman_encode(text):
+    """허프만 인코딩"""
+    if not text:
+        return "", None
+
+    root = build_huffman_tree(text)
+    codes = build_codes(root)
+
+    encoded = "".join(codes[char] for char in text)
+    return encoded, codes
+
+
+def huffman_decode(encoded, root):
+    """허프만 디코딩"""
+    decoded = []
+    node = root
+    for bit in encoded:
+        if bit == "0":
+            node = node.left
+        else:
+            node = node.right
+
+        if node.char is not None:  # 리프 노드 도달
+            decoded.append(node.char)
+            node = root  # 루트로 복귀
+
+    return "".join(decoded)
+
+
+# 테스트
+text = "aaaaabbbccdddddeeeee"
+encoded, codes = huffman_encode(text)
+print("코드표:", codes)
+print(f"원본: {len(text) * 8}비트")
+print(f"압축: {len(encoded)}비트")
+print(f"압축률: {len(encoded) / (len(text) * 8) * 100:.1f}%")
+```
+
+
+---
+
+## 구간 스케줄링 / 최소 회의실
+
+### 최소 회의실 수 (Interval Partitioning)
+
+n개의 회의가 주어졌을 때, 모든 회의를 진행하기 위한 **최소 회의실 수**를 구하라.
+
+```
+회의: (0,30), (5,10), (15,20)
+
+시간축:
+0    5    10   15   20   25   30
+|----|----|----|----|----|----|
+회의1: [============================]
+회의2:      [====]
+회의3:                [====]
+
+회의1과 회의2가 겹침 → 최소 2개 회의실 필요
+```
+
+### Python 구현
+
+```python
+import heapq
+
+
+def min_meeting_rooms(intervals):
+    """
+    최소 회의실 수 - O(n log n)
+    탐욕 전략: 시작 시간순으로 정렬, 가장 빨리 끝나는 회의실에 배정
+    """
+    if not intervals:
+        return 0
+
+    # 시작 시간순 정렬
+    intervals.sort(key=lambda x: x[0])
+
+    # 최소 힙: 현재 사용 중인 회의실의 종료 시간
+    rooms = []
+    heapq.heappush(rooms, intervals[0][1])
+
+    for start, end in intervals[1:]:
+        if start >= rooms[0]:
+            # 가장 빨리 끝나는 회의실 재사용
+            heapq.heapreplace(rooms, end)
+        else:
+            # 새 회의실 필요
+            heapq.heappush(rooms, end)
+
+    return len(rooms)
+
+
+# 테스트
+meetings = [(0, 30), (5, 10), (15, 20)]
+print(min_meeting_rooms(meetings))  # 2
+
+meetings2 = [(1, 5), (2, 3), (4, 6), (7, 10)]
+print(min_meeting_rooms(meetings2))  # 2
+```
+
+### 이벤트 라인 스윕 방법 (대안)
+
+```python
+def min_meeting_rooms_sweep(intervals):
+    """
+    이벤트 라인 스윕 - O(n log n)
+    시작 시간에 +1, 종료 시간에 -1로 이벤트 처리
+    """
+    events = []
+    for start, end in intervals:
+        events.append((start, 1))   # 회의 시작: +1
+        events.append((end, -1))    # 회의 종료: -1
+
+    events.sort()  # 시간순 정렬 (같으면 종료(-1)가 먼저)
+
+    max_rooms = 0
+    current = 0
+    for _, delta in events:
+        current += delta
+        max_rooms = max(max_rooms, current)
+
+    return max_rooms
+```
+
+
+---
+
+## 크루스칼 알고리즘 (Kruskal's Algorithm)
+
+### 최소 신장 트리 (MST)
+
+**최소 신장 트리(Minimum Spanning Tree)**는 그래프의 모든 정점을 연결하는 간선의 부분집합 중 **가중치 합이 최소**인 트리다.
+
+```
+그래프:
+    A ---4--- B
+    |       / |
+    8     2   6
+    |   /     |
+    C ---3--- D ---7--- E
+         |           /
+         5         9
+         |       /
+         F ---1--- G
+
+MST (크루스칼):
+    A ---4--- B
+              |
+          2
+        /
+    C ---3--- D         E
+         |
+         5
+         |
+         F ---1--- G
+총 가중치: 1 + 2 + 3 + 4 + 5 = 15 (+ E 연결 간선)
+```
+
+### 크루스칼: 간선 기준 탐욕
+
+1. 모든 간선을 가중치 오름차순으로 정렬
+2. 가장 가벼운 간선부터, **사이클을 만들지 않으면** 선택
+3. n-1개의 간선을 선택할 때까지 반복
+
+사이클 감지를 위해 **Union-Find(서로소 집합)** 자료구조를 사용한다.
+
+### Union-Find 자료구조
+
+```python
+class UnionFind:
+    """서로소 집합 (경로 압축 + 랭크 기반 합치기)"""
+
+    def __init__(self, n):
+        self.parent = list(range(n))
+        self.rank = [0] * n
+
+    def find(self, x):
+        """루트 찾기 (경로 압축)"""
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, x, y):
+        """두 집합 합치기 (랭크 기반)"""
+        rx, ry = self.find(x), self.find(y)
+        if rx == ry:
+            return False  # 이미 같은 집합 → 사이클!
+        if self.rank[rx] < self.rank[ry]:
+            rx, ry = ry, rx
+        self.parent[ry] = rx
+        if self.rank[rx] == self.rank[ry]:
+            self.rank[rx] += 1
+        return True
+```
+
+### 크루스칼 Python 구현
+
+```python
+def kruskal(n, edges):
+    """
+    크루스칼 알고리즘 - O(E log E)
+    n: 정점 수
+    edges: [(가중치, 정점1, 정점2), ...] 리스트
+    """
+    edges.sort()  # 가중치 오름차순 정렬
+    uf = UnionFind(n)
+
+    mst = []
+    total_weight = 0
+
+    for weight, u, v in edges:
+        if uf.union(u, v):  # 사이클 없으면 선택
+            mst.append((u, v, weight))
+            total_weight += weight
+            if len(mst) == n - 1:  # MST 완성
+                break
+
+    return mst, total_weight
+
+
+# 테스트 (정점: 0=A, 1=B, 2=C, 3=D, 4=E, 5=F, 6=G)
+edges = [
+    (4, 0, 1), (8, 0, 2), (2, 1, 2), (6, 1, 3),
+    (3, 2, 3), (5, 2, 5), (7, 3, 4), (9, 4, 6), (1, 5, 6)
+]
+mst, total = kruskal(7, edges)
+print(f"MST 간선: {mst}")
+print(f"총 가중치: {total}")
+```
+
+```
+크루스칼 실행 과정:
+
+정렬된 간선: (1,F-G) (2,B-C) (3,C-D) (4,A-B) (5,C-F) (6,B-D) (7,D-E) (8,A-C) (9,E-G)
+
+1. (1, F-G) → 선택 ✓  {F,G} 연결
+2. (2, B-C) → 선택 ✓  {B,C} 연결
+3. (3, C-D) → 선택 ✓  {B,C,D} 연결
+4. (4, A-B) → 선택 ✓  {A,B,C,D} 연결
+5. (5, C-F) → 선택 ✓  {A,B,C,D,F,G} 연결
+6. (6, B-D) → 스킵 ✗  B와 D가 이미 같은 집합 (사이클)
+7. (7, D-E) → 선택 ✓  {A,B,C,D,E,F,G} 모두 연결
+
+MST 완성! 총 가중치: 1+2+3+4+5+7 = 22
+```
+
+
+---
+
+## 프림 알고리즘 (Prim's Algorithm)
+
+### 정점 기준 탐욕
+
+프림은 크루스칼과 달리 **하나의 정점에서 시작하여 MST를 확장**해 나간다.
+
+1. 임의의 시작 정점을 MST 집합에 추가
+2. MST 집합에 인접한 간선 중 **최소 가중치 간선** 선택
+3. 해당 간선으로 연결된 새 정점을 MST에 추가
+4. 모든 정점이 포함될 때까지 반복
+
+### Python 구현
+
+```python
+import heapq
+
+
+def prim(n, adj):
+    """
+    프림 알고리즘 - O(E log V)
+    n: 정점 수
+    adj: 인접 리스트 {정점: [(가중치, 인접정점), ...]}
+    """
+    visited = [False] * n
+    mst = []
+    total_weight = 0
+
+    # 시작 정점 0에서 출발
+    min_heap = [(0, 0, -1)]  # (가중치, 정점, 부모정점)
+
+    while min_heap and len(mst) < n:
+        weight, u, parent = heapq.heappop(min_heap)
+
+        if visited[u]:
+            continue
+        visited[u] = True
+        total_weight += weight
+
+        if parent != -1:
+            mst.append((parent, u, weight))
+
+        # 인접 정점들의 간선을 힙에 추가
+        for w, v in adj[u]:
+            if not visited[v]:
+                heapq.heappush(min_heap, (w, v, u))
+
+    return mst, total_weight
+
+
+# 테스트 (인접 리스트 구성)
+adj = {
+    0: [(4, 1), (8, 2)],           # A
+    1: [(4, 0), (2, 2), (6, 3)],   # B
+    2: [(8, 0), (2, 1), (3, 3), (5, 5)],  # C
+    3: [(6, 1), (3, 2), (7, 4)],   # D
+    4: [(7, 3), (9, 6)],           # E
+    5: [(5, 2), (1, 6)],           # F
+    6: [(9, 4), (1, 5)],           # G
+}
+mst, total = prim(7, adj)
+print(f"MST 간선: {mst}")
+print(f"총 가중치: {total}")
+```
+
+### 크루스칼 vs 프림 비교
+
+| 항목 | 크루스칼 | 프림 |
+|------|---------|------|
+| 접근 방식 | 간선 기준 (가벼운 간선부터) | 정점 기준 (MST 확장) |
+| 자료구조 | Union-Find | 우선순위 큐 (힙) |
+| 시간복잡도 | O(E log E) | O(E log V) |
+| 적합한 그래프 | 희소 그래프 (간선 적음) | 밀집 그래프 (간선 많음) |
+| 결과 | 동일한 MST 가중치 | 동일한 MST 가중치 |
+| 연결 그래프 필요 | 아니오 (포레스트 가능) | 예 |
+
+
+---
+
+## 탐욕 vs DP 비교
+
+| 항목 | 탐욕 알고리즘 | 동적 프로그래밍 |
+|------|-------------|----------------|
+| 선택 방식 | 현재 최선만 선택 (되돌리지 않음) | 모든 하위 문제를 고려 |
+| 탐색 범위 | 하나의 경로만 탐색 | 모든 가능한 경로 탐색 |
+| 시간복잡도 | 보통 O(n log n) | 보통 O(n^2) 이상 |
+| 최적 해 보장 | 조건 충족 시에만 | 항상 보장 |
+| 구현 | 상대적으로 단순 | 상태 정의 + 점화식 필요 |
+| 증명 | 탐욕 선택 속성 증명 필요 | 점화식의 정확성 증명 |
+
+### 같은 문제, 다른 결과
+
+```
+배낭 문제로 비교:
+
+분할 가능 배낭 → 탐욕 (O(n log n))으로 최적 해 가능
+  물건을 쪼갤 수 있으므로, 단위 가치가 높은 것부터 넣으면 됨
+
+0/1 배낭 → 탐욕으로는 최적 해 불가, DP (O(nW)) 필요
+  물건을 쪼갤 수 없으므로, 단위 가치만으로 판단하면 틀릴 수 있음
+
+예시: W=10, 물건 A(w=6, v=30), B(w=5, v=25), C(w=5, v=25)
+  단위가치: A=5.0, B=5.0, C=5.0 (동일)
+  탐욕: A 선택 → 남은 용량 4 → B,C 불가 → 가치 30
+  최적: B + C → 가치 50
+```
+
+
+---
+
+## 탐욕 알고리즘 적용 판단 가이드
+
+```
+문제를 만났을 때:
+
+1. 매 단계 "최선의 선택"이 보이는가?
+   → YES: 탐욕 후보
+
+2. 그 선택이 전체 최적 해에 포함되는가? (탐욕 선택 속성)
+   → 증명 가능하면 탐욕 적용
+
+3. 반례가 존재하는가?
+   → YES: DP나 다른 방법 고려
+   → NO: 탐욕 적용
+
+대표적 탐욕 문제:
+  ✓ 활동 선택    ✓ 분할 배낭    ✓ 허프만 코딩
+  ✓ MST (크루스칼/프림)          ✓ 다익스트라 최단경로
+  ✗ 0/1 배낭     ✗ LCS          ✗ 편집 거리
+```
+
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 탐욕 알고리즘 | 매 단계 현재 최선을 선택, 번복하지 않음 |
+| 적용 조건 | 탐욕 선택 속성 + 최적 부분 구조 |
+| 활동 선택 | 종료 시간순 정렬 → 겹치지 않는 최대 활동, O(n log n) |
+| 분할 배낭 | 단위 가치순 정렬 → 물건 분할 가능, O(n log n) |
+| 허프만 코딩 | 빈도 기반 최소 힙 → 접두사 없는 가변 길이 코드, O(n log n) |
+| 회의실 배정 | 시작 시간순 정렬 + 힙으로 종료 시간 관리, O(n log n) |
+| 크루스칼 MST | 간선 정렬 + Union-Find, O(E log E) |
+| 프림 MST | 정점 확장 + 우선순위 큐, O(E log V) |
+| 탐욕 vs DP | 탐욕은 빠르지만 항상 최적은 아님, DP는 느리지만 항상 최적 |

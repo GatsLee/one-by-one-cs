@@ -1,0 +1,711 @@
+---
+title: "클린 아키텍처"
+topic: "09-architecture"
+order: 05
+---
+
+
+## 핵심 개념
+
+### 1. 클린 아키텍처란
+
+클린 아키텍처(Clean Architecture)는 로버트 C. 마틴(Uncle Bob)이 제시한 소프트웨어 설계 원칙으로, **비즈니스 로직을 프레임워크와 인프라로부터 완전히 독립**시키는 것이 핵심이다.
+
+핵심 목표는 다음과 같다:
+
+```
+┌──────────────────────────────────────────────────────┐
+│              클린 아키텍처 핵심 목표                    │
+│                                                      │
+│  1. 프레임워크 독립성                                  │
+│     → Django에서 FastAPI로 바꿔도 비즈니스 로직 불변    │
+│                                                      │
+│  2. 테스트 용이성                                     │
+│     → UI, DB, 외부 서비스 없이 비즈니스 로직 테스트     │
+│                                                      │
+│  3. UI 독립성                                        │
+│     → 웹 UI를 CLI로 교체해도 핵심 로직 불변            │
+│                                                      │
+│  4. DB 독립성                                        │
+│     → PostgreSQL을 MongoDB로 교체해도 핵심 로직 불변   │
+│                                                      │
+│  5. 외부 에이전시 독립성                               │
+│     → 외부 API, 메시징 시스템 교체에 핵심 로직 영향 없음│
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. 의존성 규칙 (Dependency Rule)
+
+> **소스 코드 의존성은 반드시 바깥에서 안쪽으로만 향해야 한다.**
+
+이것이 클린 아키텍처의 **단 하나의 규칙**이다. 안쪽 계층은 바깥 계층의 존재를 모른다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              의존성 규칙                                   │
+│                                                          │
+│                    의존 방향 →                             │
+│                                                          │
+│  Frameworks    Interface     Use Cases    Entities        │
+│  & Drivers     Adapters                                  │
+│  ┌──────┐     ┌──────┐     ┌──────┐     ┌──────┐        │
+│  │      │────▶│      │────▶│      │────▶│      │        │
+│  │ Web  │     │Ctrl  │     │ 주문 │     │ 도메인│        │
+│  │ DB   │     │Gate  │     │ 생성 │     │ 엔티티│        │
+│  │ 외부 │     │Pres  │     │ UC   │     │      │        │
+│  └──────┘     └──────┘     └──────┘     └──────┘        │
+│  (바깥)                                 (안쪽)           │
+│                                                          │
+│  바깥 → 안쪽: 의존 가능                                   │
+│  안쪽 → 바깥: 절대 불가 (인터페이스로 역전)                │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. 4개 계층 동심원
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│     ┌────────────────────────────────────────────────┐       │
+│     │  Frameworks & Drivers (가장 바깥)               │       │
+│     │  Web Framework, DB Driver, External API        │       │
+│     │                                                │       │
+│     │   ┌────────────────────────────────────────┐   │       │
+│     │   │  Interface Adapters                    │   │       │
+│     │   │  Controllers, Gateways, Presenters     │   │       │
+│     │   │                                        │   │       │
+│     │   │   ┌────────────────────────────────┐   │   │       │
+│     │   │   │  Use Cases (Application)       │   │   │       │
+│     │   │   │  비즈니스 규칙의 실행 흐름       │   │   │       │
+│     │   │   │                                │   │   │       │
+│     │   │   │   ┌────────────────────────┐   │   │   │       │
+│     │   │   │   │  Entities (Domain)     │   │   │   │       │
+│     │   │   │   │  핵심 비즈니스 규칙      │   │   │   │       │
+│     │   │   │   │  가장 안정적인 계층      │   │   │   │       │
+│     │   │   │   └────────────────────────┘   │   │   │       │
+│     │   │   │                                │   │   │       │
+│     │   │   └────────────────────────────────┘   │   │       │
+│     │   │                                        │   │       │
+│     │   └────────────────────────────────────────┘   │       │
+│     │                                                │       │
+│     └────────────────────────────────────────────────┘       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### 각 계층의 역할
+
+| 계층 | 역할 | 포함 요소 | 변경 빈도 |
+|------|------|----------|----------|
+| **Entities** | 핵심 비즈니스 규칙 | 도메인 모델, 비즈니스 규칙 | 가장 낮음 |
+| **Use Cases** | 애플리케이션 비즈니스 규칙 | 유스케이스, 입출력 포트 | 낮음 |
+| **Interface Adapters** | 데이터 형식 변환 | Controller, Presenter, Gateway | 중간 |
+| **Frameworks & Drivers** | 기술적 세부사항 | 웹 프레임워크, DB, UI | 가장 높음 |
+
+---
+
+### 4. 경계와 의존성 역전
+
+안쪽 계층이 바깥 계층을 호출해야 할 때, **인터페이스(Port)**를 정의하고 **바깥 계층이 구현(Adapter)**한다. 이것이 **의존성 역전 원칙(DIP)**의 핵심이다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              의존성 역전으로 경계 넘기                      │
+│                                                          │
+│  [Use Case 계층]              [Adapter 계층]             │
+│                                                          │
+│  ┌──────────────┐             ┌──────────────────┐       │
+│  │ CreateOrder  │             │ PostgresOrderRepo│       │
+│  │ UseCase      │             │                  │       │
+│  │              │ ◀─구현──── │ + save()          │       │
+│  │ - repo: Port │             │ + find_by_id()   │       │
+│  └──────┬───────┘             └──────────────────┘       │
+│         │                                                │
+│         │ 의존                                            │
+│         ▼                                                │
+│  ┌──────────────┐                                        │
+│  │ OrderRepo    │  ← 인터페이스 (Port)                    │
+│  │ (abstract)   │  Use Case 계층에 위치                   │
+│  │              │                                        │
+│  │ + save()     │  안쪽 계층이 인터페이스를 소유            │
+│  │ + find_by_id()│  바깥 계층이 구현을 제공               │
+│  └──────────────┘                                        │
+│                                                          │
+│  소스 코드 의존: UseCase → Port (안쪽)                    │
+│                  Adapter → Port (안쪽)                    │
+│  런타임 흐름:   UseCase → Adapter (바깥)                  │
+│  → 의존성과 제어 흐름의 방향이 반대                        │
+└──────────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+# ============================================
+# Entities 계층 — 핵심 비즈니스 규칙
+# ============================================
+
+@dataclass
+class User:
+    """도메인 엔티티: 사용자"""
+    id: str
+    email: str
+    name: str
+    is_active: bool = True
+
+    def deactivate(self) -> None:
+        """비즈니스 규칙: 비활성화"""
+        self.is_active = False
+
+    def validate_email(self) -> bool:
+        """비즈니스 규칙: 이메일 검증"""
+        return "@" in self.email and "." in self.email.split("@")[1]
+
+
+# ============================================
+# Use Cases 계층 — 애플리케이션 비즈니스 규칙
+# ============================================
+
+# --- Output Port (인터페이스) ---
+class UserRepository(ABC):
+    """Use Case 계층이 소유하는 인터페이스"""
+
+    @abstractmethod
+    def save(self, user: User) -> None:
+        pass
+
+    @abstractmethod
+    def find_by_email(self, email: str) -> User | None:
+        pass
+
+    @abstractmethod
+    def find_by_id(self, user_id: str) -> User | None:
+        pass
+
+
+class EmailService(ABC):
+    @abstractmethod
+    def send_welcome(self, email: str, name: str) -> None:
+        pass
+
+
+# --- Input DTO ---
+@dataclass
+class CreateUserRequest:
+    email: str
+    name: str
+
+
+@dataclass
+class CreateUserResponse:
+    user_id: str
+    message: str
+
+
+# --- Use Case ---
+class CreateUserUseCase:
+    """유스케이스: 사용자 생성"""
+
+    def __init__(self, repo: UserRepository, email_svc: EmailService):
+        self._repo = repo
+        self._email = email_svc
+
+    def execute(self, request: CreateUserRequest) -> CreateUserResponse:
+        # 1. 중복 검사
+        existing = self._repo.find_by_email(request.email)
+        if existing:
+            raise ValueError("이미 등록된 이메일입니다")
+
+        # 2. 엔티티 생성 및 검증
+        import uuid
+        user = User(
+            id=str(uuid.uuid4()),
+            email=request.email,
+            name=request.name,
+        )
+        if not user.validate_email():
+            raise ValueError("유효하지 않은 이메일 형식입니다")
+
+        # 3. 저장
+        self._repo.save(user)
+
+        # 4. 환영 이메일 발송
+        self._email.send_welcome(user.email, user.name)
+
+        return CreateUserResponse(
+            user_id=user.id,
+            message=f"사용자 '{user.name}' 생성 완료"
+        )
+
+
+# ============================================
+# Interface Adapters 계층 — 데이터 형식 변환
+# ============================================
+
+class UserController:
+    """Controller: HTTP 요청을 Use Case 입력으로 변환"""
+
+    def __init__(self, use_case: CreateUserUseCase):
+        self._use_case = use_case
+
+    def handle_post(self, http_body: dict) -> dict:
+        try:
+            request = CreateUserRequest(
+                email=http_body["email"],
+                name=http_body["name"],
+            )
+            response = self._use_case.execute(request)
+            return {"status": 201, "data": {"user_id": response.user_id}}
+        except ValueError as e:
+            return {"status": 400, "error": str(e)}
+        except KeyError:
+            return {"status": 400, "error": "필수 필드 누락"}
+
+
+# ============================================
+# Frameworks & Drivers 계층 — 기술 세부사항
+# ============================================
+
+class PostgresUserRepository(UserRepository):
+    """PostgreSQL 어댑터"""
+
+    def __init__(self):
+        self._store: dict[str, User] = {}  # 실제로는 DB 연결
+
+    def save(self, user: User) -> None:
+        self._store[user.id] = user
+        print(f"[PostgreSQL] 사용자 저장: {user.email}")
+
+    def find_by_email(self, email: str) -> User | None:
+        for user in self._store.values():
+            if user.email == email:
+                return user
+        return None
+
+    def find_by_id(self, user_id: str) -> User | None:
+        return self._store.get(user_id)
+
+
+class SMTPEmailService(EmailService):
+    """SMTP 이메일 어댑터"""
+
+    def send_welcome(self, email: str, name: str) -> None:
+        print(f"[SMTP] 환영 이메일 발송 → {email}")
+
+
+# ============================================
+# 조립 (Composition Root)
+# ============================================
+
+def create_app():
+    """의존성을 조립하는 진입점"""
+    repo = PostgresUserRepository()
+    email = SMTPEmailService()
+    use_case = CreateUserUseCase(repo, email)
+    controller = UserController(use_case)
+    return controller
+
+
+# === 실행 ===
+app = create_app()
+result = app.handle_post({"email": "kim@example.com", "name": "김철수"})
+print(result)
+# [PostgreSQL] 사용자 저장: kim@example.com
+# [SMTP] 환영 이메일 발송 → kim@example.com
+# {'status': 201, 'data': {'user_id': '...'}}
+```
+
+---
+
+### 5. 의존성 역전 원칙 (DIP) 심화
+
+의존성 역전 원칙은 클린 아키텍처의 근간이다.
+
+```
+┌──────────────────────────────────────────────────────┐
+│              DIP 위반 vs 준수                          │
+│                                                      │
+│  [위반] 고수준 → 저수준 직접 의존                      │
+│                                                      │
+│  ┌───────────┐     ┌──────────────┐                  │
+│  │ UseCase   │────▶│ PostgresRepo │                  │
+│  └───────────┘     └──────────────┘                  │
+│  UseCase가 구체 DB 구현에 의존 → DB 교체 시 UseCase 변경│
+│                                                      │
+│  ─────────────────────────────────────               │
+│                                                      │
+│  [준수] 고수준 → 추상화 ← 저수준                      │
+│                                                      │
+│  ┌───────────┐     ┌──────────────┐                  │
+│  │ UseCase   │────▶│ Repository   │ ← 인터페이스     │
+│  └───────────┘     │ (abstract)   │                  │
+│                    └──────┬───────┘                  │
+│                           ▲                          │
+│                           │ 구현                      │
+│                    ┌──────┴───────┐                  │
+│                    │ PostgresRepo │                  │
+│                    └──────────────┘                  │
+│  두 모듈 모두 추상화에 의존 → DB 교체가 UseCase에 무관  │
+└──────────────────────────────────────────────────────┘
+```
+
+#### 추상화에 의존하는 이유
+
+```python
+# === 나쁜 예: 구체 구현에 직접 의존 ===
+import psycopg2  # PostgreSQL 드라이버에 의존
+
+class OrderService:
+    def __init__(self):
+        # DB 연결이 하드코딩 — 테스트 불가, DB 교체 불가
+        self.conn = psycopg2.connect("host=localhost dbname=orders")
+
+    def create_order(self, items: list) -> str:
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT INTO orders ...")
+        return cursor.fetchone()[0]
+
+
+# === 좋은 예: 인터페이스에 의존 ===
+class OrderService:
+    def __init__(self, repo: OrderRepository):
+        self._repo = repo  # 인터페이스에만 의존
+
+    def create_order(self, items: list) -> str:
+        order = Order(items=items)
+        return self._repo.save(order)
+
+# 테스트: InMemoryRepo 주입
+# 프로덕션: PostgresRepo 주입
+# 마이그레이션: MongoRepo 주입
+# → OrderService 코드 변경 없음
+```
+
+---
+
+### 6. 패키징 전략
+
+코드를 물리적으로 어떻게 구성할 것인가? 세 가지 주요 전략이 있다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              패키징 전략 비교                                  │
+│                                                              │
+│  [1] By Layer — 기술 계층별 구성                              │
+│                                                              │
+│  src/                                                        │
+│  ├── controllers/                                            │
+│  │   ├── user_controller.py                                  │
+│  │   └── order_controller.py                                 │
+│  ├── services/                                               │
+│  │   ├── user_service.py                                     │
+│  │   └── order_service.py                                    │
+│  ├── repositories/                                           │
+│  │   ├── user_repo.py                                        │
+│  │   └── order_repo.py                                       │
+│  └── models/                                                 │
+│      ├── user.py                                             │
+│      └── order.py                                            │
+│                                                              │
+│  장점: 직관적, 프레임워크 관례에 맞음                          │
+│  단점: 기능 추가 시 여러 폴더를 넘나들어야 함                   │
+│                                                              │
+│  ─────────────────────────────────────────────               │
+│                                                              │
+│  [2] By Feature — 기능(도메인) 단위 구성                      │
+│                                                              │
+│  src/                                                        │
+│  ├── user/                                                   │
+│  │   ├── user_controller.py                                  │
+│  │   ├── user_service.py                                     │
+│  │   ├── user_repo.py                                        │
+│  │   └── user_model.py                                       │
+│  └── order/                                                  │
+│      ├── order_controller.py                                 │
+│      ├── order_service.py                                    │
+│      ├── order_repo.py                                       │
+│      └── order_model.py                                      │
+│                                                              │
+│  장점: 기능 단위 독립성, 마이크로서비스 전환 용이              │
+│  단점: 기능 간 공유 코드 처리 필요                             │
+│                                                              │
+│  ─────────────────────────────────────────────               │
+│                                                              │
+│  [3] By Component — 클린 아키텍처 계층 + 기능                 │
+│                                                              │
+│  src/                                                        │
+│  ├── user/                                                   │
+│  │   ├── domain/                                             │
+│  │   │   ├── user.py           # Entity                      │
+│  │   │   └── user_repo.py     # Port (인터페이스)             │
+│  │   ├── application/                                        │
+│  │   │   └── create_user.py   # Use Case                     │
+│  │   ├── adapter/                                            │
+│  │   │   ├── user_controller.py  # Inbound                   │
+│  │   │   └── postgres_user_repo.py  # Outbound               │
+│  │   └── __init__.py                                         │
+│  └── order/                                                  │
+│      ├── domain/                                             │
+│      ├── application/                                        │
+│      └── adapter/                                            │
+│                                                              │
+│  장점: 의존성 규칙 물리적 강제, 기능 독립성                    │
+│  단점: 폴더 구조 복잡, 작은 프로젝트에 과함                    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| 전략 | 적합한 상황 | 의존성 규칙 강제 |
+|------|-----------|----------------|
+| By Layer | 소규모 프로젝트, 프로토타입 | 약함 |
+| By Feature | 중규모, 팀 분업 | 중간 |
+| By Component | 대규모, 클린 아키텍처 엄격 적용 | 강함 |
+
+---
+
+### 7. 테스트 가능한 아키텍처
+
+클린 아키텍처의 가장 큰 실용적 이점은 **테스트 용이성**이다. 외부 의존성을 인터페이스로 추상화했기 때문에, 테스트 시 가짜(Mock) 구현으로 교체할 수 있다.
+
+```
+┌──────────────────────────────────────────────────────┐
+│              테스트 피라미드와 클린 아키텍처             │
+│                                                      │
+│           /\                                         │
+│          /  \     E2E 테스트 (느림, 적게)              │
+│         /    \    → 전체 시스템 통합                   │
+│        /──────\                                      │
+│       /        \   통합 테스트 (중간)                  │
+│      /          \  → Adapter 테스트 (실제 DB)         │
+│     /────────────\                                   │
+│    /              \  단위 테스트 (빠름, 많이)          │
+│   /                \ → Entity, Use Case             │
+│  /──────────────────\ (외부 의존성 Mock)              │
+│                                                      │
+│  클린 아키텍처 → 단위 테스트 비중 극대화               │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+import pytest
+
+
+# === 테스트용 인메모리 구현 ===
+class InMemoryUserRepository(UserRepository):
+    def __init__(self):
+        self._users: dict[str, User] = {}
+
+    def save(self, user: User) -> None:
+        self._users[user.id] = user
+
+    def find_by_email(self, email: str) -> User | None:
+        for u in self._users.values():
+            if u.email == email:
+                return u
+        return None
+
+    def find_by_id(self, user_id: str) -> User | None:
+        return self._users.get(user_id)
+
+
+class FakeEmailService(EmailService):
+    def __init__(self):
+        self.sent: list[tuple[str, str]] = []
+
+    def send_welcome(self, email: str, name: str) -> None:
+        self.sent.append((email, name))
+
+
+# === Use Case 단위 테스트 ===
+# DB 없이, SMTP 없이, 순수하게 비즈니스 로직만 테스트
+
+def test_create_user_success():
+    repo = InMemoryUserRepository()
+    email = FakeEmailService()
+    use_case = CreateUserUseCase(repo, email)
+
+    result = use_case.execute(
+        CreateUserRequest(email="test@example.com", name="테스트")
+    )
+
+    assert result.user_id is not None
+    assert "생성 완료" in result.message
+    assert len(email.sent) == 1  # 환영 이메일 발송 확인
+
+
+def test_create_user_duplicate_email():
+    repo = InMemoryUserRepository()
+    email = FakeEmailService()
+    use_case = CreateUserUseCase(repo, email)
+
+    use_case.execute(CreateUserRequest(email="dup@example.com", name="A"))
+
+    with pytest.raises(ValueError, match="이미 등록된"):
+        use_case.execute(CreateUserRequest(email="dup@example.com", name="B"))
+
+
+def test_create_user_invalid_email():
+    repo = InMemoryUserRepository()
+    email = FakeEmailService()
+    use_case = CreateUserUseCase(repo, email)
+
+    with pytest.raises(ValueError, match="유효하지 않은"):
+        use_case.execute(CreateUserRequest(email="invalid", name="C"))
+```
+
+---
+
+### 8. 실전 예제: FastAPI에서 클린 아키텍처
+
+```python
+# === FastAPI 라우터 (Frameworks & Drivers 계층) ===
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+
+# --- DTO ---
+class CreateUserDTO(BaseModel):
+    email: str
+    name: str
+
+
+# --- 의존성 주입 설정 ---
+def get_user_repo() -> UserRepository:
+    return PostgresUserRepository()
+
+def get_email_service() -> EmailService:
+    return SMTPEmailService()
+
+def get_create_user_use_case(
+    repo: UserRepository = Depends(get_user_repo),
+    email: EmailService = Depends(get_email_service),
+) -> CreateUserUseCase:
+    return CreateUserUseCase(repo, email)
+
+
+# --- 라우터 ---
+router = APIRouter(prefix="/users", tags=["users"])
+
+@router.post("/", status_code=201)
+def create_user(
+    dto: CreateUserDTO,
+    use_case: CreateUserUseCase = Depends(get_create_user_use_case),
+):
+    try:
+        request = CreateUserRequest(email=dto.email, name=dto.name)
+        response = use_case.execute(request)
+        return {"user_id": response.user_id, "message": response.message}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# === Spring Boot 스타일 (참고) ===
+# @RestController
+# @RequestMapping("/users")
+# class UserController {
+#     private final CreateUserUseCase useCase;
+#
+#     @PostMapping
+#     ResponseEntity<?> create(@RequestBody CreateUserDTO dto) {
+#         var response = useCase.execute(new CreateUserRequest(...));
+#         return ResponseEntity.status(201).body(response);
+#     }
+# }
+#
+# 핵심: 프레임워크가 달라도 UseCase와 Entity는 동일하다
+```
+
+---
+
+### 9. 오버 엔지니어링 주의
+
+클린 아키텍처는 강력하지만, **모든 프로젝트에 필요한 것은 아니다**. 복잡도를 관리하기 위한 도구가 오히려 복잡도를 증가시킬 수 있다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              프로젝트 규모에 따른 적용 가이드                    │
+│                                                              │
+│  프로젝트 크기      권장 아키텍처         이유                  │
+│  ────────────────────────────────────────────────            │
+│  개인 스크립트      없음                  빠른 구현 우선        │
+│  (100줄 이하)                                                │
+│                                                              │
+│  소규모 CRUD        계층형 (MVC)          충분히 단순          │
+│  (1-3개월)                                                   │
+│                                                              │
+│  중규모 서비스      헥사고날 경량 버전     핵심 도메인만 격리    │
+│  (3-12개월)                                                  │
+│                                                              │
+│  대규모/장기        풀 클린 아키텍처      장기 유지보수 필수    │
+│  (1년+, 팀 규모 5+)                                          │
+│                                                              │
+│  ────────────────────────────────────────────────            │
+│                                                              │
+│  "작동하는 가장 단순한 구조에서 시작하고,                       │
+│   복잡도가 증가하면 리팩토링하라" — YAGNI                       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### 점진적 적용 전략
+
+```
+┌──────────────────────────────────────────────────────┐
+│              점진적 클린 아키텍처 도입                   │
+│                                                      │
+│  Step 1: 계층 분리                                    │
+│  ├── Controller와 Service 분리                        │
+│  └── Repository 패턴 도입                             │
+│                                                      │
+│  Step 2: 인터페이스 도입                               │
+│  ├── Repository를 인터페이스로 추상화                   │
+│  └── 테스트에서 Mock 사용 시작                         │
+│                                                      │
+│  Step 3: Use Case 분리                                │
+│  ├── Service에서 Use Case를 별도 클래스로 추출          │
+│  └── 입출력 DTO 도입                                  │
+│                                                      │
+│  Step 4: 풀 클린 아키텍처                              │
+│  ├── 도메인 엔티티를 ORM 모델에서 분리                  │
+│  └── 패키지 구조를 By Component로 전환                 │
+│                                                      │
+│  각 단계에서 멈춰도 된다.                               │
+│  프로젝트가 요구하는 만큼만 적용하라.                    │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+### 10. 클린 아키텍처 체크리스트
+
+실제 프로젝트에서 클린 아키텍처를 점검할 때 사용하는 체크리스트다.
+
+| 항목 | 확인 질문 |
+|------|----------|
+| 의존성 방향 | 안쪽 계층이 바깥 계층을 import하는 곳이 있는가? |
+| Entity 독립성 | 도메인 엔티티가 ORM, 프레임워크에 의존하는가? |
+| Use Case 테스트 | DB/HTTP 없이 Use Case를 테스트할 수 있는가? |
+| 프레임워크 교체 | 프레임워크를 바꾸면 변경이 Adapter 계층에 한정되는가? |
+| DB 교체 | DB를 바꾸면 Repository 구현체만 바꾸면 되는가? |
+| DTO 분리 | Use Case 입출력이 HTTP 요청/응답 형식에 의존하는가? |
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 핵심 규칙 | 소스 코드 의존성은 바깥에서 안쪽으로만 |
+| Entities | 핵심 비즈니스 규칙, 가장 안정적 계층 |
+| Use Cases | 애플리케이션 비즈니스 규칙, 유스케이스 실행 흐름 |
+| Interface Adapters | Controller, Presenter, Gateway — 형식 변환 |
+| Frameworks & Drivers | 웹, DB, 외부 서비스 — 가장 바깥, 교체 가능 |
+| 의존성 역전 (DIP) | 안쪽이 인터페이스를 소유, 바깥이 구현 제공 |
+| 패키징 | By Layer, By Feature, By Component 중 선택 |
+| 테스트 | 인터페이스 덕분에 Mock 교체로 단위 테스트 극대화 |
+| 오버 엔지니어링 | 프로젝트 규모에 맞게 점진적 적용, YAGNI 원칙 |
+| 핵심 가치 | 프레임워크/DB 독립, 테스트 용이, 장기 유지보수성 |

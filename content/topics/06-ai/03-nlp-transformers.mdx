@@ -1,0 +1,913 @@
+---
+title: "NLP와 트랜스포머 (NLP & Transformers)"
+topic: "06-ai"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 1. 단어 임베딩 (Word Embedding)
+
+컴퓨터는 텍스트를 직접 처리할 수 없다. 단어를 **수치 벡터**로 변환하는 과정을 **임베딩(Embedding)**이라 하며, 좋은 임베딩은 의미가 비슷한 단어를 벡터 공간에서 가까이 배치한다.
+
+#### One-hot 인코딩의 한계
+
+```
+사전: [고양이, 강아지, 물고기, 새, ...]  (사전 크기 V = 10만)
+
+고양이 = [1, 0, 0, 0, ..., 0]   ← 길이 10만, 1개만 1
+강아지 = [0, 1, 0, 0, ..., 0]
+물고기 = [0, 0, 1, 0, ..., 0]
+
+문제점:
+  1. 차원의 저주: V=100,000이면 벡터 길이도 100,000 (극도로 희소)
+  2. 의미 관계 부재: cos(고양이, 강아지) = cos(고양이, 자동차) = 0
+     → 어떤 단어 쌍이든 거리가 동일, 유사성 표현 불가
+  3. 메모리 낭비: 99.999%가 0인 벡터
+```
+
+#### 밀집 벡터 (Dense Vector)
+
+```
+One-hot (희소):     밀집 임베딩 (dense):
+[0, 0, ..., 1, 0]  →  [0.25, -0.71, 0.33, ..., 0.58]
+길이: 100,000           길이: 300 (차원 대폭 축소!)
+
+밀집 벡터의 장점:
+  - 낮은 차원(50~300)으로도 의미를 표현
+  - cos(고양이, 강아지) > cos(고양이, 자동차)  → 유사성 반영!
+  - 벡터 연산으로 의미적 관계 포착 가능
+
+벡터 공간 시각화:
+         ^
+  왕     |        여왕
+   ●     |         ●
+         |                 ← "성별" 방향
+  남자   |        여자
+   ●     |         ●
+─────────┼──────────────►
+         |           "왕족" 방향
+```
+
+---
+
+### 2. Word2Vec
+
+구글의 토마스 미콜로프(2013)가 제안한 임베딩 방법이다. 핵심 가설: **"단어의 의미는 주변 단어에 의해 결정된다"** (분포 가설, Distributional Hypothesis).
+
+#### CBOW (Continuous Bag of Words)
+
+주변 단어(context)로부터 중심 단어(target)를 예측한다.
+
+```
+문장: "나는 귀여운 [고양이]를 좋아한다"
+
+입력 (주변 단어): [나는, 귀여운, 를, 좋아한다]
+      │
+      ▼
+┌─────────────────┐
+│  평균 벡터 계산    │  주변 단어 임베딩의 평균
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│  출력 레이어      │  softmax → 사전 전체에 대한 확률
+└────────┬────────┘
+         ▼
+예측: "고양이"  ← 중심 단어를 맞추도록 학습
+```
+
+#### Skip-gram
+
+CBOW의 반대. 중심 단어로부터 주변 단어를 예측한다.
+
+```
+문장: "나는 귀여운 고양이를 좋아한다"
+
+입력 (중심 단어): 고양이
+      │
+      ▼
+┌─────────────────┐
+│  임베딩 레이어     │  중심 단어의 벡터
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│  출력 레이어      │  softmax
+└────────┬────────┘
+         ▼
+예측: [나는, 귀여운, 를, 좋아한다]  ← 주변 단어를 맞추도록 학습
+```
+
+| 비교 | CBOW | Skip-gram |
+|------|------|-----------|
+| 입력 | 주변 단어 (다수) | 중심 단어 (1개) |
+| 예측 | 중심 단어 (1개) | 주변 단어 (다수) |
+| 속도 | 빠름 | 느림 |
+| 강점 | 빈도 높은 단어에 유리 | 희귀 단어에 효과적, 일반적으로 더 좋은 성능 |
+
+#### Negative Sampling
+
+전체 사전(V=10만)에 대해 softmax를 계산하면 매우 느리다. 대신 **정답 1개 + 랜덤 오답 5~20개만 비교**한다.
+
+```
+중심 단어: "고양이"
+
+Positive: "귀여운"  (실제 주변 단어) → 유사도 높이기 ↑
+Negative: "경제", "자동차", "축구"  (랜덤 단어) → 유사도 낮추기 ↓
+
+→ V=100,000 전체가 아닌 5~20개만 비교 → 수천 배 빠른 학습
+```
+
+#### 벡터 연산: "왕 - 남자 + 여자 ≈ 여왕"
+
+```
+학습된 벡터 공간에서:
+
+  vec("왕")  - vec("남자") + vec("여자")
+= (왕족 + 남성)  - (남성)     + (여성)
+= (왕족 + 여성)
+≈ vec("여왕")
+
+→ 임베딩 공간에서 의미적 관계가 선형적으로 인코딩됨!
+→ "서울 - 한국 + 일본 ≈ 도쿄" 등도 가능
+```
+
+---
+
+### 3. Attention 메커니즘
+
+#### 배경: Seq2Seq의 정보 병목
+
+기존 인코더-디코더(Seq2Seq) 모델은 입력 전체를 **하나의 고정 길이 벡터**로 압축한다. 문장이 길어지면 정보 손실이 불가피하다.
+
+```
+[기존 Seq2Seq — 정보 병목 문제]
+
+입력: "나는 어제 서울에서 맛있는 한식을 먹었다"
+       │
+       ▼
+  인코더 RNN → [고정 길이 벡터 1개] → 디코더 RNN → "I ate delicious..."
+                     ↑
+               긴 문장의 모든 정보를
+               작은 벡터 하나에 압축!
+               → 문장이 길수록 성능 급격히 저하
+```
+
+#### Attention: 가중 참조
+
+디코더가 출력 단어를 생성할 때, 입력 시퀀스의 **모든 위치를 참조**하되, 현재 출력과 **관련 있는 위치에 더 집중**한다.
+
+```
+[Attention 메커니즘]
+
+입력: "나는  어제  서울에서  맛있는  한식을  먹었다"
+       h1    h2     h3      h4     h5     h6
+
+"delicious" 생성 시:
+  h1(나는)   → 가중치 0.02  (관련 낮음)
+  h2(어제)   → 가중치 0.03
+  h3(서울)   → 가중치 0.05
+  h4(맛있는) → 가중치 0.70  ★ 가장 높음!
+  h5(한식)   → 가중치 0.15
+  h6(먹었다) → 가중치 0.05
+
+컨텍스트 = 0.02*h1 + 0.03*h2 + ... + 0.70*h4 + ...
+→ "맛있는"에 가장 주목하여 "delicious" 생성
+```
+
+#### QKV 모델 (Query / Key / Value)
+
+Attention을 일반화한 프레임워크다. **도서관 비유**로 이해하면 쉽다.
+
+```
+비유: 도서관 검색 시스템
+
+  Query(Q) = 내가 찾고 싶은 것      ("파이썬 딥러닝 책")
+  Key(K)   = 각 책의 색인 카드       (제목, 키워드 목록)
+  Value(V) = 책의 실제 내용          (본문 텍스트)
+
+  검색 과정:
+  1. Query와 각 Key의 유사도 계산     → "이 책이 내 질문과 얼마나 관련?"
+  2. 유사도를 가중치로 변환 (softmax) → 확률 분포
+  3. 가중치로 Value를 가중합          → 관련 높은 책 내용을 더 많이 참조
+```
+
+#### Scaled Dot-Product Attention 수식
+
+```
+Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) × V
+
+구성 요소:
+  Q: Query 행렬  (n × d_k)     ← "내가 찾고 싶은 것" n개
+  K: Key 행렬    (m × d_k)     ← "참조 대상의 색인" m개
+  V: Value 행렬  (m × d_v)     ← "참조 대상의 실제 내용"
+  d_k: Key의 차원 수
+
+계산 흐름:
+  ① QK^T                       → (n × m) 유사도 행렬
+  ② / sqrt(d_k)                → 스케일링 (값이 너무 커지는 것 방지)
+  ③ softmax (행별)              → 각 행이 확률 분포 (합=1)
+  ④ × V                        → (n × d_v) 가중합 결과
+
+왜 sqrt(d_k)로 나누는가?
+  - d_k가 크면 내적 값도 커짐 (분산 ≈ d_k)
+  - 내적이 크면 softmax 출력이 극단적 → 그래디언트 소실
+  - sqrt(d_k)로 나눠서 분산을 1로 정규화 → softmax 안정화
+```
+
+---
+
+### 4. Self-Attention
+
+**같은 시퀀스 내에서** Q, K, V가 모두 만들어지는 Attention이다. 각 토큰이 같은 문장의 다른 모든 토큰과의 관계를 학습한다.
+
+```
+[Self-Attention 예시 — 한국어 문장]
+
+문장: "그 동물은 피곤해서 길을 건너지 않았다"
+
+"않았다"는 어디에 주목하는가?
+  → "동물은" (주어와 서술어 관계)
+  → "건너지" (부정의 대상)
+
+"피곤해서"는 어디에 주목하는가?
+  → "동물은" (피곤한 주체)
+  → "않았다" (피곤 → 안 건넘, 인과관계)
+
+→ 각 단어가 문장 내 모든 단어와의 관계를 자동으로 학습!
+```
+
+#### 입력에서 QKV 생성
+
+```
+입력 임베딩 X (n × d_model)
+     │
+     ├── X × W_Q = Q (Query)    "나는 무엇을 찾고 있나?"
+     ├── X × W_K = K (Key)      "나는 어떤 정보를 제공하나?"
+     └── X × W_V = V (Value)    "나의 실제 내용은?"
+
+W_Q, W_K, W_V: 학습되는 가중치 행렬 (d_model × d_k)
+→ 같은 X에서 서로 다른 역할의 벡터를 생성
+→ "역할 분리"가 Self-Attention의 핵심
+```
+
+---
+
+### 5. Multi-Head Attention
+
+하나의 Attention은 하나의 관점만 학습한다. **여러 개의 Attention을 병렬로** 수행하면 다양한 관점에서 관계를 포착할 수 있다.
+
+```
+[Multi-Head Attention 구조]
+
+입력 X ──┬── Head 1: Attention(XW_Q1, XW_K1, XW_V1) → 구문적 관계
+         ├── Head 2: Attention(XW_Q2, XW_K2, XW_V2) → 의미적 관계
+         ├── Head 3: Attention(XW_Q3, XW_K3, XW_V3) → 지시 관계
+         ├── ...
+         └── Head h: Attention(XW_Qh, XW_Kh, XW_Vh) → 기타 패턴
+                │
+                ▼
+          Concat(head_1, head_2, ..., head_h)  ← 모든 헤드 결과 연결
+                │
+                ▼
+          Linear(W_O)  → 최종 d_model 차원으로 변환
+```
+
+```
+수식:
+  MultiHead(Q, K, V) = Concat(head_1, ..., head_h) × W_O
+  각 head_i = Attention(Q × W_Qi, K × W_Ki, V × W_Vi)
+
+차원 분배:
+  d_model = 512, h = 8 (헤드 수)
+  → 각 헤드의 차원 d_k = d_v = 512 / 8 = 64
+  → 8개 헤드가 각각 64차원에서 Attention 수행
+  → 결과를 합쳐서 다시 512차원
+  → 총 계산량은 단일 512차원 Attention과 거의 동일!
+```
+
+---
+
+### 6. Transformer 아키텍처
+
+2017년 구글의 "Attention Is All You Need" 논문에서 제안되었다. RNN 없이 **Attention만으로** 시퀀스를 처리한다.
+
+```
+[Transformer 전체 구조]
+
+       인코더 (Encoder)              디코더 (Decoder)
+  ┌────────────────────┐       ┌────────────────────┐
+  │                    │       │                    │
+  │  Multi-Head        │       │  Masked Multi-Head │
+  │  Self-Attention    │       │  Self-Attention    │
+  │  (양방향)           │       │  (단방향/인과적)    │
+  │        │           │       │        │           │
+  │  Add & Norm        │       │  Add & Norm        │
+  │        │           │       │        │           │
+  │  Feed Forward      │       │  Cross-Attention   │←── 인코더 출력
+  │        │           │       │  (K,V = 인코더)     │
+  │  Add & Norm        │       │        │           │
+  │        │           │       │  Add & Norm        │
+  │       ×N           │       │        │           │
+  │                    │       │  Feed Forward      │
+  └────────┬───────────┘       │        │           │
+           │                   │  Add & Norm        │
+           └───────────────────│       ×N           │
+                               └────────────────────┘
+  입력: 소스 시퀀스              출력: 타겟 시퀀스 (한 토큰씩)
+```
+
+#### 인코더 vs 디코더 — Attention 마스크 비교
+
+```
+인코더 (양방향, Bidirectional):    디코더 (인과적, Causal/Masked):
+
+     A  B  C  D                        A  B  C  D
+A  [ O  O  O  O ]                 A  [ O  X  X  X ]
+B  [ O  O  O  O ]                 B  [ O  O  X  X ]
+C  [ O  O  O  O ]                 C  [ O  O  O  X ]
+D  [ O  O  O  O ]                 D  [ O  O  O  O ]
+
+O = 참조 가능                      X = 참조 불가 (마스킹)
+
+인코더:                           디코더:
+  - 모든 토큰이 모든 토큰 참조      - 각 토큰은 자기 앞 토큰만 참조
+  - 문맥 이해에 강함 (분류, QA)     - 텍스트 생성에 적합 (다음 단어 예측)
+  - BERT가 사용                    - GPT가 사용
+```
+
+#### Positional Encoding (위치 인코딩)
+
+Transformer는 RNN과 달리 순서 정보가 없다. 위치 정보를 벡터로 인코딩하여 임베딩에 더한다.
+
+```
+PE(pos, 2i)   = sin(pos / 10000^(2i/d_model))
+PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))
+
+pos: 토큰의 위치 (0, 1, 2, ...)
+i:   차원 인덱스 (0, 1, ..., d_model/2)
+
+입력 = Token Embedding + Positional Encoding
+
+왜 sin/cos인가?
+  1. 어떤 고정 오프셋 k에 대해 PE(pos+k)를 PE(pos)의 선형 함수로 표현 가능
+     → 모델이 상대적 위치 관계를 쉽게 학습
+  2. 학습 시 보지 못한 긴 시퀀스에도 일반화 가능 (외삽)
+  3. 각 차원이 서로 다른 주기의 파동 → 풍부한 위치 표현
+```
+
+---
+
+### 7. BERT (Bidirectional Encoder Representations from Transformers)
+
+구글이 2018년에 발표한 모델이다. Transformer **인코더만** 사용하며, **사전 학습(Pre-training) + 미세 조정(Fine-tuning)** 패러다임을 확립했다.
+
+#### 사전 학습 1: MLM (Masked Language Modeling)
+
+입력 토큰의 15%를 무작위로 선택하고, 해당 토큰을 예측하도록 학습한다.
+
+```
+원본: "고양이가 소파 위에서 잠을 잔다"
+입력: "고양이가 소파 [MASK]에서 [MASK]을 잔다"
+예측:                   위           잠
+
+선택된 15% 토큰의 처리 (80/10/10 규칙):
+  - 80%는 [MASK] 토큰으로 교체  → 실제 마스킹, 문맥으로 예측 학습
+  - 10%는 랜덤 토큰으로 교체    → 노이즈, 모든 위치 주의 유도
+  - 10%는 원본 유지             → 사전학습-미세조정 불일치 완화
+```
+
+```
+왜 양방향이 중요한가?
+
+  "나는 [MASK]에 가서 돈을 찾았다"
+
+  왼쪽만: "나는 ___" → 학교? 마트? 회사? (수많은 가능성)
+  오른쪽만: "___ 돈을 찾았다" → 여전히 애매
+  양방향: "나는 ___에 가서 돈을 찾았다" → "은행" (확실!)
+```
+
+#### 사전 학습 2: NSP (Next Sentence Prediction)
+
+두 문장이 원본에서 연속인지(IsNext) 아닌지(NotNext)를 예측한다.
+
+```
+Positive (50%): [CLS] 오늘 날씨가 좋다 [SEP] 공원에 산책을 갔다 [SEP]
+→ 예측: IsNext (실제로 연속)
+
+Negative (50%): [CLS] 오늘 날씨가 좋다 [SEP] 주가가 급등했다 [SEP]
+→ 예측: NotNext (관련 없는 문장)
+```
+
+#### [CLS] 토큰과 Fine-tuning
+
+```
+[분류 태스크 — 감성 분석]
+[CLS] 이 영화 정말 재밌었어요 [SEP]
+  │
+  └──► [CLS] 출력 벡터 → Linear → Softmax → 긍정/부정
+       전체 시퀀스를 대표하는 벡터
+
+[개체명 인식 (NER)]
+[CLS] 김철수는 서울에서 삼성에 다닌다 [SEP]
+       PER      LOC        ORG
+→ 각 토큰에 레이블 분류
+
+[질의응답 (QA)]
+[CLS] 한국의 수도는? [SEP] 한국의 수도는 서울이다 [SEP]
+                          ↑ start    ↑ end
+→ 각 토큰의 start/end 확률 예측
+```
+
+```
+BERT 모델 크기:
+  BERT-Base:  L=12, H=768,  A=12,  파라미터=110M
+  BERT-Large: L=24, H=1024, A=16,  파라미터=340M
+
+  L = Transformer 레이어 수
+  H = 히든 차원
+  A = Attention 헤드 수
+```
+
+---
+
+### 8. GPT (Generative Pre-trained Transformer)
+
+OpenAI가 개발한 모델이다. Transformer **디코더만** 사용하며, **자기회귀(Autoregressive)** 방식으로 다음 토큰을 순차적으로 예측/생성한다.
+
+#### 자기회귀 학습: 다음 토큰 예측
+
+```
+[GPT의 사전학습]
+
+텍스트: "인공지능은 미래의 핵심 기술이다"
+
+학습 데이터가 자동 생성됨 (별도 라벨링 불필요!):
+  "인공"                    → 다음: "지능은"
+  "인공 지능은"              → 다음: "미래의"
+  "인공 지능은 미래의"        → 다음: "핵심"
+  "인공 지능은 미래의 핵심"    → 다음: "기술이다"
+```
+
+#### 텍스트 생성 과정
+
+```
+[자기회귀 디코딩]
+
+단계 1: "오늘"                      → P(다음|오늘)      → "날씨가"
+단계 2: "오늘 날씨가"                → P(다음|오늘 날씨가) → "정말"
+단계 3: "오늘 날씨가 정말"            → P(다음|...)       → "좋습니다"
+단계 4: "오늘 날씨가 정말 좋습니다"    → P(다음|...)       → [EOS]
+
+→ 한 번에 한 토큰씩, 왼쪽→오른쪽으로 생성
+→ 이전에 생성한 토큰이 다음 토큰 생성의 입력이 됨
+```
+
+#### 디코딩 전략 (Decoding Strategies)
+
+```
+[Greedy Decoding]
+  항상 확률이 가장 높은 토큰 선택
+  장점: 빠르고 결정론적
+  단점: 반복적이고 지루한 텍스트
+
+[Top-k Sampling (k=50)]
+  확률 상위 k개 토큰 중 확률적 선택
+  예: 확률 상위 50개 중 랜덤 샘플링
+  단점: 분포에 따라 후보 수가 고정 (유연성 부족)
+
+[Top-p (Nucleus) Sampling (p=0.9)]
+  누적 확률이 p에 도달할 때까지의 토큰 중 선택
+  예: 상위 토큰을 확률순으로 더해서 합이 0.9 넘을 때까지만 후보
+  장점: 분포에 따라 후보 수가 자동 조절 → 가장 많이 사용
+
+[Temperature (T)]
+  softmax(logits / T) → 분포의 날카로움 조절
+  T = 0.1: 매우 날카로움 → 거의 greedy, 보수적/정확
+  T = 1.0: 원래 분포
+  T = 2.0: 매우 평평함   → 다양하지만 불안정, 창의적
+
+  예시 — 다음 단어 확률 분포:
+  원본:    좋다(0.7)  훌륭하다(0.2)  멋지다(0.08)  이상하다(0.02)
+  T=0.1:  좋다(0.99) 훌륭하다(0.01) 멋지다(~0)    이상하다(~0)
+  T=2.0:  좋다(0.35) 훌륭하다(0.28) 멋지다(0.22)  이상하다(0.15)
+```
+
+#### 스케일링 법칙 (Scaling Laws)
+
+OpenAI의 연구에 따르면, 모델 성능은 세 변수에 대해 **멱법칙(power law)**을 따른다.
+
+```
+L(N) ∝ N^(-α)    N = 모델 파라미터 수
+L(D) ∝ D^(-β)    D = 학습 데이터 토큰 수
+L(C) ∝ C^(-γ)    C = 컴퓨트(연산량, FLOPs)
+
+L = 손실 (낮을수록 좋음)
+
+핵심 발견:
+  - N, D, C 세 요소를 함께 늘려야 효율적
+  - 하나만 키우면 수확 체감 (diminishing returns)
+  - Chinchilla 법칙: 최적 비율은 N과 D를 비슷한 비율로 키우는 것
+
+GPT 버전별 규모:
+  GPT-1:   117M 파라미터   (2018)
+  GPT-2:   1.5B           (2019)
+  GPT-3:   175B           (2020)
+  GPT-4:   ~1.8T (추정)    (2023)
+```
+
+---
+
+### 9. BERT vs GPT 비교
+
+```
+┌───────────────┬──────────────────────┬──────────────────────┐
+│     구분       │        BERT          │        GPT           │
+├───────────────┼──────────────────────┼──────────────────────┤
+│ 구조          │ Transformer 인코더    │ Transformer 디코더    │
+│ Attention 방향│ 양방향 (전체 참조)     │ 단방향 (좌→우, 인과적)│
+│ 학습 목표     │ MLM + NSP            │ 다음 토큰 예측        │
+│ 핵심 강점     │ 이해 (분류, NER, QA)  │ 생성 (대화, 요약, 코딩)│
+│ 입출력        │ 텍스트 → 벡터 표현    │ 프롬프트 → 텍스트     │
+│ Fine-tuning   │ 태스크별 헤드 추가    │ 프롬프트 엔지니어링    │
+│ 대표 활용     │ 검색 순위, 감성 분류  │ 챗봇, 코드 생성       │
+│ 대표 모델     │ BERT, RoBERTa, ELECTRA│ GPT-4, Claude, LLaMA │
+└───────────────┴──────────────────────┴──────────────────────┘
+
+한 줄 요약:
+  BERT = "빈칸을 채워라" (양방향 이해)
+  GPT  = "다음 단어는?" (단방향 생성)
+```
+
+---
+
+## 코드 예시
+
+### Self-Attention 구현 (NumPy)
+
+Scaled Dot-Product Attention의 전체 과정을 구현하고, Attention 가중치 행렬을 시각화한다.
+
+```python
+import numpy as np
+
+
+def softmax(x: np.ndarray) -> np.ndarray:
+    """수치 안정 softmax (행별 적용)"""
+    exp_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
+
+
+def scaled_dot_product_attention(
+    Q: np.ndarray, K: np.ndarray, V: np.ndarray,
+    mask: np.ndarray = None
+) -> tuple:
+    """
+    Scaled Dot-Product Attention.
+
+    Args:
+        Q: Query (seq_len, d_k)
+        K: Key   (seq_len, d_k)
+        V: Value (seq_len, d_v)
+        mask: True인 위치를 -inf로 설정 (Causal Masking용)
+
+    Returns:
+        output:  Attention 결과     (seq_len, d_v)
+        weights: Attention 가중치   (seq_len, seq_len)
+    """
+    d_k = Q.shape[-1]
+
+    # 1단계: Q와 K의 내적 → 유사도 행렬
+    scores = Q @ K.T  # (seq_len, seq_len)
+
+    # 2단계: sqrt(d_k)로 스케일링 → 그래디언트 안정화
+    scores = scores / np.sqrt(d_k)
+
+    # 3단계: 마스크 적용 (디코더에서 미래 토큰 차단)
+    if mask is not None:
+        scores = np.where(mask, -1e9, scores)
+
+    # 4단계: softmax → 확률 분포 (각 행의 합 = 1)
+    weights = softmax(scores)
+
+    # 5단계: 가중합 → 최종 출력
+    output = weights @ V  # (seq_len, d_v)
+
+    return output, weights
+
+
+def self_attention_demo():
+    """Self-Attention 시뮬레이션: 한국어 문장으로 Attention 가중치 확인"""
+    np.random.seed(42)
+
+    tokens = ["나는", "맛있는", "한식을", "좋아한다"]
+    seq_len = len(tokens)
+    d_model = 8  # 임베딩 차원
+
+    # 임의의 입력 임베딩 (실제로는 학습된 값)
+    X = np.random.randn(seq_len, d_model)
+
+    # QKV 가중치 행렬 (실제로는 학습됨)
+    W_Q = np.random.randn(d_model, d_model) * 0.1
+    W_K = np.random.randn(d_model, d_model) * 0.1
+    W_V = np.random.randn(d_model, d_model) * 0.1
+
+    # QKV 생성: 같은 X에서 서로 다른 역할의 벡터 생성
+    Q = X @ W_Q
+    K = X @ W_K
+    V = X @ W_V
+
+    # Self-Attention 수행
+    output, weights = scaled_dot_product_attention(Q, K, V)
+
+    # Attention 가중치 행렬 출력
+    print("=" * 55)
+    print("Self-Attention 가중치 행렬")
+    print("=" * 55)
+    print("            ", "  ".join(f"{t:>8s}" for t in tokens))
+    for i, row in enumerate(weights):
+        bars = "  ".join(f"{w:8.4f}" for w in row)
+        print(f"  {tokens[i]:>8s}  {bars}")
+
+    print()
+    print("해석: 각 행 = 해당 토큰이 다른 토큰에 얼마나 주목하는지")
+    print("      각 행의 합 = 1.0 (softmax)")
+
+    # 인과적 마스크 (GPT 스타일) 적용
+    print("\n" + "=" * 55)
+    print("Causal Masked Attention (GPT 스타일)")
+    print("=" * 55)
+
+    # 상삼각 행렬: 미래 토큰 위치를 True로 설정
+    causal_mask = np.triu(np.ones((seq_len, seq_len), dtype=bool), k=1)
+    output_masked, weights_masked = scaled_dot_product_attention(
+        Q, K, V, mask=causal_mask
+    )
+
+    print("            ", "  ".join(f"{t:>8s}" for t in tokens))
+    for i, row in enumerate(weights_masked):
+        bars = "  ".join(f"{w:8.4f}" for w in row)
+        print(f"  {tokens[i]:>8s}  {bars}")
+    print()
+    print("→ 각 토큰은 자기 자신과 이전 토큰만 참조 (미래 = 0)")
+
+
+if __name__ == "__main__":
+    self_attention_demo()
+```
+
+**실행 결과 예시:**
+
+```
+Self-Attention 가중치 행렬 (양방향):
+                  나는    맛있는    한식을  좋아한다
+  나는           0.2614   0.3012   0.1988   0.2386
+  맛있는         0.1753   0.4021   0.2105   0.2121
+  한식을         0.2890   0.1934   0.3245   0.1931
+  좋아한다       0.2200   0.2567   0.1899   0.3334
+
+Causal Masked (단방향):
+                  나는    맛있는    한식을  좋아한다
+  나는           1.0000   0.0000   0.0000   0.0000
+  맛있는         0.3900   0.6100   0.0000   0.0000
+  한식을         0.3200   0.2800   0.4000   0.0000
+  좋아한다       0.2200   0.2567   0.1899   0.3334
+```
+
+---
+
+### BERT MLM 시뮬레이션
+
+BERT의 Masked Language Modeling 학습 과정을 간략히 재현한다. 실제 BERT는 Transformer 인코더를 사용하지만, 여기서는 마스킹 로직과 예측 개념만 시뮬레이션한다.
+
+```python
+import numpy as np
+
+
+class SimpleBERTMLM:
+    """BERT MLM(Masked Language Modeling) 핵심 개념 시뮬레이션."""
+
+    def __init__(self, vocab: list, d_model: int = 32):
+        self.vocab = vocab
+        self.vocab_size = len(vocab)
+        self.d_model = d_model
+        self.word_to_idx = {w: i for i, w in enumerate(vocab)}
+
+        # 임베딩 + 출력 가중치 (실제로는 Transformer 레이어가 중간에 있음)
+        self.embeddings = np.random.randn(self.vocab_size, d_model) * 0.1
+        self.output_weights = np.random.randn(d_model, self.vocab_size) * 0.1
+
+    def mask_tokens(self, tokens: list, mask_prob: float = 0.15):
+        """
+        BERT 스타일 마스킹: 15% 토큰 선택 후 80/10/10 처리.
+
+        Returns:
+            masked_tokens: 마스킹된 토큰 리스트
+            labels: 정답 인덱스 (-1 = 마스킹 안 됨)
+        """
+        masked_tokens = tokens.copy()
+        labels = [-1] * len(tokens)  # -1: 마스킹 대상 아님
+
+        for i in range(len(tokens)):
+            if np.random.random() < mask_prob:
+                labels[i] = self.word_to_idx.get(tokens[i], 0)
+                rand = np.random.random()
+
+                if rand < 0.8:
+                    # 80%: [MASK]로 교체
+                    masked_tokens[i] = "[MASK]"
+                elif rand < 0.9:
+                    # 10%: 랜덤 토큰으로 교체
+                    masked_tokens[i] = self.vocab[
+                        np.random.randint(0, self.vocab_size)
+                    ]
+                # else: 10%는 원본 유지
+
+        return masked_tokens, labels
+
+    def predict_masked(self, masked_tokens: list) -> list:
+        """마스킹된 위치의 단어를 컨텍스트 기반으로 예측."""
+        predictions = []
+        for i, token in enumerate(masked_tokens):
+            if token == "[MASK]":
+                # 주변 토큰의 임베딩 평균으로 컨텍스트 표현
+                ctx_indices = [
+                    self.word_to_idx[t]
+                    for j, t in enumerate(masked_tokens)
+                    if j != i and t != "[MASK]" and t in self.word_to_idx
+                ]
+                if ctx_indices:
+                    ctx_vec = np.mean(self.embeddings[ctx_indices], axis=0)
+                else:
+                    ctx_vec = np.zeros(self.d_model)
+
+                # 사전 전체에 대한 확률 계산
+                logits = ctx_vec @ self.output_weights
+                probs = np.exp(logits - np.max(logits))
+                probs = probs / probs.sum()
+                pred_idx = np.argmax(probs)
+
+                predictions.append({
+                    "position": i,
+                    "predicted": self.vocab[pred_idx],
+                    "confidence": float(probs[pred_idx]),
+                })
+        return predictions
+
+
+def demo_bert_mlm():
+    """BERT MLM 시뮬레이션 실행"""
+    print("=" * 50)
+    print("BERT MLM 시뮬레이션")
+    print("=" * 50)
+
+    vocab = [
+        "[MASK]", "나는", "고양이를", "좋아한다", "강아지를",
+        "사랑한다", "그는", "음악을", "듣는다", "영화를", "본다"
+    ]
+    model = SimpleBERTMLM(vocab)
+
+    sentence = ["나는", "고양이를", "좋아한다"]
+    print(f"\n원본 문장: {sentence}")
+
+    # 마스킹 적용 (높은 비율로 설정하여 데모 효과)
+    np.random.seed(7)
+    masked, labels = model.mask_tokens(sentence, mask_prob=0.5)
+    print(f"마스킹 후: {masked}")
+    print(f"정답 라벨: {labels}  (-1 = 마스킹 안 됨)")
+
+    # 예측
+    preds = model.predict_masked(masked)
+    for p in preds:
+        print(f"  위치 {p['position']}: 예측='{p['predicted']}' "
+              f"(확신도={p['confidence']:.3f})")
+
+
+if __name__ == "__main__":
+    demo_bert_mlm()
+```
+
+---
+
+### RAG 파이프라인 개념 (벡터 검색 + 프롬프트 구성)
+
+RAG(Retrieval-Augmented Generation)의 핵심 흐름을 간략히 구현한다. 실제로는 임베딩 모델과 벡터 DB를 사용하지만, 여기서는 TF-IDF 기반 간이 버전으로 개념을 보여준다.
+
+```python
+import numpy as np
+from dataclasses import dataclass
+
+
+@dataclass
+class Document:
+    """검색 대상 문서"""
+    content: str
+    source: str = ""
+
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """코사인 유사도 계산"""
+    norm = np.linalg.norm(a) * np.linalg.norm(b)
+    return float(np.dot(a, b) / norm) if norm > 0 else 0.0
+
+
+class SimpleRAG:
+    """
+    RAG 파이프라인 개념 구현.
+    실제 시스템: 임베딩=OpenAI/BGE, 벡터DB=ChromaDB/FAISS, LLM=GPT-4/Claude
+    여기서는 TF-IDF + 코사인 유사도로 개념을 시뮬레이션한다.
+    """
+
+    def __init__(self):
+        self.documents: list[Document] = []
+        self.vectors: list[np.ndarray] = []
+        self.vocabulary: dict[str, int] = {}
+
+    def index_documents(self, documents: list[Document]):
+        """문서를 벡터로 변환하여 인덱싱"""
+        self.documents = documents
+
+        # 어휘 구축
+        all_words = set()
+        for doc in documents:
+            all_words.update(doc.content.split())
+        self.vocabulary = {w: i for i, w in enumerate(sorted(all_words))}
+
+        # TF-IDF 벡터 생성
+        self.vectors = [self._encode(doc.content) for doc in documents]
+        print(f"[인덱싱 완료] {len(documents)}개 문서, 어휘 크기={len(self.vocabulary)}")
+
+    def _encode(self, text: str) -> np.ndarray:
+        """텍스트 → TF 기반 벡터 (간이 임베딩)"""
+        words = text.split()
+        vec = np.zeros(len(self.vocabulary))
+        for w in words:
+            if w in self.vocabulary:
+                vec[self.vocabulary[w]] += 1
+        norm = np.linalg.norm(vec)
+        return vec / norm if norm > 0 else vec
+
+    def retrieve(self, query: str, top_k: int = 3) -> list[tuple[Document, float]]:
+        """질문과 가장 유사한 문서 top_k개 검색"""
+        q_vec = self._encode(query)
+        scored = [
+            (doc, cosine_similarity(q_vec, vec))
+            for doc, vec in zip(self.documents, self.vectors)
+        ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+    def build_prompt(self, query: str, results: list[tuple[Document, float]]) -> str:
+        """검색 결과 + 질문으로 LLM 프롬프트 구성"""
+        context = "\n".join(
+            f"[문서 {i+1}] {doc.content}" for i, (doc, _) in enumerate(results)
+        )
+        return (
+            f"다음 참고 문서를 바탕으로 질문에 답하세요.\n"
+            f"문서에 없는 내용은 '정보 없음'이라고 답하세요.\n\n"
+            f"참고 문서:\n{context}\n\n"
+            f"질문: {query}\n\n답변:"
+        )
+
+    def query(self, question: str, top_k: int = 3):
+        """전체 RAG 파이프라인: 검색 → 프롬프트 구성 → (LLM 호출)"""
+        # 1. 검색
+        results = self.retrieve(question, top_k)
+        # 2. 프롬프트 구성
+        prompt = self.build_prompt(question, results)
+        # 3. LLM 생성 (여기서는 프롬프트만 반환)
+        return {"results": results, "prompt": prompt}
+
+
+def demo_rag():
+    """RAG 파이프라인 시뮬레이션"""
+    print("=" * 55)
+    print("RAG 파이프라인 시뮬레이션")
+    print("=" * 55)
+
+    # 문서 준비
+    docs = [
+        Document("BERT는 트랜스포머 인코더 기반 양방향 모델이다", "nlp-guide"),
+        Document("GPT는 트랜스포머 디코더 기반 자기회귀 모델이다", "nlp-guide"),
+        Document("트랜스포머는 2017년 구글이 어텐션 메커니즘으로 제안했다", "paper"),
+        Document("RAG는 검색 증강 생성으로 환각을 줄이는 기법이다", "rag-doc"),
+    ]
+
+    rag = SimpleRAG()
+    rag.index_documents(docs)
+
+    question = "트랜스포머를 만든 회사는?"
+    result = rag.query(question)
+
+    print(f"\n질문: {question}")
+    print(f"\n검색 결과:")
+    for doc, score in result["results"]:
+        print(f"  [{score:.3f}] {doc.content}")
+    print(f"\n생성된 프롬프트:\n{result['prompt']}")
+    print("→ 이 프롬프트를 GPT-4 / Claude 등 LLM에 전달하여 답변 생성")
+
+
+if __name__ == "__main__":
+    demo_rag()
+```
+
+---

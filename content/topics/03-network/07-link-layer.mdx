@@ -1,0 +1,787 @@
+---
+title: "링크 계층과 스위칭"
+topic: "03-network"
+order: 7
+---
+
+## 핵심 개념
+
+**링크 계층(Link Layer)**은 OSI 모델의 2계층으로, 인접한 두 노드 사이에서
+**프레임(frame)**을 전달하는 역할을 담당한다. 네트워크 계층이 종단 간(end-to-end)
+패킷 전달을 책임진다면, 링크 계층은 **홉 단위(hop-by-hop)** 전달을 담당한다.
+
+```
+네트워크 계층 (IP 패킷):
+  호스트 A ════════════════════════════════════ 호스트 B
+                (종단 간 전달)
+
+링크 계층 (프레임):
+  호스트 A ──── 스위치 ──── 라우터 ──── 스위치 ──── 호스트 B
+           링크1      링크2       링크3       링크4
+                 (홉 단위 전달)
+```
+
+### 링크 계층의 핵심 서비스
+
+| 서비스 | 설명 |
+|--------|------|
+| **프레이밍(Framing)** | 네트워크 계층 패킷을 프레임으로 캡슐화 |
+| **링크 접근(Link Access)** | 공유 매체에 대한 접근 제어 (MAC 프로토콜) |
+| **오류 검출/정정** | 비트 오류를 검출하고 선택적으로 정정 |
+| **흐름 제어** | 송수신 속도 조절 (선택적) |
+
+---
+
+## MAC 주소
+
+### MAC 주소란?
+
+**MAC(Media Access Control) 주소**는 네트워크 인터페이스 카드(NIC)에
+할당된 **48비트(6바이트)** 고유 식별자이다.
+
+```
+MAC 주소 형식:
+  AA:BB:CC:DD:EE:FF  (콜론 표기)
+  AA-BB-CC-DD-EE-FF  (하이픈 표기)
+
+  ┌──────────────────┬──────────────────┐
+  │  OUI (24비트)     │  장치 고유 (24비트)│
+  │ 제조사 식별       │  일련번호         │
+  └──────────────────┴──────────────────┘
+  예: 00:1A:2B → Intel 제조사
+```
+
+### MAC 주소 vs IP 주소
+
+| 항목 | MAC 주소 | IP 주소 |
+|------|----------|---------|
+| **계층** | 링크 계층 (2계층) | 네트워크 계층 (3계층) |
+| **길이** | 48비트 (6바이트) | 32비트 (IPv4) / 128비트 (IPv6) |
+| **구조** | **평면적** (계층 없음) | **계층적** (네트워크 + 호스트) |
+| **할당** | 제조사가 하드웨어에 고정 | 네트워크 관리자/DHCP가 동적 할당 |
+| **범위** | 로컬 네트워크 (LAN) 내 | 전역 (인터넷 전체) |
+| **비유** | 주민등록번호 (불변) | 주소 (이사 시 변경) |
+
+```python
+# MAC 주소 관련 유틸리티
+import random
+
+def generate_mac():
+    """랜덤 MAC 주소 생성"""
+    # 첫 바이트의 LSB=0 (유니캐스트), 두번째 LSB=1 (로컬 관리)
+    first_byte = random.randint(0, 255) & 0xFC | 0x02
+    octets = [first_byte] + [random.randint(0, 255) for _ in range(5)]
+    return ":".join(f"{b:02X}" for b in octets)
+
+def is_broadcast(mac):
+    """브로드캐스트 MAC 주소인지 확인"""
+    return mac.upper() == "FF:FF:FF:FF:FF:FF"
+
+def parse_oui(mac):
+    """OUI(제조사 식별자) 추출"""
+    return mac[:8]  # 앞 3바이트 (AA:BB:CC)
+
+# 예시
+mac1 = generate_mac()
+print(f"생성된 MAC: {mac1}")
+print(f"OUI: {parse_oui(mac1)}")
+print(f"브로드캐스트 여부: {is_broadcast('FF:FF:FF:FF:FF:FF')}")
+```
+
+---
+
+## 이더넷 (Ethernet)
+
+### 이더넷 개요
+
+이더넷은 가장 널리 사용되는 **유선 LAN 기술**이다.
+IEEE 802.3 표준으로 정의되며, 10Mbps에서 시작하여 현재 400Gbps까지 발전했다.
+
+```
+이더넷 발전 역사:
+  10BASE-T    →  100BASE-TX  →  1000BASE-T  → 10GBASE-T → ...
+  (10 Mbps)     (100 Mbps)    (1 Gbps)       (10 Gbps)
+  1990년대       1995년         1999년          2006년
+```
+
+### 이더넷 프레임 구조
+
+```
+┌──────────┬──────────┬──────────┬──────┬───────────┬─────┐
+│프리앰블  │목적지 MAC│출발지 MAC│타입  │  페이로드   │ FCS │
+│ 8바이트  │ 6바이트  │ 6바이트  │2바이트│46~1500바이트│4바이트│
+└──────────┴──────────┴──────────┴──────┴───────────┴─────┘
+
+│←───── 헤더 (22바이트) ─────→│←── 데이터 ──→│←CRC→│
+```
+
+| 필드 | 크기 | 설명 |
+|------|------|------|
+| **프리앰블** | 8바이트 | 동기화용 비트 패턴 (10101010...10101011) |
+| **목적지 MAC** | 6바이트 | 수신자의 MAC 주소 |
+| **출발지 MAC** | 6바이트 | 송신자의 MAC 주소 |
+| **타입/길이** | 2바이트 | 상위 프로토콜 타입 (IPv4=0x0800, ARP=0x0806) |
+| **페이로드** | 46~1500바이트 | 상위 계층 데이터 (IP 패킷 등) |
+| **FCS** | 4바이트 | CRC-32 오류 검출 코드 |
+
+> 최소 프레임 크기 = 64바이트 (헤더 18 + 페이로드 46). 이보다 작으면 패딩을 추가한다.
+> 최대 프레임 크기 = 1518바이트 (MTU = 1500바이트).
+
+```python
+# 이더넷 프레임 구조 시뮬레이션
+import struct
+
+class EthernetFrame:
+    """이더넷 프레임 구조"""
+    # 주요 이더타입
+    ETHERTYPE_IPV4 = 0x0800
+    ETHERTYPE_ARP = 0x0806
+    ETHERTYPE_IPV6 = 0x86DD
+
+    def __init__(self, dst_mac, src_mac, ethertype, payload):
+        self.dst_mac = dst_mac
+        self.src_mac = src_mac
+        self.ethertype = ethertype
+        self.payload = payload
+
+        # 최소 페이로드 46바이트 보장 (패딩)
+        if len(payload) < 46:
+            self.payload = payload + b'\x00' * (46 - len(payload))
+
+    def calculate_fcs(self):
+        """CRC-32 체크섬 계산 (간략화)"""
+        import binascii
+        data = (self.dst_mac.encode() + self.src_mac.encode() +
+                struct.pack('!H', self.ethertype) + self.payload)
+        return binascii.crc32(data) & 0xFFFFFFFF
+
+    def display(self):
+        print("=== 이더넷 프레임 ===")
+        print(f"  목적지 MAC: {self.dst_mac}")
+        print(f"  출발지 MAC: {self.src_mac}")
+        print(f"  이더타입:   0x{self.ethertype:04X} ", end="")
+        type_names = {0x0800: "(IPv4)", 0x0806: "(ARP)",
+                      0x86DD: "(IPv6)"}
+        print(type_names.get(self.ethertype, "(알 수 없음)"))
+        print(f"  페이로드:   {len(self.payload)} 바이트")
+        print(f"  FCS:        0x{self.calculate_fcs():08X}")
+
+# 프레임 생성 예시
+frame = EthernetFrame(
+    dst_mac="AA:BB:CC:DD:EE:FF",
+    src_mac="11:22:33:44:55:66",
+    ethertype=EthernetFrame.ETHERTYPE_IPV4,
+    payload=b"Hello, Ethernet!"
+)
+frame.display()
+```
+
+---
+
+## CSMA/CD 프로토콜
+
+### CSMA/CD란?
+
+**CSMA/CD(Carrier Sense Multiple Access with Collision Detection)**는
+공유 매체에서의 **충돌을 감지하고 처리**하는 매체 접근 제어 프로토콜이다.
+초기 이더넷(반이중 모드)에서 사용되었다.
+
+```
+CSMA/CD 동작 과정:
+
+1. 반송파 감지 (Carrier Sense)
+   ┌──────┐                        ┌──────┐
+   │노드 A│  "채널이 비어있나?"     │노드 B│
+   │      │─── 감지 ──────────────▶│      │
+   └──────┘                        └──────┘
+
+2. 채널이 비어있으면 전송 시작
+   ┌──────┐ ═══════════════════════ ┌──────┐
+   │노드 A│ ──── 프레임 전송 ──────▶│노드 B│
+   └──────┘                        └──────┘
+
+3. 충돌 발생 시!
+   ┌──────┐ ═══════╳═══════════════ ┌──────┐
+   │노드 A│ ──── 전송 ──▶  ◀── 전송│노드 B│
+   └──────┘        ↑ 충돌!         └──────┘
+
+4. 잼 신호 전송 후 지수적 백오프
+   ┌──────┐                        ┌──────┐
+   │노드 A│ ─── 잼 신호 ──▶       │노드 B│
+   │      │ 랜덤 시간 대기         │      │
+   └──────┘                        └──────┘
+```
+
+### 지수적 백오프 (Exponential Backoff)
+
+충돌 발생 시, 재전송 대기 시간을 지수적으로 증가시킨다.
+
+```python
+import random
+
+def exponential_backoff(collision_count, slot_time=51.2):
+    """
+    이진 지수적 백오프 알고리즘
+    collision_count: 연속 충돌 횟수 (n)
+    slot_time: 슬롯 시간 (마이크로초) - 10Mbps 이더넷 기준 51.2μs
+    """
+    # k = min(n, 10): 최대 백오프 범위 제한
+    k = min(collision_count, 10)
+
+    # 0 ~ 2^k - 1 범위에서 랜덤 선택
+    max_slots = (2 ** k) - 1
+    chosen_slot = random.randint(0, max_slots)
+
+    # 대기 시간 = 선택한 슬롯 × 슬롯 시간
+    wait_time = chosen_slot * slot_time
+
+    print(f"충돌 #{collision_count}: "
+          f"범위 [0, {max_slots}], "
+          f"선택 슬롯 {chosen_slot}, "
+          f"대기 {wait_time:.1f}μs")
+
+    return wait_time
+
+# 연속 충돌 시뮬레이션
+print("=== 지수적 백오프 시뮬레이션 ===")
+for n in range(1, 7):
+    exponential_backoff(n)
+
+# 16번 충돌하면 전송 포기
+print("\n* 최대 16번 충돌 시 프레임 폐기")
+```
+
+> 현대 이더넷은 **전이중(Full-Duplex)** + **스위치** 기반이므로
+> CSMA/CD가 실질적으로 사용되지 않는다. 그러나 개념적 이해는 중요하다.
+
+---
+
+## ARP (Address Resolution Protocol)
+
+### ARP란?
+
+**ARP**는 IP 주소를 MAC 주소로 변환하는 프로토콜이다.
+같은 서브넷 내에서 목적지의 MAC 주소를 알아내기 위해 사용한다.
+
+```
+호스트 A (192.168.1.10)가 호스트 B (192.168.1.20)에게 패킷을 보내려 할 때:
+
+1. ARP 요청 (브로드캐스트)
+   ┌──────────┐  "192.168.1.20의 MAC 주소가 뭐야?"  ┌──────────┐
+   │ 호스트 A  │ ═══ FF:FF:FF:FF:FF:FF ═══════════▶│ 호스트 B  │
+   │ .1.10    │ ═══ (모든 노드에게 전송) ══════════▶│ .1.20    │
+   │          │ ═══════════════════════════════════▶│          │
+   └──────────┘                                    └──────────┘
+                                                        │
+2. ARP 응답 (유니캐스트)                                  │
+   ┌──────────┐  "내 MAC은 BB:BB:BB:BB:BB:BB야"    ┌──────────┐
+   │ 호스트 A  │◀────────────────────────────────── │ 호스트 B  │
+   └──────────┘                                    └──────────┘
+
+3. ARP 테이블에 캐싱
+   호스트 A의 ARP 테이블:
+   ┌──────────────┬───────────────────┬──────────┐
+   │ IP 주소       │ MAC 주소           │ TTL      │
+   ├──────────────┼───────────────────┼──────────┤
+   │ 192.168.1.20 │ BB:BB:BB:BB:BB:BB │ 20분     │
+   └──────────────┴───────────────────┴──────────┘
+```
+
+```python
+# ARP 테이블 시뮬레이션
+import time
+
+class ARPTable:
+    """ARP 캐시 테이블"""
+    def __init__(self, ttl=1200):
+        self.table = {}  # IP → (MAC, 만료 시각)
+        self.ttl = ttl   # 기본 TTL: 20분 (1200초)
+
+    def add_entry(self, ip, mac):
+        """ARP 항목 추가"""
+        expires = time.time() + self.ttl
+        self.table[ip] = (mac, expires)
+        print(f"ARP 추가: {ip} → {mac} (TTL: {self.ttl}초)")
+
+    def lookup(self, ip):
+        """IP 주소로 MAC 주소 조회"""
+        if ip in self.table:
+            mac, expires = self.table[ip]
+            if time.time() < expires:
+                return mac
+            else:
+                # 만료된 항목 삭제
+                del self.table[ip]
+                print(f"ARP 만료: {ip}")
+        return None
+
+    def resolve(self, ip):
+        """ARP 해석 - 캐시에 없으면 ARP 요청 수행"""
+        mac = self.lookup(ip)
+        if mac:
+            print(f"ARP 캐시 히트: {ip} → {mac}")
+            return mac
+
+        # ARP 요청 브로드캐스트 (시뮬레이션)
+        print(f"ARP 요청 브로드캐스트: {ip}의 MAC 주소는?")
+        # 실제로는 네트워크에서 응답을 기다림
+        # 여기서는 시뮬레이션으로 응답 생성
+        simulated_mac = "AA:BB:CC:DD:EE:01"
+        self.add_entry(ip, simulated_mac)
+        return simulated_mac
+
+    def display(self):
+        print("\n=== ARP 테이블 ===")
+        print(f"{'IP 주소':<16} {'MAC 주소':<20} {'상태':<8}")
+        print("-" * 44)
+        for ip, (mac, expires) in self.table.items():
+            remaining = max(0, int(expires - time.time()))
+            print(f"{ip:<16} {mac:<20} {remaining}초 남음")
+
+# 사용 예
+arp = ARPTable()
+arp.resolve("192.168.1.20")  # ARP 요청 발생
+arp.resolve("192.168.1.20")  # 캐시 히트
+arp.add_entry("192.168.1.1", "00:11:22:33:44:55")
+arp.display()
+```
+
+### 서로 다른 서브넷으로의 ARP
+
+```
+호스트 A (192.168.1.10)가 호스트 C (10.0.0.5)에게 패킷을 보낼 때:
+
+서브넷 1                    라우터              서브넷 2
+┌──────────┐            ┌──────────┐         ┌──────────┐
+│ 호스트 A  │───────────│          │─────────│ 호스트 C  │
+│.168.1.10 │            │.168.1.1  │         │ 10.0.0.5 │
+│MAC: AA:..│            │MAC: RR:..│         │MAC: CC:..│
+└──────────┘            │ 10.0.0.1 │         └──────────┘
+                        │MAC: R2:..│
+                        └──────────┘
+
+단계:
+1. A는 목적지(10.0.0.5)가 다른 서브넷임을 인식
+2. A는 기본 게이트웨이(192.168.1.1)의 MAC 주소를 ARP로 조회
+3. 프레임: dst_MAC=RR:.., dst_IP=10.0.0.5 → 라우터로 전송
+4. 라우터는 IP를 확인하고 서브넷 2로 포워딩
+5. 라우터는 10.0.0.5의 MAC을 ARP로 조회
+6. 새 프레임: dst_MAC=CC:.., dst_IP=10.0.0.5 → 호스트 C로 전송
+
+* IP 주소는 변하지 않지만, MAC 주소는 홉마다 변경된다!
+```
+
+---
+
+## 스위치 (Switch)
+
+### 스위치의 역할
+
+**스위치(Switch)**는 링크 계층 장비로, MAC 주소를 기반으로 프레임을
+적절한 포트로 전달한다.
+
+### 스위치의 세 가지 기능
+
+```
+1. 학습 (Learning)
+   ┌───────────────────────────────┐
+   │          스위치               │
+   │   MAC 주소 테이블:            │
+   │   ┌──────────┬──────┐       │
+   │   │ MAC 주소  │ 포트 │       │
+   │   ├──────────┼──────┤       │
+   │   │ AA:AA:.. │  1   │ ← 프레임 수신 시 출발지 MAC과
+   │   │ BB:BB:.. │  3   │   수신 포트를 기록
+   │   └──────────┴──────┘       │
+   └───────────────────────────────┘
+
+2. 포워딩 (Forwarding)
+   목적지 MAC이 테이블에 있으면 → 해당 포트로만 전송
+
+3. 필터링 (Filtering)
+   목적지 MAC이 수신 포트와 같으면 → 프레임 폐기 (불필요한 전송 방지)
+
+   * 목적지 MAC이 테이블에 없으면 → 플러딩 (모든 포트로 전송)
+```
+
+```python
+# 스위치 시뮬레이션
+class Switch:
+    """L2 스위치 시뮬레이션"""
+    def __init__(self, name, num_ports):
+        self.name = name
+        self.num_ports = num_ports
+        self.mac_table = {}  # MAC 주소 → 포트 번호
+        self.aging_time = 300  # MAC 테이블 에이징 시간 (초)
+
+    def receive_frame(self, in_port, src_mac, dst_mac):
+        """프레임 수신 처리"""
+        print(f"\n[{self.name}] 포트 {in_port}에서 프레임 수신: "
+              f"{src_mac} → {dst_mac}")
+
+        # 1. 학습: 출발지 MAC과 수신 포트 기록
+        self.mac_table[src_mac] = in_port
+        print(f"  학습: {src_mac} → 포트 {in_port}")
+
+        # 2. 포워딩 결정
+        if dst_mac == "FF:FF:FF:FF:FF:FF":
+            # 브로드캐스트: 수신 포트 제외 모든 포트로 플러딩
+            out_ports = [p for p in range(1, self.num_ports + 1)
+                         if p != in_port]
+            print(f"  브로드캐스트 → 포트 {out_ports}로 플러딩")
+            return out_ports
+
+        elif dst_mac in self.mac_table:
+            out_port = self.mac_table[dst_mac]
+            if out_port == in_port:
+                # 3. 필터링: 같은 포트이면 폐기
+                print(f"  필터링: 목적지가 같은 포트 → 폐기")
+                return []
+            else:
+                print(f"  포워딩: 포트 {out_port}로 전송")
+                return [out_port]
+
+        else:
+            # 목적지 MAC 미등록: 플러딩
+            out_ports = [p for p in range(1, self.num_ports + 1)
+                         if p != in_port]
+            print(f"  목적지 미등록 → 포트 {out_ports}로 플러딩")
+            return out_ports
+
+    def display_mac_table(self):
+        print(f"\n[{self.name}] MAC 주소 테이블:")
+        print(f"  {'MAC 주소':<20} {'포트':<6}")
+        print(f"  {'-'*26}")
+        for mac, port in self.mac_table.items():
+            print(f"  {mac:<20} {port:<6}")
+
+# 시뮬레이션
+sw = Switch("SW1", num_ports=4)
+
+# 호스트 A(포트1)가 호스트 B(포트3)에게 전송
+sw.receive_frame(1, "AA:AA:AA:00:00:01", "BB:BB:BB:00:00:01")
+# → B의 MAC 모름 → 플러딩
+
+# 호스트 B(포트3)가 호스트 A(포트1)에게 응답
+sw.receive_frame(3, "BB:BB:BB:00:00:01", "AA:AA:AA:00:00:01")
+# → A의 MAC은 포트1 → 포트1로만 포워딩
+
+# 호스트 A가 다시 B에게 전송 → 이번에는 포워딩
+sw.receive_frame(1, "AA:AA:AA:00:00:01", "BB:BB:BB:00:00:01")
+# → B의 MAC은 포트3 → 포트3으로만 포워딩
+
+sw.display_mac_table()
+```
+
+---
+
+## 허브 vs 스위치 vs 라우터
+
+```
+허브 (Hub) - 물리 계층 (1계층)
+┌──────────────────────────────────────┐
+│  모든 포트로 프레임을 무조건 복제     │
+│  충돌 도메인: 전체가 하나             │
+│  브로드캐스트 도메인: 전체가 하나     │
+│  지능 없음 - 단순 신호 증폭기         │
+└──────────────────────────────────────┘
+
+스위치 (Switch) - 링크 계층 (2계층)
+┌──────────────────────────────────────┐
+│  MAC 주소 기반으로 특정 포트로 전달   │
+│  충돌 도메인: 포트별로 분리           │
+│  브로드캐스트 도메인: 전체가 하나     │
+│  MAC 주소 테이블로 학습/포워딩        │
+└──────────────────────────────────────┘
+
+라우터 (Router) - 네트워크 계층 (3계층)
+┌──────────────────────────────────────┐
+│  IP 주소 기반으로 다른 네트워크로 전달│
+│  충돌 도메인: 포트별로 분리           │
+│  브로드캐스트 도메인: 포트별로 분리   │
+│  라우팅 테이블로 최적 경로 결정       │
+└──────────────────────────────────────┘
+```
+
+### 상세 비교 테이블
+
+| 항목 | 허브 | 스위치 | 라우터 |
+|------|------|--------|--------|
+| **OSI 계층** | 1계층 (물리) | 2계층 (링크) | 3계층 (네트워크) |
+| **주소 사용** | 없음 | MAC 주소 | IP 주소 |
+| **전달 방식** | 모든 포트로 복제 | MAC 기반 포워딩 | IP 기반 라우팅 |
+| **충돌 도메인** | 하나 (공유) | 포트별 분리 | 포트별 분리 |
+| **브로드캐스트** | 전달 | 전달 | 차단 |
+| **속도** | 가장 느림 | 빠름 (하드웨어) | 보통 (소프트웨어) |
+| **가격** | 저렴 | 보통 | 비쌈 |
+| **지능** | 없음 | MAC 학습 | 경로 계산 |
+
+```
+도메인 비교 예시:
+
+허브 환경:
+  ┌───┐ ┌───┐ ┌───┐ ┌───┐
+  │ A │ │ B │ │ C │ │ D │
+  └─┬─┘ └─┬─┘ └─┬─┘ └─┬─┘
+    └──────┴─ HUB ┴──────┘
+      하나의 충돌 도메인
+      하나의 브로드캐스트 도메인
+
+스위치 환경:
+  ┌───┐ ┌───┐ ┌───┐ ┌───┐
+  │ A │ │ B │ │ C │ │ D │
+  └─┬─┘ └─┬─┘ └─┬─┘ └─┬─┘
+    └──────┴ SWITCH ┴────┘
+      4개의 충돌 도메인 (포트별)
+      하나의 브로드캐스트 도메인
+
+라우터 환경:
+  ┌───┐ ┌───┐     ┌───┐ ┌───┐
+  │ A │ │ B │     │ C │ │ D │
+  └─┬─┘ └─┬─┘     └─┬─┘ └─┬─┘
+    └──SW──┘         └──SW──┘
+       └── ROUTER ──────┘
+      브로드캐스트 도메인도 분리!
+```
+
+---
+
+## VLAN (Virtual LAN)
+
+### VLAN이란?
+
+**VLAN(Virtual LAN)**은 물리적 위치에 관계없이 **논리적으로 네트워크를 분할**하는 기술이다.
+하나의 물리적 스위치를 여러 개의 논리적 스위치처럼 사용할 수 있다.
+
+```
+VLAN 없이 (물리적 분리):
+  ┌─────────────┐     ┌─────────────┐
+  │ 스위치 1     │     │ 스위치 2     │
+  │ (영업부)     │     │ (개발부)     │
+  │ A1  A2  A3  │     │ B1  B2  B3  │
+  └─────────────┘     └─────────────┘
+  → 부서마다 별도 스위치 필요 (비용 증가)
+
+VLAN 사용 (논리적 분리):
+  ┌─────────────────────────────────┐
+  │            스위치                │
+  │ ┌────────────┐ ┌─────────────┐ │
+  │ │ VLAN 10    │ │ VLAN 20     │ │
+  │ │ (영업부)    │ │ (개발부)     │ │
+  │ │ A1  A2  A3 │ │ B1  B2  B3  │ │
+  │ └────────────┘ └─────────────┘ │
+  └─────────────────────────────────┘
+  → 하나의 스위치로 논리적 분리 (브로드캐스트 분리)
+```
+
+### VLAN 트렁크와 802.1Q 태깅
+
+여러 스위치 간에 VLAN 정보를 전달하기 위해 **트렁크 포트**를 사용한다.
+
+```
+802.1Q 태그가 포함된 프레임:
+┌──────────┬──────────┬───────┬──────┬──────────┬─────┐
+│목적지 MAC│출발지 MAC│802.1Q │타입  │ 페이로드  │ FCS │
+│ 6바이트  │ 6바이트  │태그   │2바이트│          │4바이트│
+│          │          │4바이트│      │          │     │
+└──────────┴──────────┴───────┴──────┴──────────┴─────┘
+                        │
+                 ┌──────▼──────┐
+                 │ TPID: 0x8100│ (2바이트)
+                 │ PRI: 우선순위│ (3비트)
+                 │ CFI: 1비트   │
+                 │ VID: VLAN ID │ (12비트, 1~4094)
+                 └─────────────┘
+```
+
+```python
+# VLAN 스위치 시뮬레이션
+class VLANSwitch:
+    """VLAN 지원 스위치"""
+    def __init__(self, name):
+        self.name = name
+        self.port_vlan = {}     # 포트 → VLAN ID (액세스 포트)
+        self.trunk_ports = set() # 트렁크 포트 집합
+        self.mac_table = {}     # (VLAN, MAC) → 포트
+
+    def configure_access_port(self, port, vlan_id):
+        """액세스 포트 설정"""
+        self.port_vlan[port] = vlan_id
+        print(f"포트 {port} → VLAN {vlan_id} (액세스)")
+
+    def configure_trunk_port(self, port):
+        """트렁크 포트 설정"""
+        self.trunk_ports.add(port)
+        print(f"포트 {port} → 트렁크")
+
+    def receive_frame(self, in_port, src_mac, dst_mac):
+        """프레임 수신 및 VLAN 기반 포워딩"""
+        # VLAN 결정
+        if in_port in self.port_vlan:
+            vlan_id = self.port_vlan[in_port]
+        else:
+            vlan_id = 1  # 기본 VLAN
+
+        print(f"\n[{self.name}] 포트 {in_port}(VLAN {vlan_id}): "
+              f"{src_mac} → {dst_mac}")
+
+        # MAC 학습
+        self.mac_table[(vlan_id, src_mac)] = in_port
+
+        # 같은 VLAN의 포트로만 포워딩
+        if (vlan_id, dst_mac) in self.mac_table:
+            out_port = self.mac_table[(vlan_id, dst_mac)]
+            print(f"  포워딩 → 포트 {out_port} (VLAN {vlan_id})")
+        else:
+            # 같은 VLAN의 모든 포트로 플러딩
+            same_vlan_ports = [
+                p for p, v in self.port_vlan.items()
+                if v == vlan_id and p != in_port
+            ]
+            # 트렁크 포트도 포함
+            same_vlan_ports.extend(
+                p for p in self.trunk_ports if p != in_port
+            )
+            print(f"  플러딩 → 포트 {same_vlan_ports} (VLAN {vlan_id})")
+
+# 사용 예
+sw = VLANSwitch("VLAN-SW1")
+sw.configure_access_port(1, vlan_id=10)  # 영업부
+sw.configure_access_port(2, vlan_id=10)  # 영업부
+sw.configure_access_port(3, vlan_id=20)  # 개발부
+sw.configure_access_port(4, vlan_id=20)  # 개발부
+sw.configure_trunk_port(5)               # 다른 스위치 연결
+
+# 영업부 A1(포트1) → 영업부 A2(포트2): 전달됨
+sw.receive_frame(1, "AA:00:00:00:00:01", "AA:00:00:00:00:02")
+
+# 영업부 A1(포트1) → 개발부 B1(포트3): 다른 VLAN이므로 전달 안 됨
+sw.receive_frame(1, "AA:00:00:00:00:01", "BB:00:00:00:00:01")
+```
+
+### VLAN의 장점
+
+| 장점 | 설명 |
+|------|------|
+| **보안** | VLAN 간 트래픽 격리 (라우터 없이 통신 불가) |
+| **브로드캐스트 제한** | 브로드캐스트가 VLAN 내부로 한정 |
+| **유연성** | 물리적 이동 없이 VLAN 변경으로 네트워크 재구성 |
+| **비용 절감** | 물리적 스위치 추가 없이 논리적 분리 가능 |
+
+---
+
+## 스패닝 트리 프로토콜 (STP)
+
+### 루프 문제
+
+스위치 네트워크에서 **이중화(redundancy)**를 위해 여러 경로를 구성하면
+**루프(loop)**가 발생할 수 있다. 루프는 브로드캐스트 폭풍을 일으킨다.
+
+```
+루프 발생 상황:
+  ┌──────────┐         ┌──────────┐
+  │ 스위치 A  │─────────│ 스위치 B  │
+  │          │         │          │
+  └────┬─────┘         └────┬─────┘
+       │                    │
+       └────────────────────┘   ← 중복 경로 = 루프!
+
+브로드캐스트 폭풍:
+  프레임 → A → B → A → B → A → B → ... (무한 반복)
+  → 네트워크 마비
+```
+
+### STP 동작 원리 (IEEE 802.1D)
+
+STP는 루프를 방지하기 위해 일부 포트를 **차단(blocking)** 상태로 만든다.
+
+```
+STP 과정:
+1. 루트 브리지(Root Bridge) 선출 (가장 낮은 BID)
+2. 루트 포트(Root Port) 결정 (루트까지 최단 경로)
+3. 지정 포트(Designated Port) 결정 (세그먼트별 최적 포트)
+4. 나머지 포트 차단(Blocking)
+
+예시:
+  ┌──────────────┐          ┌──────────────┐
+  │ SW A (BID=1) │──────────│ SW B (BID=2) │
+  │ ★ 루트 브리지 │   DP  RP │              │
+  └──────┬───────┘          └──────┬───────┘
+         │ DP                      │ RP
+         │                         │
+  ┌──────▼───────┐          ┌──────▼───────┐
+  │ SW C (BID=3) │──────────│ SW D (BID=4) │
+  │         RP   │  DP  BP  │              │
+  └──────────────┘          └──────────────┘
+
+  DP = Designated Port (지정 포트) - 포워딩
+  RP = Root Port (루트 포트) - 포워딩
+  BP = Blocking Port (차단 포트) - 트래픽 차단
+
+  → D의 C쪽 포트가 차단되어 루프 방지
+```
+
+### STP 포트 상태
+
+```
+포트 상태 전이:
+  Blocking → Listening → Learning → Forwarding
+  (15초)     (15초)      (15초)
+
+  Blocking:  데이터 전송/수신 안 함, BPDU만 수신
+  Listening: 루트 브리지와 포트 역할 결정 중
+  Learning:  MAC 주소 학습 시작, 데이터 전송은 아직 안 함
+  Forwarding: 정상 동작 (데이터 전송/수신)
+```
+
+> **RSTP(Rapid STP, 802.1w)**는 수렴 시간을 수십 초에서 수 초로 단축한 개선 버전이다.
+
+```python
+# STP 루트 브리지 선출 시뮬레이션
+class Bridge:
+    """STP 브리지/스위치"""
+    def __init__(self, priority, mac):
+        self.priority = priority  # 기본값: 32768
+        self.mac = mac
+        # BID = priority + MAC (낮을수록 우선)
+        self.bid = (priority, mac)
+
+    def __repr__(self):
+        return f"Bridge(pri={self.priority}, mac={self.mac})"
+
+def elect_root_bridge(bridges):
+    """루트 브리지 선출 - 가장 낮은 BID"""
+    root = min(bridges, key=lambda b: b.bid)
+    print("=== 루트 브리지 선출 ===")
+    for b in bridges:
+        marker = " ★ ROOT" if b == root else ""
+        print(f"  {b} → BID={b.bid}{marker}")
+    return root
+
+# 스위치 4대
+bridges = [
+    Bridge(32768, "AA:AA:AA:00:00:01"),
+    Bridge(32768, "AA:AA:AA:00:00:04"),
+    Bridge(4096,  "BB:BB:BB:00:00:01"),  # 낮은 우선순위
+    Bridge(32768, "AA:AA:AA:00:00:02"),
+]
+
+root = elect_root_bridge(bridges)
+print(f"\n선출된 루트 브리지: {root}")
+```
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| **링크 계층** | 인접 노드 간 프레임 전달, 오류 검출, 매체 접근 제어 |
+| **MAC 주소** | 48비트 평면적 주소, NIC에 고정, 로컬 네트워크 내 식별 |
+| **이더넷** | IEEE 802.3, 가장 보편적인 유선 LAN 기술, 프레임 기반 |
+| **CSMA/CD** | 충돌 감지 후 지수적 백오프로 재전송 (반이중 이더넷) |
+| **ARP** | IP → MAC 주소 변환, 브로드캐스트 요청 + 유니캐스트 응답 |
+| **스위치** | MAC 기반 학습/포워딩/필터링, 충돌 도메인 분리 |
+| **허브 vs 스위치 vs 라우터** | 1계층/2계층/3계층, 브로드캐스트 도메인 분리는 라우터만 |
+| **VLAN** | 논리적 네트워크 분할, 802.1Q 태깅, 브로드캐스트 격리 |
+| **STP** | 스위치 루프 방지, 루트 브리지 선출 후 차단 포트 결정 |

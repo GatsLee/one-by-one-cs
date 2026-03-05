@@ -1,0 +1,847 @@
+---
+title: "에이전트 오케스트레이션 (Agent Orchestration)"
+topic: "08-ai-agent"
+order: 02
+---
+
+
+## 핵심 개념
+
+### 1. LangChain 기초
+
+LangChain은 LLM 기반 애플리케이션을 개발하기 위한 **오픈소스 프레임워크**다. 다양한 구성 요소를 조합하여 복잡한 LLM 파이프라인을 구축할 수 있다.
+
+#### LangChain 핵심 구성 요소
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    LangChain 아키텍처                          │
+│                                                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│  │  Models  │  │ Prompts  │  │  Chains  │  │  Agents  │    │
+│  │          │  │          │  │          │  │          │    │
+│  │ ChatGPT  │  │ 템플릿   │  │ 파이프라인│  │ 도구 사용 │    │
+│  │ Claude   │  │ Few-shot │  │ 순차 실행 │  │ 자율 판단 │    │
+│  │ Ollama   │  │ 변수 삽입│  │ 분기 처리 │  │ 루프 실행 │    │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘    │
+│                                                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+│  │  Memory  │  │Retrievers│  │  Tools   │                  │
+│  │          │  │          │  │          │                  │
+│  │ 대화 이력 │  │ 벡터 검색 │  │ 웹 검색  │                  │
+│  │ 요약 메모│  │ 문서 로더 │  │ 코드 실행 │                  │
+│  │ 윈도우   │  │ 임베딩   │  │ API 호출  │                  │
+│  └──────────┘  └──────────┘  └──────────┘                  │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              langchain-core (핵심 추상화)              │   │
+│  │  Runnable 인터페이스 | LCEL | 메시지 타입 | 콜백        │   │
+│  └──────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| 구성 요소 | 역할 | 예시 |
+|----------|------|------|
+| **Models** | LLM/Chat 모델 래핑 | `ChatOpenAI`, `ChatAnthropic` |
+| **Prompts** | 프롬프트 템플릿 관리 | `ChatPromptTemplate`, `FewShotPromptTemplate` |
+| **Chains** | 여러 단계를 파이프라인으로 연결 | `prompt | model | parser` (LCEL) |
+| **Agents** | LLM이 도구를 선택하며 자율 실행 | `create_react_agent` |
+| **Memory** | 대화 이력 관리 | `ConversationBufferMemory` |
+| **Retrievers** | 외부 데이터 검색 (RAG) | `VectorStoreRetriever` |
+| **Tools** | 에이전트가 사용할 외부 기능 | `TavilySearchResults`, `PythonREPL` |
+
+#### LangChain 패키지 구조 (v0.3+)
+
+```
+langchain 생태계
+├── langchain-core          ← 핵심 추상화 (Runnable, Message, Prompt 등)
+├── langchain               ← 체인, 에이전트 등 고수준 기능
+├── langchain-community     ← 커뮤니티 통합 (서드파티 연동)
+├── langchain-openai        ← OpenAI 전용 통합
+├── langchain-anthropic     ← Anthropic 전용 통합
+├── langgraph               ← 그래프 기반 에이전트 오케스트레이션
+└── langsmith               ← 모니터링, 추적, 평가
+```
+
+---
+
+### 2. LCEL (LangChain Expression Language)
+
+LCEL은 LangChain의 **선언적 체인 구성 언어**로, 파이프 연산자 `|`를 사용하여 구성 요소를 직관적으로 연결한다. 모든 구성 요소가 **Runnable 인터페이스**를 구현하므로 일관된 방식으로 조합 가능하다.
+
+#### LCEL 기본 개념
+
+```
+[LCEL 파이프라인 개념]
+
+입력 데이터
+    │
+    ▼
+┌──────────┐     ┌──────────┐     ┌──────────┐
+│  Prompt  │────→│  Model   │────→│  Parser  │──→ 최종 출력
+│ Template │  |  │  (LLM)   │  |  │ (Output) │
+└──────────┘     └──────────┘     └──────────┘
+
+LCEL 표현: chain = prompt | model | parser
+
+각 구성 요소는 Runnable 인터페이스를 구현:
+- .invoke(input)      → 단일 입력 처리
+- .batch([inputs])    → 배치 처리
+- .stream(input)      → 스트리밍 출력
+- .ainvoke(input)     → 비동기 처리
+```
+
+#### Runnable 인터페이스
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                   Runnable 인터페이스                       │
+│                                                          │
+│  모든 LCEL 구성 요소가 구현하는 공통 인터페이스               │
+│                                                          │
+│  ┌──────────────────────────────────────────────┐        │
+│  │  class Runnable:                             │        │
+│  │      def invoke(input) → output              │  동기   │
+│  │      def batch([input]) → [output]           │  배치   │
+│  │      def stream(input) → Iterator[output]    │  스트림 │
+│  │      async def ainvoke(input) → output       │  비동기 │
+│  │      async def astream(input) → AsyncIter    │        │
+│  └──────────────────────────────────────────────┘        │
+│                                                          │
+│  구현체 예시:                                              │
+│  - ChatPromptTemplate  (Runnable)                        │
+│  - ChatOpenAI          (Runnable)                        │
+│  - StrOutputParser     (Runnable)                        │
+│  - RunnablePassthrough (입력을 그대로 전달)                 │
+│  - RunnableLambda      (커스텀 함수를 Runnable로 래핑)     │
+│  - RunnableParallel    (여러 Runnable을 병렬 실행)         │
+└──────────────────────────────────────────────────────────┘
+```
+
+**LCEL의 주요 장점:**
+- **가독성**: 파이프 연산자로 데이터 흐름을 직관적으로 표현
+- **일관성**: 모든 구성 요소가 동일한 인터페이스 (invoke, stream, batch)
+- **스트리밍**: 자동으로 중간 결과를 스트리밍
+- **비동기**: async 메서드를 기본 지원
+- **조합 가능**: 체인을 더 큰 체인의 구성 요소로 재사용
+
+---
+
+### 3. LangGraph 핵심
+
+LangGraph는 LangChain 팀이 만든 **그래프 기반 에이전트 오케스트레이션 프레임워크**다. 단순한 순차 체인을 넘어, **조건부 분기, 루프, 상태 관리**가 가능한 복잡한 에이전트 워크플로우를 구축한다.
+
+#### LangGraph vs LangChain 체인
+
+```
+[LangChain 체인 (순차적)]
+
+A → B → C → D   (단방향, 분기/루프 어려움)
+
+
+[LangGraph (그래프)]
+
+         ┌────→ B ────┐
+A ──────┤             ├────→ D
+         └────→ C ────┘
+                ↑      │
+                └──────┘  (루프 가능!)
+
+→ 조건부 분기, 루프, 병렬 실행이 자연스럽게 표현됨
+```
+
+#### StateGraph 핵심 개념
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  LangGraph 핵심 구성 요소                   │
+│                                                          │
+│  1. State (상태)                                          │
+│     그래프 전체에서 공유되는 데이터 구조                      │
+│     ┌────────────────────────────┐                       │
+│     │ class AgentState(TypedDict):│                       │
+│     │     messages: list          │  ← 대화 이력          │
+│     │     next_action: str        │  ← 다음 행동          │
+│     │     results: list           │  ← 중간 결과          │
+│     └────────────────────────────┘                       │
+│                                                          │
+│  2. Node (노드)                                           │
+│     상태를 입력받아 처리하고 수정된 상태를 반환하는 함수       │
+│     ┌────────────────────────────┐                       │
+│     │ def agent_node(state):      │                       │
+│     │     # 상태를 읽고 처리       │                       │
+│     │     return {"messages": ...}│  ← 상태 업데이트       │
+│     └────────────────────────────┘                       │
+│                                                          │
+│  3. Edge (엣지)                                           │
+│     노드 간 연결을 정의                                     │
+│     - 일반 엣지: A → B (항상 B로 이동)                     │
+│     - 조건부 엣지: A → (조건에 따라 B 또는 C)              │
+│                                                          │
+│  4. 특수 노드                                              │
+│     - START: 그래프 시작점                                 │
+│     - END: 그래프 종료점                                   │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### LangGraph 실행 흐름
+
+```
+┌──────────────────────────────────────────────────────┐
+│              LangGraph 실행 사이클                      │
+│                                                      │
+│  초기 상태                                            │
+│      │                                               │
+│      ▼                                               │
+│  ┌────────┐                                          │
+│  │ START  │                                          │
+│  └───┬────┘                                          │
+│      │                                               │
+│      ▼                                               │
+│  ┌──────────┐    상태 업데이트                         │
+│  │  Node A  │───────────────┐                        │
+│  │ (에이전트)│               │                        │
+│  └──────────┘               ▼                        │
+│                        ┌──────────┐                  │
+│                        │조건 판단  │                  │
+│                        │(should    │                  │
+│                        │ continue?)│                  │
+│                        └────┬─────┘                  │
+│                     ┌───────┴───────┐                │
+│                     ▼               ▼                │
+│               ┌──────────┐   ┌──────────┐           │
+│               │  Node B  │   │   END    │           │
+│               │ (도구실행)│   │ (종료)   │           │
+│               └─────┬────┘   └──────────┘           │
+│                     │                                │
+│                     └──→ Node A (루프)               │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4. LangGraph 패턴
+
+LangGraph로 구현할 수 있는 주요 에이전트 패턴들을 알아보자.
+
+#### 패턴 1: 간단한 챗봇
+
+```
+[Simple Chatbot Graph]
+
+START → chatbot_node → END
+
+chatbot_node:
+  입력: 사용자 메시지
+  처리: LLM으로 응답 생성
+  출력: 응답 메시지
+```
+
+#### 패턴 2: ReAct 에이전트
+
+```
+[ReAct Agent Graph]
+
+START → agent ──→ should_continue? ──→ tools ──→ agent (루프)
+                         │
+                         └──→ END
+
+agent:        LLM이 다음 행동 결정 (도구 호출 또는 최종 답변)
+tools:        선택된 도구 실행
+should_continue: 도구 호출이 필요한지 판단
+               - tool_calls 있음 → tools 노드로
+               - tool_calls 없음 → END로
+```
+
+#### 패턴 3: 멀티에이전트 Supervisor
+
+```
+[Multi-Agent Supervisor Graph]
+
+                    ┌──────────┐
+                    │Supervisor│ ←─── 사용자 요청
+                    └────┬─────┘
+                         │ 라우팅 결정
+              ┌──────────┼──────────┐
+              ▼          ▼          ▼
+        ┌──────────┐ ┌──────┐ ┌──────────┐
+        │Researcher│ │Coder │ │ Writer   │
+        │  Agent   │ │Agent │ │  Agent   │
+        └────┬─────┘ └──┬───┘ └────┬─────┘
+              │          │          │
+              └──────────┼──────────┘
+                         ▼
+                    ┌──────────┐
+                    │Supervisor│  결과 검토 + 다음 단계 결정
+                    └────┬─────┘
+                         │
+                    END 또는 다른 Agent로 재라우팅
+```
+
+#### 패턴 4: Human-in-the-Loop
+
+```
+[Human-in-the-Loop Graph]
+
+START → agent → should_continue? ──→ tools
+                     │                  │
+                     │              ┌───┴────┐
+                     │              │ 위험한   │
+                     │              │ 도구인가? │
+                     │              └───┬────┘
+                     │            예 │     │ 아니오
+                     │              ▼     ▼
+                     │         ┌───────┐ ┌───────┐
+                     │         │ 사용자 │ │자동    │
+                     │         │ 승인   │ │ 실행   │
+                     │         └───┬───┘ └───┬───┘
+                     │             └────┬────┘
+                     │                  ▼
+                     │              agent (루프)
+                     └──→ END
+
+→ 민감한 작업(파일 삭제, 결제 등)에 대해 사용자 확인을 요청
+```
+
+---
+
+### 5. 멀티에이전트 시스템
+
+여러 에이전트가 협력하여 복잡한 작업을 수행하는 시스템이다.
+
+#### 주요 멀티에이전트 패턴
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                멀티에이전트 패턴 비교                        │
+│                                                          │
+│  [1] Supervisor 패턴                                      │
+│      관리자 1명 + 전문가 N명                               │
+│                                                          │
+│      ┌──────────────┐                                    │
+│      │  Supervisor  │  "이 작업은 Research Agent에게"     │
+│      └──────┬───────┘                                    │
+│         ┌───┼───┐                                        │
+│         ▼   ▼   ▼                                        │
+│        R   W   C   (Research, Writer, Coder)             │
+│                                                          │
+│      장점: 중앙 집중 제어, 명확한 역할 분배                  │
+│      단점: Supervisor가 병목이 될 수 있음                   │
+│                                                          │
+│  ────────────────────────────────────────────             │
+│                                                          │
+│  [2] Swarm 패턴                                           │
+│      에이전트 간 직접 핸드오프                               │
+│                                                          │
+│      A ──→ B ──→ C ──→ A                                 │
+│      각 에이전트가 다음 에이전트를 직접 지정                  │
+│                                                          │
+│      장점: 유연한 제어 흐름, 분산 처리                      │
+│      단점: 전체 흐름 파악이 어려움                          │
+│                                                          │
+│  ────────────────────────────────────────────             │
+│                                                          │
+│  [3] Debate 패턴                                          │
+│      에이전트들이 서로 비판하며 답변 품질 향상                │
+│                                                          │
+│      Agent A: "내 분석은 X이다"                           │
+│      Agent B: "A의 분석에서 Y가 잘못되었다"                │
+│      Agent A: "B의 지적을 반영하여 수정한다"                │
+│      → 합의에 도달할 때까지 반복                            │
+│                                                          │
+│      장점: 답변 품질 향상, 다양한 관점 반영                  │
+│      단점: 토큰 소비가 많고, 수렴하지 않을 수 있음           │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### Supervisor vs Swarm 실행 흐름 비교
+
+```
+[Supervisor 실행 흐름]
+
+User: "AI 관련 기술 블로그 글 작성해줘"
+
+Supervisor: Research Agent에게 조사 지시
+    → Research Agent: AI 트렌드 조사 결과 반환
+Supervisor: Writer Agent에게 글 작성 지시
+    → Writer Agent: 초안 작성 결과 반환
+Supervisor: Reviewer Agent에게 검토 지시
+    → Reviewer Agent: 수정 사항 반환
+Supervisor: Writer Agent에게 수정 지시
+    → Writer Agent: 최종본 반환
+Supervisor: 최종본을 사용자에게 전달
+
+
+[Swarm 실행 흐름]
+
+User: "AI 관련 기술 블로그 글 작성해줘"
+
+Triage Agent: "조사가 필요하다" → Research Agent로 핸드오프
+Research Agent: 조사 완료 → Writer Agent로 핸드오프
+Writer Agent: 초안 작성 → Reviewer Agent로 핸드오프
+Reviewer Agent: "수정 필요" → Writer Agent로 핸드오프
+Writer Agent: 수정 완료 → 최종 답변 반환
+```
+
+---
+
+### 6. LlamaIndex 개요
+
+LlamaIndex는 **데이터 중심의 LLM 프레임워크**로, 특히 **RAG(Retrieval-Augmented Generation)** 파이프라인 구축에 강점이 있다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  LlamaIndex 아키텍처                       │
+│                                                          │
+│  ┌────────────┐   ┌────────────┐   ┌────────────┐       │
+│  │   Data     │   │  Indexing  │   │   Query    │       │
+│  │ Connectors │──→│  & Storage │──→│   Engine   │       │
+│  │            │   │            │   │            │       │
+│  │ PDF        │   │ 벡터 인덱스 │   │ 검색       │       │
+│  │ 웹 페이지   │   │ 키워드 인덱스│   │ 재랭킹     │       │
+│  │ DB         │   │ 그래프 인덱스│   │ 답변 생성  │       │
+│  │ Notion     │   │ 요약 인덱스 │   │ 소스 인용  │       │
+│  │ Slack      │   │            │   │            │       │
+│  └────────────┘   └────────────┘   └────────────┘       │
+│                                                          │
+│  주요 특징:                                                │
+│  - 150+ 데이터 커넥터 (LlamaHub)                          │
+│  - 다양한 인덱싱 전략                                      │
+│  - 고급 RAG 기능 (하이브리드 검색, 재랭킹, 쿼리 변환)        │
+│  - Agents & Tools 지원                                    │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### LangChain vs LlamaIndex 비교
+
+| 기준 | LangChain | LlamaIndex |
+|------|----------|-----------|
+| **주요 강점** | 범용 LLM 앱 프레임워크 | 데이터 인덱싱 & RAG 특화 |
+| **에이전트** | 다양한 에이전트 패턴 지원 | 기본 에이전트 지원 |
+| **데이터 처리** | 기본 문서 로더 | 150+ 데이터 커넥터, 고급 인덱싱 |
+| **오케스트레이션** | LangGraph (그래프 기반) | Workflow (이벤트 기반) |
+| **사용 시점** | 복잡한 에이전트 시스템 | 데이터 기반 Q&A, 검색 시스템 |
+| **학습 곡선** | 보통 | 낮음 (RAG 중심) |
+
+실무에서는 **LangChain + LlamaIndex를 함께 사용**하는 경우도 많다. LlamaIndex로 데이터 인덱싱/검색을 하고, LangChain/LangGraph로 에이전트 오케스트레이션을 구현하는 조합이다.
+
+---
+
+### 7. CrewAI / AutoGen 간단 소개
+
+#### CrewAI
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    CrewAI 개념                             │
+│                                                          │
+│  역할 기반(Role-based) 멀티에이전트 프레임워크               │
+│                                                          │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐            │
+│  │  Agent   │   │   Task   │   │   Crew   │            │
+│  │          │   │          │   │          │            │
+│  │ - role   │   │ - 설명   │   │ - agents │            │
+│  │ - goal   │   │ - 담당자  │   │ - tasks  │            │
+│  │ - tools  │   │ - 출력형식│   │ - 실행모드│            │
+│  │ - backstory  │ - context│   │          │            │
+│  └──────────┘   └──────────┘   └──────────┘            │
+│                                                          │
+│  실행 모드:                                               │
+│  - Sequential: 작업을 순서대로 실행                        │
+│  - Hierarchical: 매니저가 작업 분배 (Supervisor 패턴)      │
+│                                                          │
+│  예시:                                                    │
+│  - Researcher Agent (role: "시장 분석가")                  │
+│  - Writer Agent (role: "기술 블로거")                      │
+│  - Editor Agent (role: "편집자")                           │
+│  → Crew로 묶어서 "AI 동향 보고서 작성" 작업 수행             │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### AutoGen (Microsoft)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                   AutoGen 개념                             │
+│                                                          │
+│  Microsoft의 멀티에이전트 대화 프레임워크                    │
+│                                                          │
+│  핵심: 에이전트 간 "대화"를 통해 작업 수행                   │
+│                                                          │
+│  ┌───────────────┐         ┌───────────────┐            │
+│  │ AssistantAgent│←──대화──→│  UserProxy    │            │
+│  │               │         │   Agent       │            │
+│  │ LLM 기반     │         │ 사용자 대리    │            │
+│  │ 코드 생성    │         │ 코드 실행      │            │
+│  │ 분석         │         │ 피드백 전달    │            │
+│  └───────────────┘         └───────────────┘            │
+│                                                          │
+│  특징:                                                    │
+│  - 코드 생성 + 자동 실행 + 디버깅 루프                     │
+│  - GroupChat으로 여러 에이전트 대화                         │
+│  - 사용자가 대화에 개입 가능 (Human-in-the-Loop)            │
+│  - AutoGen Studio: 시각적 에이전트 빌더 제공                │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 프레임워크 선택 가이드
+
+```
+어떤 프레임워크를 사용할까?
+
+단순한 LLM 체인이 필요? ──→ LangChain (LCEL)
+    │
+    아니오
+    ▼
+복잡한 에이전트 워크플로우? ──→ LangGraph
+    │
+    아니오
+    ▼
+데이터 인덱싱 & RAG 중심? ──→ LlamaIndex
+    │
+    아니오
+    ▼
+역할 기반 팀 에이전트? ──→ CrewAI
+    │
+    아니오
+    ▼
+코드 생성/실행 중심? ──→ AutoGen
+```
+
+---
+
+## 코드 예시
+
+### LangChain LCEL 체인 예시
+
+```python
+"""
+LangChain LCEL (LangChain Expression Language) 체인 구성 예시.
+파이프 연산자(|)로 프롬프트, 모델, 파서를 연결한다.
+"""
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import ChatOpenAI
+
+# ── 기본 LCEL 체인 ────────────────────────────────────────
+
+# 1. 프롬프트 템플릿 정의
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "당신은 {role} 전문가입니다. 한국어로 답변하세요."),
+    ("human", "{question}"),
+])
+
+# 2. LLM 모델 설정
+model = ChatOpenAI(model="gpt-4o", temperature=0.7)
+
+# 3. 출력 파서 (AIMessage → 문자열 변환)
+parser = StrOutputParser()
+
+# 4. LCEL 체인 구성: 파이프 연산자로 연결
+chain = prompt | model | parser
+
+# 5. 체인 실행
+result = chain.invoke({
+    "role": "데이터 사이언스",
+    "question": "판다스와 폴라스의 차이점을 설명해주세요",
+})
+print(result)
+
+
+# ── RunnablePassthrough와 RunnableParallel ────────────────
+
+from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+
+# 여러 체인을 병렬로 실행
+parallel_chain = RunnableParallel(
+    # 두 가지 분석을 동시에 수행
+    pros=ChatPromptTemplate.from_template(
+        "{topic}의 장점 3가지를 나열하세요."
+    ) | model | parser,
+    cons=ChatPromptTemplate.from_template(
+        "{topic}의 단점 3가지를 나열하세요."
+    ) | model | parser,
+)
+
+# 병렬 실행 결과: {"pros": "...", "cons": "..."}
+result = parallel_chain.invoke({"topic": "마이크로서비스 아키텍처"})
+print(f"장점: {result['pros']}")
+print(f"단점: {result['cons']}")
+
+
+# ── 스트리밍 출력 ──────────────────────────────────────────
+
+# LCEL 체인은 자동으로 스트리밍 지원
+for chunk in chain.stream({
+    "role": "AI 엔지니어",
+    "question": "RAG의 핵심 원리를 설명해주세요",
+}):
+    print(chunk, end="", flush=True)  # 토큰 단위로 실시간 출력
+```
+
+### LangGraph StateGraph 예시
+
+```python
+"""
+LangGraph를 사용한 ReAct 에이전트 구현.
+StateGraph로 조건부 분기와 루프를 포함한 에이전트 워크플로우를 구축한다.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+
+
+# ── 1. 상태(State) 정의 ──────────────────────────────────
+
+class AgentState(TypedDict):
+    """
+    그래프 전체에서 공유되는 상태.
+    messages에 add_messages 리듀서를 사용하여 메시지를 누적한다.
+    """
+    messages: Annotated[list, add_messages]  # 대화 이력 (누적)
+    next_step: str                           # 다음 실행할 노드
+
+
+# ── 2. 노드(Node) 정의 ──────────────────────────────────
+
+def agent_node(state: AgentState) -> dict:
+    """
+    에이전트 노드: LLM을 호출하여 다음 행동을 결정한다.
+    실제로는 LLM API를 호출하지만, 여기서는 시뮬레이션한다.
+    """
+    messages = state["messages"]
+    last_message = messages[-1].content if messages else ""
+
+    # 시뮬레이션: 도구 호출이 필요한지 판단
+    if "검색" in last_message or "찾아" in last_message:
+        # 도구 호출이 필요한 경우
+        response = AIMessage(
+            content="검색 도구를 호출합니다.",
+            tool_calls=[{
+                "id": "call_001",
+                "name": "web_search",
+                "args": {"query": last_message},
+            }],
+        )
+        return {"messages": [response], "next_step": "tools"}
+    else:
+        # 최종 답변 생성
+        response = AIMessage(content=f"'{last_message}'에 대한 답변입니다.")
+        return {"messages": [response], "next_step": "end"}
+
+
+def tools_node(state: AgentState) -> dict:
+    """
+    도구 실행 노드: 에이전트가 요청한 도구를 실행한다.
+    """
+    last_message = state["messages"][-1]
+
+    # 도구 실행 시뮬레이션
+    tool_results = []
+    for tool_call in last_message.tool_calls:
+        result = ToolMessage(
+            content=f"'{tool_call['args']['query']}'의 검색 결과: 관련 정보를 찾았습니다.",
+            tool_call_id=tool_call["id"],
+        )
+        tool_results.append(result)
+
+    return {"messages": tool_results, "next_step": "agent"}
+
+
+# ── 3. 조건부 라우팅 함수 ──────────────────────────────────
+
+def should_continue(state: AgentState) -> Literal["tools", "end"]:
+    """
+    에이전트 노드 이후 다음 경로를 결정하는 조건부 함수.
+    도구 호출이 필요하면 tools로, 아니면 종료.
+    """
+    last_message = state["messages"][-1]
+
+    # AIMessage에 tool_calls가 있으면 도구 실행
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "tools"
+    return "end"
+
+
+# ── 4. 그래프 구성 ────────────────────────────────────────
+
+def build_agent_graph():
+    """ReAct 에이전트 그래프를 구성한다."""
+
+    # StateGraph 생성
+    graph = StateGraph(AgentState)
+
+    # 노드 추가
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", tools_node)
+
+    # 엣지 추가
+    graph.add_edge(START, "agent")           # 시작 → 에이전트
+    graph.add_conditional_edges(              # 에이전트 → 조건부 분기
+        "agent",
+        should_continue,
+        {
+            "tools": "tools",                # 도구 호출 필요 → tools
+            "end": END,                      # 답변 완료 → 종료
+        },
+    )
+    graph.add_edge("tools", "agent")         # 도구 실행 후 → 에이전트 (루프)
+
+    # 그래프 컴파일
+    app = graph.compile()
+    return app
+
+
+# ── 5. 실행 ──────────────────────────────────────────────
+
+if __name__ == "__main__":
+    app = build_agent_graph()
+
+    # 도구 호출이 필요한 질문
+    result = app.invoke({
+        "messages": [HumanMessage(content="최신 AI 트렌드를 검색해줘")],
+        "next_step": "agent",
+    })
+
+    print("\n--- 실행 결과 ---")
+    for msg in result["messages"]:
+        role = msg.__class__.__name__
+        print(f"[{role}] {msg.content}")
+```
+
+### 멀티에이전트 Supervisor 패턴
+
+```python
+"""
+멀티에이전트 Supervisor 패턴 스켈레톤.
+Supervisor가 전문 에이전트(Researcher, Writer)에게 작업을 분배한다.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langchain_core.messages import HumanMessage, AIMessage
+
+
+# ── 상태 정의 ──────────────────────────────────────────────
+
+class SupervisorState(TypedDict):
+    messages: Annotated[list, add_messages]
+    next_worker: str       # 다음에 작업할 에이전트
+    research_done: bool    # 조사 완료 여부
+    writing_done: bool     # 작성 완료 여부
+
+
+# ── Supervisor 노드 ──────────────────────────────────────
+
+def supervisor_node(state: SupervisorState) -> dict:
+    """
+    Supervisor: 현재 상태를 보고 다음 작업자를 결정한다.
+    실제로는 LLM을 호출하여 라우팅 결정을 내린다.
+    """
+    if not state.get("research_done", False):
+        # 조사가 안 되었으면 Researcher에게 지시
+        return {
+            "messages": [AIMessage(content="[Supervisor] 먼저 조사가 필요합니다.")],
+            "next_worker": "researcher",
+        }
+    elif not state.get("writing_done", False):
+        # 조사는 완료되었으나 작성이 안 되었으면 Writer에게 지시
+        return {
+            "messages": [AIMessage(content="[Supervisor] 조사 완료. 글 작성을 시작합니다.")],
+            "next_worker": "writer",
+        }
+    else:
+        # 모든 작업 완료
+        return {
+            "messages": [AIMessage(content="[Supervisor] 모든 작업이 완료되었습니다.")],
+            "next_worker": "finish",
+        }
+
+
+# ── Worker 노드들 ────────────────────────────────────────
+
+def researcher_node(state: SupervisorState) -> dict:
+    """Research Agent: 주제에 대한 정보를 조사한다."""
+    topic = state["messages"][0].content
+    return {
+        "messages": [AIMessage(
+            content=f"[Researcher] '{topic}'에 대해 조사를 완료했습니다. "
+                    f"주요 발견: AI 에이전트 시장이 급성장 중입니다."
+        )],
+        "research_done": True,
+    }
+
+
+def writer_node(state: SupervisorState) -> dict:
+    """Writer Agent: 조사 결과를 바탕으로 글을 작성한다."""
+    return {
+        "messages": [AIMessage(
+            content="[Writer] 조사 결과를 바탕으로 블로그 글을 작성했습니다. "
+                    "'AI 에이전트: 2026년 가장 주목할 기술 트렌드'"
+        )],
+        "writing_done": True,
+    }
+
+
+# ── 라우팅 함수 ──────────────────────────────────────────
+
+def route_to_worker(state: SupervisorState) -> Literal["researcher", "writer", "end"]:
+    """Supervisor의 결정에 따라 다음 노드를 선택한다."""
+    next_worker = state.get("next_worker", "finish")
+    if next_worker == "researcher":
+        return "researcher"
+    elif next_worker == "writer":
+        return "writer"
+    return "end"
+
+
+# ── 그래프 구성 ──────────────────────────────────────────
+
+def build_supervisor_graph():
+    graph = StateGraph(SupervisorState)
+
+    # 노드 추가
+    graph.add_node("supervisor", supervisor_node)
+    graph.add_node("researcher", researcher_node)
+    graph.add_node("writer", writer_node)
+
+    # 엣지: 시작 → Supervisor
+    graph.add_edge(START, "supervisor")
+
+    # 조건부 엣지: Supervisor → Worker 또는 END
+    graph.add_conditional_edges(
+        "supervisor",
+        route_to_worker,
+        {
+            "researcher": "researcher",
+            "writer": "writer",
+            "end": END,
+        },
+    )
+
+    # Worker 완료 후 → Supervisor로 복귀 (루프)
+    graph.add_edge("researcher", "supervisor")
+    graph.add_edge("writer", "supervisor")
+
+    return graph.compile()
+
+
+# ── 실행 ──────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    app = build_supervisor_graph()
+
+    result = app.invoke({
+        "messages": [HumanMessage(content="AI 에이전트 트렌드 블로그 글 작성")],
+        "next_worker": "",
+        "research_done": False,
+        "writing_done": False,
+    })
+
+    print("\n--- 실행 로그 ---")
+    for msg in result["messages"]:
+        print(msg.content)
+```
+
+---

@@ -1,0 +1,502 @@
+---
+title: "동기화"
+topic: "02-os"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 왜 동기화가 필요한가?
+
+멀티스레드 환경에서 여러 스레드가 **공유 자원**(전역 변수, 파일, DB 등)에 동시에 접근하면 예상치 못한 결과가 발생할 수 있다.
+
+> **비유**: 두 사람이 동시에 같은 은행 계좌에서 돈을 인출하면, 잔액이 꼬일 수 있다. 한 사람씩 순서대로 처리해야 안전하다.
+
+### 경쟁 조건 (Race Condition)
+
+여러 스레드가 공유 데이터에 동시에 접근하고, 그 결과가 **실행 순서에 따라 달라지는** 상황.
+
+```
+공유 변수: counter = 5
+
+스레드 A: counter += 1          스레드 B: counter += 1
+
+내부 동작 (3단계):
+1. 읽기: register_A = counter (5)    1. 읽기: register_B = counter (5)
+2. 증가: register_A = 6             2. 증가: register_B = 6
+3. 쓰기: counter = register_A (6)   3. 쓰기: counter = register_B (6)
+
+기대 결과: counter = 7
+실제 결과: counter = 6 ← 하나의 증가가 손실됨!
+```
+
+이것이 일어나는 이유: `counter += 1`은 원자적(atomic) 연산이 아니라 읽기-수정-쓰기 3단계로 구성된다.
+
+### 임계 구역 (Critical Section)
+
+**공유 자원에 접근하는 코드 영역**. 한 번에 하나의 스레드만 실행해야 한다.
+
+```python
+# 비유:
+# 화장실(임계 구역)에 한 명만 들어갈 수 있다.
+# 들어갈 때 문을 잠그고(lock), 나올 때 문을 연다(unlock).
+
+lock.acquire()        # ← 입장 구역 (Entry Section)
+# --- 임계 구역 시작 ---
+counter += 1          # 공유 자원 접근
+# --- 임계 구역 끝 ---
+lock.release()        # ← 퇴장 구역 (Exit Section)
+```
+
+**임계 구역 해결 조건 3가지:**
+
+| 조건 | 설명 |
+|------|------|
+| **상호 배제 (Mutual Exclusion)** | 한 스레드가 임계 구역에 있으면 다른 스레드는 진입 불가 |
+| **진행 (Progress)** | 임계 구역이 비어있으면 진입을 원하는 스레드가 들어갈 수 있어야 함 |
+| **유한 대기 (Bounded Waiting)** | 진입을 요청한 스레드는 유한 시간 내에 진입 가능해야 함 (기아 방지) |
+
+### 뮤텍스 (Mutex)
+
+**Mutual Exclusion**의 약자. 잠금(Lock)과 해제(Unlock)로 임계 구역을 보호.
+
+```
+뮤텍스 = 화장실 열쇠 (하나뿐)
+
+스레드 A          뮤텍스          스레드 B
+                [잠금 안됨]
+lock() ──→      [잠김, A 소유]
+임계구역 실행                    lock() ──→ 대기 (블로킹)
+unlock() ──→    [잠금 안됨]     ──→ 깨어남, [잠김, B 소유]
+                                임계구역 실행
+                                unlock() ──→ [잠금 안됨]
+```
+
+**특징:**
+- 소유권이 있다: lock()한 스레드만 unlock() 가능
+- 이진 값: 잠김(1) / 열림(0)
+- 한 번에 하나의 스레드만 임계 구역 진입
+
+### 세마포어 (Semaphore)
+
+정수 값(카운터)을 사용하는 동기화 도구. **P(wait)** 연산과 **V(signal)** 연산으로 구성.
+
+```
+세마포어 = 주차장의 빈 자리 수
+
+P(wait): 빈 자리 확인 → 있으면 감소시키고 진입, 없으면 대기
+V(signal): 나가면서 빈 자리 수 1 증가
+
+세마포어 S = 3 (주차 가능 차량 3대)
+
+차1: P(S) → S=2, 진입
+차2: P(S) → S=1, 진입
+차3: P(S) → S=0, 진입
+차4: P(S) → S=0, 대기...
+차1: V(S) → S=1
+차4: → 깨어남, S=0, 진입
+```
+
+**이진 세마포어 (Binary Semaphore)**: 값이 0 또는 1만 가능 → 뮤텍스와 유사
+
+**카운팅 세마포어**: 값이 여러 개 가능 → 제한된 수의 자원 관리
+
+| 비교 | 뮤텍스 | 세마포어 |
+|------|--------|---------|
+| 값 | 이진 (0/1) | 정수 (0 이상) |
+| 소유권 | 있음 (잠근 스레드만 해제) | 없음 (다른 스레드가 signal 가능) |
+| 용도 | 상호 배제 | 자원 카운팅, 동기화 |
+
+### 모니터 (Monitor)
+
+고급 동기화 도구. **공유 데이터와 연산을 하나의 모듈로 캡슐화**하고, 한 번에 하나의 스레드만 모니터 내부에서 실행 가능.
+
+```
+┌──────────────────────────────┐
+│           모니터               │
+│                              │
+│  공유 데이터                   │
+│  ┌──────────────────────┐   │
+│  │ balance = 1000       │   │
+│  └──────────────────────┘   │
+│                              │
+│  동기화된 메서드               │
+│  ┌──────────────────────┐   │
+│  │ deposit(amount)      │   │  ← 한 번에 하나의
+│  │ withdraw(amount)     │   │    스레드만 실행
+│  └──────────────────────┘   │
+│                              │
+│  조건 변수 (condition)         │
+│  ┌──────────────────────┐   │
+│  │ wait() / notify()    │   │
+│  └──────────────────────┘   │
+│                              │
+│  입구 큐 ═══════════         │
+│  (대기 스레드들)              │
+└──────────────────────────────┘
+```
+
+Java의 `synchronized`, Python의 `threading.Condition`이 모니터 개념을 구현한 것.
+
+### 생산자-소비자 문제 (Producer-Consumer Problem)
+
+동기화의 대표적 문제. 생산자는 데이터를 버퍼에 넣고, 소비자는 버퍼에서 꺼내 처리한다.
+
+```
+생산자                   버퍼 (크기 제한)              소비자
+  │                    ┌───┬───┬───┬───┐            │
+  ├──생산──→ 넣기 ──→  │ A │ B │ C │   │ ──→ 꺼내기 ──→ 소비
+  │                    └───┴───┴───┴───┘            │
+
+문제:
+1. 버퍼가 가득 찼을 때 생산자는 기다려야 함
+2. 버퍼가 비었을 때 소비자는 기다려야 함
+3. 버퍼에 동시 접근하면 경쟁 조건 발생
+```
+
+### 데드락 (Deadlock)
+
+두 개 이상의 스레드가 **서로 상대방이 점유한 자원을 기다리며 영원히 블로킹**되는 상태.
+
+```
+스레드 A                 스레드 B
+lock(뮤텍스1) ✓          lock(뮤텍스2) ✓
+lock(뮤텍스2) → 대기...   lock(뮤텍스1) → 대기...
+
+A는 B가 뮤텍스2를 놓기를 기다리고,
+B는 A가 뮤텍스1을 놓기를 기다린다.
+→ 둘 다 영원히 진행 불가! = 데드락
+```
+
+**데드락 발생 조건 (4가지 모두 충족 시):**
+1. 상호 배제: 자원을 한 번에 하나의 스레드만 사용
+2. 점유와 대기: 자원을 점유한 채로 다른 자원을 기다림
+3. 비선점: 다른 스레드의 자원을 강제로 빼앗을 수 없음
+4. 순환 대기: 스레드들이 순환적으로 서로의 자원을 기다림
+
+## 코드 예시
+
+### 경쟁 조건 발생과 해결
+
+```python
+import threading
+
+# === 경쟁 조건 발생 (동기화 없음) ===
+counter_unsafe = 0
+
+def increment_unsafe():
+    global counter_unsafe
+    for _ in range(100000):
+        counter_unsafe += 1    # 원자적이지 않은 연산
+
+threads = []
+for _ in range(5):
+    t = threading.Thread(target=increment_unsafe)
+    threads.append(t)
+    t.start()
+
+for t in threads:
+    t.join()
+
+print(f"동기화 없음: {counter_unsafe}")    # 500000보다 작을 수 있음!
+# 예: 487632, 493218 등 매번 다른 결과
+
+
+# === 뮤텍스(Lock)으로 해결 ===
+counter_safe = 0
+lock = threading.Lock()
+
+def increment_safe():
+    global counter_safe
+    for _ in range(100000):
+        lock.acquire()           # 잠금
+        counter_safe += 1        # 임계 구역
+        lock.release()           # 해제
+
+threads = []
+for _ in range(5):
+    t = threading.Thread(target=increment_safe)
+    threads.append(t)
+    t.start()
+
+for t in threads:
+    t.join()
+
+print(f"뮤텍스 사용: {counter_safe}")      # 항상 500000
+
+
+# === with 문으로 더 안전하게 ===
+counter_with = 0
+
+def increment_with():
+    global counter_with
+    for _ in range(100000):
+        with lock:               # with 블록이 끝나면 자동 해제
+            counter_with += 1
+
+threads = []
+for _ in range(5):
+    t = threading.Thread(target=increment_with)
+    threads.append(t)
+    t.start()
+
+for t in threads:
+    t.join()
+
+print(f"with Lock: {counter_with}")        # 항상 500000
+```
+
+### 세마포어 — 동시 접근 수 제한
+
+```python
+import threading
+import time
+
+# 동시에 3개의 스레드만 접근 허용
+semaphore = threading.Semaphore(3)
+
+def access_resource(thread_id):
+    """제한된 자원에 접근하는 함수"""
+    print(f"  스레드 {thread_id}: 접근 시도...")
+    semaphore.acquire()                    # P(wait): 빈 자리 있으면 진입
+    print(f"  스레드 {thread_id}: ✓ 접근 성공!")
+    time.sleep(2)                          # 자원 사용 (2초)
+    print(f"  스레드 {thread_id}: 접근 종료")
+    semaphore.release()                    # V(signal): 빈 자리 반환
+
+
+print("=== 세마포어 (동시 3개 제한) ===")
+threads = []
+for i in range(6):
+    t = threading.Thread(target=access_resource, args=(i,))
+    threads.append(t)
+    t.start()
+
+for t in threads:
+    t.join()
+
+print("모든 스레드 완료")
+
+# 출력: 처음 3개가 동시 접근, 나머지 3개는 대기 후 접근
+```
+
+### 생산자-소비자 문제 — Condition 사용
+
+```python
+import threading
+import time
+import random
+from collections import deque
+
+class BoundedBuffer:
+    """크기 제한이 있는 공유 버퍼 (모니터 패턴)"""
+
+    def __init__(self, capacity):
+        self.buffer = deque()
+        self.capacity = capacity
+        self.lock = threading.Lock()
+        self.not_full = threading.Condition(self.lock)   # 버퍼가 비었음을 알림
+        self.not_empty = threading.Condition(self.lock)  # 버퍼에 데이터가 있음을 알림
+
+    def produce(self, item):
+        """생산자: 버퍼에 아이템 추가"""
+        with self.not_full:
+            # 버퍼가 가득 차면 대기
+            while len(self.buffer) >= self.capacity:
+                print(f"    [생산자] 버퍼 가득 참, 대기...")
+                self.not_full.wait()
+
+            self.buffer.append(item)
+            print(f"    [생산자] 생산: {item} | 버퍼: {list(self.buffer)}")
+
+            # 소비자에게 데이터 있음을 알림
+            self.not_empty.notify()
+
+    def consume(self):
+        """소비자: 버퍼에서 아이템 꺼냄"""
+        with self.not_empty:
+            # 버퍼가 비었으면 대기
+            while len(self.buffer) == 0:
+                print(f"    [소비자] 버퍼 비어있음, 대기...")
+                self.not_empty.wait()
+
+            item = self.buffer.popleft()
+            print(f"    [소비자] 소비: {item} | 버퍼: {list(self.buffer)}")
+
+            # 생산자에게 빈 공간 있음을 알림
+            self.not_full.notify()
+            return item
+
+
+def producer(buffer, count):
+    for i in range(count):
+        time.sleep(random.uniform(0.1, 0.5))
+        buffer.produce(f"아이템-{i}")
+
+
+def consumer(buffer, count):
+    for _ in range(count):
+        time.sleep(random.uniform(0.2, 0.6))
+        buffer.consume()
+
+
+# === 실행 ===
+print("=== 생산자-소비자 문제 ===")
+buf = BoundedBuffer(capacity=3)
+
+prod = threading.Thread(target=producer, args=(buf, 5))
+cons = threading.Thread(target=consumer, args=(buf, 5))
+
+prod.start()
+cons.start()
+prod.join()
+cons.join()
+print("완료!")
+```
+
+### 데드락 발생과 방지
+
+```python
+import threading
+import time
+
+lock_a = threading.Lock()
+lock_b = threading.Lock()
+
+# === 데드락 발생 가능 코드 ===
+def thread_1_deadlock():
+    lock_a.acquire()
+    print("스레드 1: lock_a 획득")
+    time.sleep(0.1)                    # 타이밍에 의한 데드락 유발
+    print("스레드 1: lock_b 대기...")
+    lock_b.acquire()                   # 스레드 2가 이미 보유 → 데드락!
+    print("스레드 1: 양쪽 획득")
+    lock_b.release()
+    lock_a.release()
+
+def thread_2_deadlock():
+    lock_b.acquire()
+    print("스레드 2: lock_b 획득")
+    time.sleep(0.1)
+    print("스레드 2: lock_a 대기...")
+    lock_a.acquire()                   # 스레드 1이 이미 보유 → 데드락!
+    print("스레드 2: 양쪽 획득")
+    lock_a.release()
+    lock_b.release()
+
+# 주의: 위 코드를 실행하면 프로그램이 멈출 수 있음!
+# t1 = threading.Thread(target=thread_1_deadlock)
+# t2 = threading.Thread(target=thread_2_deadlock)
+# t1.start(); t2.start()
+
+
+# === 데드락 방지: 락 순서 통일 ===
+def thread_1_safe():
+    lock_a.acquire()                   # 항상 lock_a를 먼저
+    print("스레드 1: lock_a 획득")
+    time.sleep(0.1)
+    lock_b.acquire()                   # 그 다음 lock_b
+    print("스레드 1: lock_b 획득")
+    lock_b.release()
+    lock_a.release()
+
+def thread_2_safe():
+    lock_a.acquire()                   # 스레드 2도 lock_a를 먼저!
+    print("스레드 2: lock_a 획득")
+    time.sleep(0.1)
+    lock_b.acquire()
+    print("스레드 2: lock_b 획득")
+    lock_b.release()
+    lock_a.release()
+
+print("=== 데드락 방지 (락 순서 통일) ===")
+t1 = threading.Thread(target=thread_1_safe)
+t2 = threading.Thread(target=thread_2_safe)
+t1.start()
+t2.start()
+t1.join()
+t2.join()
+print("데드락 없이 완료!")
+```
+
+### 읽기-쓰기 락 (Read-Write Lock)
+
+```python
+import threading
+import time
+
+class ReadWriteLock:
+    """
+    읽기-쓰기 락:
+    - 여러 읽기 스레드 동시 허용
+    - 쓰기 스레드는 단독으로만 실행
+    """
+
+    def __init__(self):
+        self.readers = 0
+        self.lock = threading.Lock()
+        self.write_lock = threading.Lock()
+
+    def acquire_read(self):
+        with self.lock:
+            self.readers += 1
+            if self.readers == 1:
+                self.write_lock.acquire()  # 첫 번째 읽기가 쓰기 차단
+
+    def release_read(self):
+        with self.lock:
+            self.readers -= 1
+            if self.readers == 0:
+                self.write_lock.release()  # 마지막 읽기가 쓰기 허용
+
+    def acquire_write(self):
+        self.write_lock.acquire()          # 쓰기는 단독 접근
+
+    def release_write(self):
+        self.write_lock.release()
+
+
+# === 사용 예시 ===
+shared_data = {"value": 0}
+rw_lock = ReadWriteLock()
+
+def reader(reader_id):
+    rw_lock.acquire_read()
+    print(f"  읽기 {reader_id}: value = {shared_data['value']}")
+    time.sleep(0.5)                        # 읽기 작업
+    rw_lock.release_read()
+
+def writer(writer_id, new_value):
+    rw_lock.acquire_write()
+    old = shared_data['value']
+    shared_data['value'] = new_value
+    print(f"  쓰기 {writer_id}: {old} → {new_value}")
+    time.sleep(0.5)                        # 쓰기 작업
+    rw_lock.release_write()
+
+print("=== 읽기-쓰기 락 ===")
+threads = [
+    threading.Thread(target=reader, args=(1,)),
+    threading.Thread(target=reader, args=(2,)),
+    threading.Thread(target=writer, args=(1, 42)),
+    threading.Thread(target=reader, args=(3,)),
+]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+```
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 경쟁 조건 | 공유 데이터에 동시 접근 시 실행 순서에 따라 결과가 달라지는 현상 |
+| 임계 구역 | 공유 자원에 접근하는 코드 영역, 한 번에 하나만 실행 |
+| 뮤텍스 | 이진 잠금, 소유권 있음, 상호 배제 보장 |
+| 세마포어 | 정수 카운터, P(wait)/V(signal), 동시 접근 수 제한 |
+| 모니터 | 공유 데이터 + 연산을 캡슐화, 자동 상호 배제 |
+| 생산자-소비자 | 공유 버퍼를 사용한 비동기 통신, Condition 변수로 해결 |
+| 데드락 | 순환 대기로 모두 블로킹, 4가지 조건 동시 충족 시 발생 |
+| 데드락 방지 | 락 순서 통일, 타임아웃, 자원 한번에 요청 등 |

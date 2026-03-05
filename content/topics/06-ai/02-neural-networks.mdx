@@ -1,0 +1,873 @@
+---
+title: "신경망과 딥러닝 (Neural Networks & Deep Learning)"
+topic: "06-ai"
+order: 02
+---
+
+
+## 핵심 개념
+
+### 1. 퍼셉트론 (Perceptron)
+
+퍼셉트론은 **신경망의 가장 기본 단위**로, 생물학적 뉴런을 모방한 수학적 모델이다.
+
+```
+생물학적 뉴런:
+  수상돌기 → 세포체 → 축삭돌기 → 시냅스 → 다음 뉴런
+  (입력)    (처리)   (출력)
+
+퍼셉트론 (인공 뉴런):
+
+  입력       가중치       합산        활성화 함수     출력
+  x₁ ──w₁──╲
+              ╲
+  x₂ ──w₂────→ Σ(wᵢxᵢ + b) ──→ f(z) ──→ y
+              ╱
+  x₃ ──w₃──╱
+              ↑
+              b (편향)
+
+  계산 과정:
+  1. 가중합: z = w₁x₁ + w₂x₂ + w₃x₃ + b
+  2. 활성화: y = f(z)
+```
+
+**단일 퍼셉트론의 한계**: AND, OR 같은 선형 분리 가능한 문제는 풀 수 있지만, XOR 같은 **선형 분리 불가능한 문제는 풀 수 없다**.
+
+```
+XOR 문제 — 선형으로 분리 불가:
+
+  x₂
+  1 │ ●     ○        ● = 1 (XOR = True)
+    │              ○ = 0 (XOR = False)
+  0 │ ○     ●
+    └──────── x₁
+    0       1
+
+  → 직선 하나로 ●과 ○를 분리할 수 없다!
+  → 해결: 은닉층을 추가하여 비선형 경계 학습
+```
+
+### 2. 다층 퍼셉트론 (Multi-Layer Perceptron, MLP)
+
+은닉층(hidden layer)을 추가하여 퍼셉트론의 한계를 극복한다. 은닉층이 2개 이상이면 **깊은(Deep) 신경망**이라 부른다.
+
+```
+다층 신경망 구조:
+
+  입력층        은닉층 1      은닉층 2       출력층
+  (Input)      (Hidden 1)   (Hidden 2)    (Output)
+
+  x₁ ○──╲    ○──╲     ○──╲
+          ╲  ╱    ╲   ╱    ╲
+  x₂ ○────○──────○──────○───→ ŷ₁
+          ╱╲    ╱╲   ╱╲
+  x₃ ○──╱  ○──╱  ○──╱  ○───→ ŷ₂
+          ╲╱    ╲╱   ╲╱
+  x₄ ○──╱  ○──╱  ○──╱
+
+  각 연결선 = 가중치(weight)
+  각 뉴런 = 가중합 + 활성화 함수
+
+  용어:
+  - 입력층: 특성(feature)을 받는 층
+  - 은닉층: 입력과 출력 사이의 층 (특성을 변환)
+  - 출력층: 최종 예측을 출력하는 층
+  - 깊은(Deep) 신경망: 은닉층이 2개 이상
+```
+
+### 3. 활성화 함수 (Activation Functions)
+
+활성화 함수는 뉴런의 출력에 **비선형성(non-linearity)**을 추가한다. 활성화 함수가 없으면 아무리 층을 쌓아도 선형 변환의 합성 = 선형 변환이므로, 은닉층을 추가하는 의미가 없다.
+
+#### (1) Sigmoid
+
+```
+σ(z) = 1 / (1 + e^(-z))
+
+출력 범위: (0, 1)
+
+  1.0 │              ──────
+      │           ╱
+  0.5 │─────────╱──────────
+      │       ╱
+  0.0 │──────
+      └─────────────────── z
+
+장점: 출력이 확률로 해석 가능
+단점: ① 기울기 소실 문제 (양 끝에서 기울기 ≈ 0)
+      ② 출력이 0 중심이 아님 (0~1)
+      ③ 지수 연산 느림
+용도: 출력층 (이진 분류)
+```
+
+#### (2) ReLU (Rectified Linear Unit)
+
+```
+ReLU(z) = max(0, z)
+
+출력 범위: [0, ∞)
+
+      │        ╱
+      │      ╱
+      │    ╱
+  0   │──╱────────────
+      │
+      └─────────────── z
+
+장점: ① 계산 매우 빠름 (비교 연산만)
+      ② 기울기 소실 문제 크게 완화
+      ③ 희소 활성화 (일부 뉴런만 활성 → 효율적)
+단점: Dead ReLU — z < 0이면 기울기 = 0 → 영원히 죽은 뉴런
+      큰 학습률로 가중치가 크게 음수로 이동하면 해당 뉴런은 다시 활성화 안 됨
+용도: 은닉층의 기본 활성화 함수 (가장 많이 사용)
+
+변형:
+  Leaky ReLU: f(z) = max(0.01z, z)  (z < 0에서도 작은 기울기 → Dead ReLU 해결)
+  ELU:        f(z) = z if z>0, α(e^z - 1) if z≤0
+```
+
+#### (3) Softmax
+
+```
+Softmax(zᵢ) = e^(zᵢ) / Σ e^(zⱼ)
+
+출력 범위: (0, 1), 모든 출력의 합 = 1.0
+
+예시: z = [2.0, 1.0, 0.1]
+  e^2.0 = 7.389, e^1.0 = 2.718, e^0.1 = 1.105
+  합계 = 11.212
+
+  Softmax = [7.389/11.212, 2.718/11.212, 1.105/11.212]
+           = [0.659, 0.242, 0.099]
+  합계 = 1.0
+
+  → "클래스 0일 확률 65.9%, 클래스 1일 확률 24.2%, 클래스 2일 확률 9.9%"
+
+용도: 출력층 (다중 클래스 분류)
+      가장 높은 확률의 클래스를 예측으로 선택
+```
+
+#### 활성화 함수 비교
+
+| 함수 | 수식 | 출력 범위 | 주 용도 | 특징 |
+|------|------|----------|--------|------|
+| Sigmoid | 1/(1+e^-z) | (0, 1) | 출력층 (이진분류) | 기울기 소실 |
+| Tanh | (e^z-e^-z)/(e^z+e^-z) | (-1, 1) | 은닉층 | 0 중심, 기울기 소실 |
+| ReLU | max(0, z) | [0, ∞) | 은닉층 (기본) | 빠르고 효과적, Dead ReLU |
+| Softmax | e^zi/Σe^zj | (0, 1) 합=1 | 출력층 (다중분류) | 확률 분포 출력 |
+
+### 4. 순전파 (Forward Propagation)
+
+순전파는 **입력 데이터가 네트워크를 통과하여 출력(예측)을 생성하는 과정**이다.
+
+```
+2층 신경망 순전파 (행렬 표기):
+
+입력: X = [x₁, x₂]
+은닉층: 뉴런 3개, 활성화 ReLU
+출력층: 뉴런 1개, 활성화 Sigmoid
+
+Step 1: 은닉층 계산
+  z₁ = W₁ · X + b₁      (가중합)
+  a₁ = ReLU(z₁)          (활성화)
+
+  W₁ = [[w₁₁, w₁₂],     X = [x₁]    b₁ = [b₁]
+         [w₂₁, w₂₂],         [x₂]         [b₂]
+         [w₃₁, w₃₂]]                      [b₃]
+
+  z₁ = [w₁₁·x₁ + w₁₂·x₂ + b₁]
+       [w₂₁·x₁ + w₂₂·x₂ + b₂]
+       [w₃₁·x₁ + w₃₂·x₂ + b₃]
+
+  a₁ = [ReLU(z₁₁)]
+       [ReLU(z₁₂)]
+       [ReLU(z₁₃)]
+
+Step 2: 출력층 계산
+  z₂ = W₂ · a₁ + b₂
+  ŷ  = Sigmoid(z₂)
+
+  → 최종 출력 ŷ (0~1 사이의 예측 확률)
+```
+
+### 5. 역전파 (Backpropagation)
+
+역전파는 **출력의 오차를 뒤에서 앞으로 전파하며 각 가중치의 기울기를 계산하는 알고리즘**이다. 연쇄 법칙(Chain Rule)을 사용한다.
+
+```
+역전파 흐름:
+
+  순전파:  입력 → 은닉층 → 출력 → 손실(Loss)
+  역전파:  입력 ← 은닉층 ← 출력 ← 손실(Loss)
+                  기울기 전파 방향  ←←←←←
+
+연쇄 법칙 (Chain Rule):
+  ∂L/∂w = ∂L/∂ŷ × ∂ŷ/∂z × ∂z/∂w
+
+  쉬운 비유:
+  "최종 손실에 대한 가중치 w의 영향도"
+  = "손실이 출력에 얼마나 민감한가"
+  × "출력이 가중합에 얼마나 민감한가"
+  × "가중합이 w에 얼마나 민감한가"
+
+구체적 예시 (1개 뉴런, Sigmoid, MSE):
+  순전파: z = wx + b → a = σ(z) → L = (y - a)²
+
+  역전파:
+  ∂L/∂a = -2(y - a)                    ← 손실의 출력 미분
+  ∂a/∂z = σ(z)(1 - σ(z))               ← Sigmoid의 미분
+  ∂z/∂w = x                             ← 가중합의 가중치 미분
+
+  ∂L/∂w = ∂L/∂a × ∂a/∂z × ∂z/∂w
+        = -2(y-a) × σ(z)(1-σ(z)) × x
+
+  → 이 기울기로 가중치를 업데이트!
+  w_new = w_old - α × ∂L/∂w
+```
+
+### 6. 손실 함수 (Loss Functions)
+
+#### (1) MSE (Mean Squared Error) — 회귀
+
+```
+MSE = (1/n) × Σ(yᵢ - ŷᵢ)²
+
+  - 예측값과 실제값의 차이를 제곱하여 평균
+  - 큰 오차에 큰 패널티 (제곱 때문에)
+  - 회귀 문제에서 사용
+```
+
+#### (2) Cross-Entropy — 분류
+
+```
+이진 분류 (Binary Cross-Entropy):
+  L = -(1/n) × Σ[yᵢ·log(ŷᵢ) + (1-yᵢ)·log(1-ŷᵢ)]
+
+다중 분류 (Categorical Cross-Entropy):
+  L = -(1/n) × Σ Σ yᵢⱼ·log(ŷᵢⱼ)
+
+  왜 Cross-Entropy를 쓰는가?
+  - Sigmoid/Softmax 출력에 대해 기울기가 잘 흐른다
+  - MSE는 Sigmoid와 결합 시 기울기 소실 문제 발생
+  - 확률 분포 간의 차이를 측정하는 정보이론적 의미
+```
+
+### 7. 옵티마이저 (Optimizers)
+
+#### (1) SGD (Stochastic Gradient Descent)
+
+```
+표준 경사 하강법 (Batch GD):
+  전체 데이터로 기울기 계산 → 한 번 업데이트
+  → 느림, 메모리 많이 사용
+
+확률적 경사 하강법 (SGD):
+  데이터 1개(또는 미니배치)로 기울기 계산 → 업데이트
+  → 빠르지만 노이즈가 많음 (진동하며 수렴)
+
+미니배치 SGD (실제로 가장 많이 사용):
+  32~256개 데이터(미니배치)로 기울기 계산 → 업데이트
+  → 속도와 안정성의 균형
+
+업데이트 규칙:
+  w = w - α × ∇L(w)
+
+  α: 학습률
+  ∇L(w): 손실의 기울기 (가중치에 대한 편미분)
+```
+
+#### (2) Adam (Adaptive Moment Estimation)
+
+```
+Adam = 모멘텀 + RMSProp
+
+모멘텀: 이전 기울기의 방향을 기억 (관성)
+  → 같은 방향의 기울기가 쌓이면 가속
+  → 진동 감소
+
+RMSProp: 기울기의 크기를 적응적으로 조정
+  → 큰 기울기 → 작은 학습률 (발산 방지)
+  → 작은 기울기 → 큰 학습률 (수렴 가속)
+
+Adam 업데이트:
+  m = β₁·m + (1-β₁)·∇L        (1차 모멘트: 기울기의 이동평균)
+  v = β₂·v + (1-β₂)·(∇L)²     (2차 모멘트: 기울기 제곱의 이동평균)
+  m̂ = m / (1-β₁ᵗ)              (편향 보정)
+  v̂ = v / (1-β₂ᵗ)              (편향 보정)
+  w = w - α · m̂ / (√v̂ + ε)     (업데이트)
+
+기본 하이퍼파라미터:
+  α = 0.001, β₁ = 0.9, β₂ = 0.999, ε = 1e-8
+
+비유:
+  SGD = 공이 언덕을 굴러 내려감 (현재 기울기만 봄)
+  Adam = 무거운 공이 관성으로 굴러 내려감 (이전 방향 기억, 적응적 속도)
+```
+
+| 옵티마이저 | 특징 | 장점 | 단점 |
+|-----------|------|------|------|
+| SGD | 기본 경사 하강법 | 단순, 일반화 우수 | 느린 수렴, 학습률 민감 |
+| SGD+Momentum | 관성 추가 | 진동 감소, 빠른 수렴 | 하이퍼파라미터 추가 |
+| Adam | 적응적 학습률 | 빠른 수렴, 튜닝 덜 필요 | 일반화 약간 열등할 수 있음 |
+
+### 8. CNN 기초 (Convolutional Neural Network)
+
+이미지를 일반 신경망(MLP)에 넣으려면 2D를 1D로 펼쳐야 하는데, 이 과정에서 **공간 정보가 소실**된다. CNN은 필터(커널)를 슬라이딩하며 **공간 구조를 보존한 채 특징을 추출**한다.
+
+```
+MLP vs CNN:
+  MLP: 28x28 이미지 → 784개 입력 → 200,704개 가중치 (은닉 256일 때)
+  CNN: 3x3 필터 32개 → 3×3×1×32 = 288개 가중치! (가중치 공유)
+```
+
+#### 컨볼루션 연산
+
+```
+입력 이미지 (5×5):              필터/커널 (3×3):
+┌─────────────────────┐         ┌─────────────┐
+│  1   0   1   0   1  │         │  1   0   1  │
+│  0   1   0   1   0  │         │  0   1   0  │
+│  1   0   1   0   1  │         │  1   0   1  │
+│  0   1   0   1   0  │         └─────────────┘
+│  1   0   1   0   1  │
+└─────────────────────┘
+
+컨볼루션 과정 (stride=1, 패딩 없음):
+
+Step 1: 필터를 왼쪽 상단에 배치
+  [1  0  1]     [1  0  1]
+  [0  1  0]  *  [0  1  0]  = 1+0+1+0+1+0+1+0+1 = 5
+  [1  0  1]     [1  0  1]
+
+Step 2: 한 칸 오른쪽으로 이동하여 반복 ...
+
+출력 (특성 맵, Feature Map) (3×3):
+┌─────────────┐
+│  5   0   5  │
+│  0   5   0  │
+│  5   0   5  │
+└─────────────┘
+
+출력 크기 공식:
+  출력 = (입력 - 필터 + 2×패딩) / 스트라이드 + 1
+  예: (5 - 3 + 0) / 1 + 1 = 3
+```
+
+| 용어 | 설명 |
+|------|------|
+| 필터(Filter/Kernel) | 학습되는 가중치 행렬. 특정 패턴(엣지, 질감 등)을 감지 |
+| 스트라이드(Stride) | 필터 이동 간격. 1이면 한 칸씩, 2이면 두 칸씩 |
+| 패딩(Padding) | 입력 주변에 0을 채움. 출력 크기 유지 목적 |
+| 특성 맵(Feature Map) | 컨볼루션 결과. 입력에서 특정 패턴이 어디에 있는지 표시 |
+| 채널(Channel) | 입력의 깊이. RGB 이미지 = 3채널 |
+
+#### 풀링 (Pooling)
+
+```
+Max Pooling (2×2, stride=2):
+
+입력 (4×4):                    출력 (2×2):
+┌──────┬──────┐               ┌──────┐
+│ 1  3 │ 2  4 │     Max       │ 3  4 │
+│ 5  2 │ 1  6 │   ───────→    │ 7  8 │
+├──────┼──────┤               └──────┘
+│ 7  1 │ 3  2 │
+│ 4  6 │ 8  5 │     각 2×2 영역에서 최댓값만 추출
+└──────┴──────┘
+
+Average Pooling: 각 영역의 평균값을 추출
+  (1+3+5+2)/4=2.75, (2+4+1+6)/4=3.25, ...
+```
+
+**풀링의 효과**: 특성 맵 크기 감소(연산량 절약), 이동 불변성(위치 변화에 강건), 과적합 방지
+
+#### CNN 전체 구조
+
+```
+전형적인 CNN 아키텍처:
+
+입력 이미지    특성 추출부                          분류부
+            (Convolutional Layers)             (Fully Connected)
+
+            Conv    Pool    Conv    Pool    Flatten    FC     FC
+[이미지] → [필터] → [축소] → [필터] → [축소] → [1D변환] → [256] → [10]
+ 28×28×1   26×26×32 13×13×32 11×11×64 5×5×64  1600      256     10
+                                                           ↓
+                                                      Softmax (확률)
+
+특성 학습 단계:
+  층 1 학습:          층 2 학습:          층 3 학습:
+  ┌───┐ ┌───┐       ┌────┐ ┌────┐      ┌─────┐
+  │ / │ │ ─ │       │ ╱╲ │ │ ○  │      │ 눈  │
+  │   │ │   │       │    │ │    │      │ 얼굴│
+  └───┘ └───┘       └────┘ └────┘      └─────┘
+  엣지, 선           모서리, 곡선        얼굴, 물체
+  (저수준)           (중간수준)          (고수준)
+```
+
+#### 유명 CNN 아키텍처
+
+```
+LeNet-5 (1998, Yann LeCun):
+  Conv(6) → Pool → Conv(16) → Pool → FC(120) → FC(84) → FC(10)
+  최초의 실용적 CNN (필기 숫자 인식), 현대 CNN의 원형
+
+VGG-16 (2014, Oxford):
+  핵심: 3×3 작은 필터를 깊게 쌓기
+  [Conv3-64]×2 → Pool → [Conv3-128]×2 → Pool → [Conv3-256]×3 → Pool
+  → [Conv3-512]×3 → Pool → [Conv3-512]×3 → Pool → FC(4096)×2 → FC(1000)
+  파라미터: ~138M. "단순하고 깊게" 전략 입증
+
+ResNet (2015, Microsoft):
+  핵심: 잔차 연결 (Residual/Skip Connection)
+
+  일반 블록:                    잔차 블록 (Residual Block):
+    x                            x ─────────────────┐
+    ↓                            ↓                   │
+    [Conv-BN-ReLU]              [Conv-BN-ReLU]       │ (Skip Connection)
+    ↓                            ↓                   │
+    [Conv-BN-ReLU]              [Conv-BN]            │
+    ↓                            ↓                   │
+    출력 = F(x)                  출력 = F(x) + x ←───┘
+                                         ↓
+                                       [ReLU]
+
+  왜 잔차 연결이 중요한가?
+    역전파 시: ∂y/∂x = ∂F(x)/∂x + 1
+    → F(x)의 기울기가 아무리 작아도 "+1" 덕분에 기울기가 소실되지 않음
+    → ResNet-152 (152층!)까지 안정적 학습 가능
+    → ILSVRC 2015 우승 (오류율 3.57%, 사람 수준 초과)
+```
+
+### 9. RNN/LSTM 기초 (Recurrent Neural Networks)
+
+일반 신경망은 **고정 크기 입력**만 처리한다. 그러나 시퀀스 데이터(텍스트, 시계열, 음성)는 **가변 길이**이고 **순서가 중요**하다.
+
+```
+시퀀스 데이터:
+  "고양이가 쥐를 잡았다" vs "쥐가 고양이를 잡았다"
+  → 같은 단어인데 순서에 따라 의미가 다름
+  → MLP는 순서를 무시함 (모든 입력을 동시에 처리)
+```
+
+#### RNN 구조
+
+```
+RNN — 이전 시점의 은닉 상태를 현재 입력과 함께 처리:
+
+펼치기 전 (순환 구조):           펼친 후 (시간축):
+
+    ┌──────┐                   ┌──┐    ┌──┐    ┌──┐    ┌──┐
+    │      │                   │h₀│───→│h₁│───→│h₂│───→│h₃│
+ ┌──│ RNN  │──┐                │  │    │  │    │  │    │  │
+ │  │      │  │                └──┘    └──┘    └──┘    └──┘
+ │  └──┬───┘  │                 ↑       ↑       ↑       ↑
+ │     ↑      │                x₀      x₁      x₂      x₃
+ │     x      │               "나는"   "학생"   "입니다"  "."
+ └─────┘      │
+  (순환)       ↓
+              출력              y₀      y₁      y₂      y₃
+
+수식:
+  hₜ = tanh(W_hh · hₜ₋₁ + W_xh · xₜ + b_h)   ← 은닉 상태 갱신
+  yₜ = W_hy · hₜ + b_y                           ← 출력
+
+  hₜ: 시점 t의 은닉 상태 (기억)
+  xₜ: 시점 t의 입력
+  W_hh, W_xh, W_hy: 가중치 행렬 (모든 시점에서 공유!)
+```
+
+#### RNN의 문제: 기울기 소실 (Vanishing Gradient)
+
+```
+"나는 한국에서 태어나고 자랐으며, 대학교도 한국에서 다녔다.
+ 그래서 나는 ___어를 잘한다."
+
+→ "한국"이 매우 앞에 있어 RNN이 이를 기억하기 어려움
+→ 역전파 시 기울기가 시간축으로 점점 사라짐
+
+  기울기 크기
+  │ ██
+  │ █
+  │ ▒                    ← 기울기 소실!
+  │ ░
+  └──────────────── 시간
+  h₃  h₂  h₁  h₀
+  (현재)       (과거)
+```
+
+#### LSTM (Long Short-Term Memory)
+
+LSTM은 **게이트 메커니즘으로 정보를 선택적으로 기억/삭제**하여 장기 의존성 문제를 해결한다.
+
+```
+LSTM 셀 구조:
+
+                    ┌─── 셀 상태 (Cell State) ───────────────────────┐
+                    │  장기 기억의 고속도로 (정보가 거의 손실 없이 흐름)  │
+  Cₜ₋₁ ───────────×──────────────+──────────────────→ Cₜ
+                  ↑ (망각)       ↑ (입력)           │
+                  │              │                  │
+  ┌───────┐    ┌──┴──┐       ┌──┴──┐           ┌──┴──┐
+  │망각 게이트│  │  fₜ  │     │  iₜ  │           │  oₜ  │
+  │(Forget) │  │σ(·) │     │σ(·) │           │σ(·) │
+  └───────┘  └─────┘     └─────┘           └─────┘
+                              ×                  │
+                           ┌──┴──┐               │
+                           │ C̃ₜ  │               ×
+                           │tanh │             tanh(Cₜ)
+                           └─────┘               │
+                                                 ↓
+  hₜ₋₁ ──────────────────────────────────→     hₜ (출력)
+  xₜ   ────────────→ (모든 게이트에 입력)
+
+3개의 게이트:
+
+1. 망각 게이트 (Forget Gate):
+   fₜ = σ(W_f · [hₜ₋₁, xₜ] + b_f)
+   → "이전 기억 중 얼마나 버릴까?" (0=완전 삭제, 1=완전 유지)
+   예: 새로운 주어가 나오면 이전 주어의 성별 정보를 삭제
+
+2. 입력 게이트 (Input Gate):
+   iₜ = σ(W_i · [hₜ₋₁, xₜ] + b_i)
+   C̃ₜ = tanh(W_C · [hₜ₋₁, xₜ] + b_C)
+   → "새로운 정보 중 얼마나 저장할까?"
+   예: 새로운 주어의 성별 정보를 셀 상태에 추가
+
+3. 출력 게이트 (Output Gate):
+   oₜ = σ(W_o · [hₜ₋₁, xₜ] + b_o)
+   hₜ = oₜ × tanh(Cₜ)
+   → "셀 상태 중 얼마나 출력할까?"
+   예: 동사 예측에 필요한 주어 정보만 출력
+
+셀 상태 업데이트:
+   Cₜ = fₜ × Cₜ₋₁ + iₜ × C̃ₜ
+        (기존 기억 × 유지 비율) + (새 정보 × 저장 비율)
+```
+
+**LSTM이 기울기 소실을 해결하는 원리**:
+- 셀 상태(Cell State)가 네트워크를 관통하는 "고속도로" 역할
+- 기울기가 셀 상태를 따라 거의 손실 없이 멀리까지 전파
+- 게이트가 덧셈으로 셀 상태를 갱신 (곱셈만이면 기울기 소실)
+
+### 10. 전이학습 (Transfer Learning)
+
+대규모 데이터셋(예: ImageNet 1400만 장)에서 학습된 모델의 지식을 **새로운 과제에 재활용**하는 기법이다. 적은 데이터로도 높은 성능을 달성할 수 있다.
+
+```
+전이학습 비유:
+  피아노를 잘 치는 사람이 기타를 배울 때
+  → 음악의 기본 원리(음계, 리듬, 화성)를 이미 알고 있으므로
+  → 기타 고유의 기법만 새로 배우면 됨 (훨씬 빠름!)
+
+두 가지 전략:
+
+전략 1: 특성 추출 (Feature Extraction)
+  ┌─────────────────────────────────────────────┐
+  │ 사전학습된 모델 (ImageNet)                    │
+  │ Conv → Conv → Conv → Pool    │ 새 FC 층     │
+  │        (동결: 학습 안 함)      │ (학습 함)    │
+  │ ═══════════════════════════   │ ──────────   │
+  │ 범용 특성 추출기로 사용         │ 내 데이터 분류 │
+  └─────────────────────────────────────────────┘
+  데이터가 적을 때 적합. 과적합 방지.
+
+전략 2: 미세 조정 (Fine-tuning)
+  ┌─────────────────────────────────────────────┐
+  │ 사전학습된 모델 (ImageNet)                    │
+  │ Conv → Conv → Conv → Pool    │ 새 FC 층     │
+  │ (낮은 학습률로 미세 조정)      │ (높은 학습률) │
+  │ ───────────────────────────   │ ──────────   │
+  │ 범용 특성 → 내 과제에 맞게 조정 │ 내 데이터 분류 │
+  └─────────────────────────────────────────────┘
+  데이터가 어느 정도 있을 때. 앞쪽 층은 동결, 뒤쪽만 미세 조정하기도 함.
+```
+
+| 전략 | 변경 범위 | 데이터 요구량 | 학습 시간 |
+|------|----------|-------------|----------|
+| 특성 추출 | 마지막 FC층만 | 적음 (수백~수천) | 매우 짧음 |
+| 미세 조정 | 일부 또는 전체 | 중간 (수천~수만) | 중간 |
+| 처음부터 학습 | 전체 | 매우 많음 (수만~수백만) | 매우 긺 |
+
+## 코드 예시
+
+### 1. NumPy로 XOR 문제 풀기 (순전파/역전파 직접 구현)
+
+```python
+import numpy as np
+
+
+class NeuralNetwork:
+    """
+    2층 신경망 직접 구현 (NumPy).
+    구조: 입력(2) → 은닉(4, ReLU) → 출력(1, Sigmoid)
+    손실: Binary Cross-Entropy
+    """
+
+    def __init__(self, input_size: int, hidden_size: int, output_size: int,
+                 learning_rate: float = 0.01):
+        self.lr = learning_rate
+
+        # He 초기화: ReLU에 적합한 가중치 초기화
+        self.W1 = np.random.randn(input_size, hidden_size) * np.sqrt(2 / input_size)
+        self.b1 = np.zeros((1, hidden_size))
+        self.W2 = np.random.randn(hidden_size, output_size) * np.sqrt(2 / hidden_size)
+        self.b2 = np.zeros((1, output_size))
+
+    # ── 활성화 함수 ──
+    def relu(self, z: np.ndarray) -> np.ndarray:
+        """ReLU: max(0, z)"""
+        return np.maximum(0, z)
+
+    def relu_derivative(self, z: np.ndarray) -> np.ndarray:
+        """ReLU 미분: z > 0이면 1, 아니면 0"""
+        return (z > 0).astype(float)
+
+    def sigmoid(self, z: np.ndarray) -> np.ndarray:
+        """Sigmoid: 1 / (1 + e^(-z))"""
+        z = np.clip(z, -500, 500)  # 오버플로 방지
+        return 1 / (1 + np.exp(-z))
+
+    # ── 순전파 ──
+    def forward(self, X: np.ndarray) -> np.ndarray:
+        """입력 → 은닉층(ReLU) → 출력층(Sigmoid). 중간값 저장(역전파용)."""
+        self.z1 = X @ self.W1 + self.b1           # 은닉층 가중합
+        self.a1 = self.relu(self.z1)               # 은닉층 활성화
+
+        self.z2 = self.a1 @ self.W2 + self.b2      # 출력층 가중합
+        self.a2 = self.sigmoid(self.z2)             # 출력층 활성화
+
+        return self.a2  # 예측 확률
+
+    # ── 손실 계산 ──
+    def compute_loss(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Binary Cross-Entropy: L = -(1/n) * Σ[y*log(ŷ) + (1-y)*log(1-ŷ)]"""
+        n = len(y_true)
+        eps = 1e-8  # log(0) 방지
+        return -(1/n) * np.sum(
+            y_true * np.log(y_pred + eps) + (1 - y_true) * np.log(1 - y_pred + eps)
+        )
+
+    # ── 역전파 ──
+    def backward(self, X: np.ndarray, y_true: np.ndarray) -> None:
+        """연쇄 법칙으로 기울기 계산 + 가중치 업데이트(SGD)."""
+        n = len(X)
+
+        # 출력층 기울기: ∂L/∂z2 = a2 - y (BCE + Sigmoid 미분 결과)
+        dz2 = self.a2 - y_true
+        dW2 = (1/n) * (self.a1.T @ dz2)
+        db2 = (1/n) * np.sum(dz2, axis=0, keepdims=True)
+
+        # 은닉층 기울기: 연쇄 법칙 적용
+        da1 = dz2 @ self.W2.T
+        dz1 = da1 * self.relu_derivative(self.z1)
+        dW1 = (1/n) * (X.T @ dz1)
+        db1 = (1/n) * np.sum(dz1, axis=0, keepdims=True)
+
+        # SGD 업데이트
+        self.W2 -= self.lr * dW2
+        self.b2 -= self.lr * db2
+        self.W1 -= self.lr * dW1
+        self.b1 -= self.lr * db1
+
+    # ── 학습 루프 ──
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 1000) -> list:
+        losses = []
+        for epoch in range(epochs):
+            y_pred = self.forward(X)          # 순전파
+            loss = self.compute_loss(y, y_pred)  # 손실 계산
+            losses.append(loss)
+            self.backward(X, y)               # 역전파 + 가중치 업데이트
+
+            if (epoch + 1) % 500 == 0:
+                acc = np.mean((y_pred > 0.5).astype(int) == y)
+                print(f"  에폭 {epoch+1:4d}: 손실={loss:.4f}, 정확도={acc:.2%}")
+        return losses
+
+
+# === XOR 문제 학습 ===
+# 단일 퍼셉트론으로는 불가능하지만, 은닉층이 있으면 해결!
+X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = np.array([[0], [1], [1], [0]])
+
+nn = NeuralNetwork(input_size=2, hidden_size=4, output_size=1, learning_rate=0.5)
+losses = nn.fit(X, y, epochs=2000)
+
+# 결과 확인
+print("\n결과:")
+for xi, yi in zip(X, y):
+    pred = nn.forward(xi.reshape(1, -1))
+    print(f"  입력: {xi} → 예측: {pred[0][0]:.4f}, 정답: {yi[0]}")
+```
+
+### 2. PyTorch CNN으로 MNIST 분류
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+
+class MnistCNN(nn.Module):
+    """
+    MNIST 분류를 위한 CNN.
+    구조: Conv(32) → Pool → Conv(64) → Pool → FC(128) → FC(10)
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        # 특성 추출부 (Convolutional Layers)
+        self.features = nn.Sequential(
+            # Conv 블록 1: 1채널 → 32채널
+            nn.Conv2d(
+                in_channels=1,      # 입력 채널 (흑백=1, RGB=3)
+                out_channels=32,    # 필터 수 (출력 채널)
+                kernel_size=3,      # 3×3 필터
+                padding=1           # 패딩=1로 크기 유지 (28×28 → 28×28)
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),   # 28×28 → 14×14
+
+            # Conv 블록 2: 32채널 → 64채널
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # 14×14 유지
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),          # 14×14 → 7×7
+        )
+
+        # 분류부 (Fully Connected Layers)
+        self.classifier = nn.Sequential(
+            nn.Linear(64 * 7 * 7, 128),   # 64채널 × 7×7 = 3136 → 128
+            nn.ReLU(),
+            nn.Dropout(0.5),              # 과적합 방지: 50% 뉴런 무작위 비활성화
+            nn.Linear(128, 10),           # 128 → 10 (숫자 0~9)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)              # (batch, 64, 7, 7)
+        x = x.view(x.size(0), -1)         # Flatten: (batch, 3136)
+        x = self.classifier(x)            # (batch, 10)
+        return x  # CrossEntropyLoss에 Softmax 포함
+
+
+# === 데이터 준비 ===
+transform = transforms.Compose([
+    transforms.ToTensor(),                          # PIL → Tensor, [0,255] → [0,1]
+    transforms.Normalize((0.1307,), (0.3081,))      # MNIST 평균/표준편차로 정규화
+])
+
+train_data = datasets.MNIST('./data', train=True, download=True, transform=transform)
+test_data = datasets.MNIST('./data', train=False, transform=transform)
+
+# DataLoader: 미니배치 구성 + 셔플
+train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_data, batch_size=1000)
+
+# === 모델, 손실, 옵티마이저 ===
+model = MnistCNN()
+criterion = nn.CrossEntropyLoss()                          # Softmax + Cross-Entropy
+optimizer = optim.Adam(model.parameters(), lr=0.001)       # Adam 옵티마이저
+
+# === 학습 루프 ===
+for epoch in range(5):
+    model.train()                         # 학습 모드 (Dropout 활성화)
+    total_loss = 0
+
+    for batch_X, batch_y in train_loader:
+        output = model(batch_X)            # 순전파: (batch, 10)
+        loss = criterion(output, batch_y)  # 손실 계산
+
+        optimizer.zero_grad()              # 이전 기울기 초기화
+        loss.backward()                    # 역전파: 기울기 계산
+        optimizer.step()                   # 가중치 업데이트
+
+        total_loss += loss.item()
+
+    # 에폭별 평가
+    model.eval()                           # 평가 모드 (Dropout 비활성화)
+    correct, total = 0, 0
+    with torch.no_grad():                  # 기울기 계산 안 함 (메모리 절약)
+        for batch_X, batch_y in test_loader:
+            output = model(batch_X)
+            _, predicted = torch.max(output, 1)    # 가장 높은 확률의 클래스
+            total += batch_y.size(0)
+            correct += (predicted == batch_y).sum().item()
+
+    print(f"에폭 {epoch+1}: 손실={total_loss/len(train_loader):.4f}, "
+          f"테스트 정확도={correct/total:.2%}")
+```
+
+### 3. LSTM 감성 분류 (간략 예시)
+
+```python
+import torch
+import torch.nn as nn
+
+
+class SentimentLSTM(nn.Module):
+    """
+    LSTM 기반 텍스트 감성 분류.
+    구조: Embedding → LSTM → FC → Sigmoid
+    """
+
+    def __init__(self, vocab_size: int, embed_dim: int,
+                 hidden_dim: int, output_dim: int):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+
+        self.lstm = nn.LSTM(
+            input_size=embed_dim,
+            hidden_size=hidden_dim,
+            num_layers=2,           # LSTM 2층
+            batch_first=True,       # (batch, seq_len, features)
+            dropout=0.3,
+        )
+
+        self.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(hidden_dim, output_dim),
+            nn.Sigmoid(),           # 이진 분류 (긍정/부정)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1단계: 단어 인덱스 → 임베딩 벡터
+        embedded = self.embedding(x)           # (batch, seq_len, embed_dim)
+
+        # 2단계: LSTM으로 시퀀스 처리
+        # h_n: 마지막 시점의 은닉 상태, c_n: 마지막 셀 상태
+        output, (h_n, c_n) = self.lstm(embedded)
+
+        # 3단계: 마지막 층의 마지막 시점 은닉 상태로 분류
+        last_hidden = h_n[-1]                  # (batch, hidden_dim)
+        return self.fc(last_hidden)            # (batch, 1)
+
+
+# === 사용 예시 ===
+word_to_idx = {"<PAD>": 0, "이": 1, "영화": 2, "정말": 3,
+               "좋다": 4, "나쁘다": 5, "재미있다": 6, "별로다": 7}
+
+model = SentimentLSTM(
+    vocab_size=len(word_to_idx),
+    embed_dim=32,
+    hidden_dim=64,
+    output_dim=1,
+)
+
+# 문장을 인덱스로 변환
+sentences = torch.LongTensor([
+    [1, 2, 3, 4, 0],    # "이 영화 정말 좋다 <PAD>"
+    [1, 2, 3, 5, 0],    # "이 영화 정말 나쁘다 <PAD>"
+])
+
+# 순전파 (학습 전이므로 랜덤 출력)
+output = model(sentences)
+print("감성 점수 (0=부정, 1=긍정):")
+for i, score in enumerate(output):
+    print(f"  문장 {i+1} → {score.item():.4f}")
+
+# 실제 학습: criterion = nn.BCELoss(), optimizer = optim.Adam(...)
+# for epoch in range(epochs): ... 순전파 → 손실 → 역전파 → 업데이트
+```

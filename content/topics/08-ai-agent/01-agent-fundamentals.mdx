@@ -1,0 +1,793 @@
+---
+title: "AI 에이전트 기초 (AI Agent Fundamentals)"
+topic: "08-ai-agent"
+order: 01
+---
+
+
+## 핵심 개념
+
+### 1. LLM 에이전트란?
+
+LLM 에이전트는 **대규모 언어 모델(LLM)**을 두뇌로 사용하면서, **도구(Tools)**와 **메모리(Memory)**를 결합하여 복잡한 작업을 자율적으로 수행하는 시스템이다. 단순히 텍스트를 생성하는 것을 넘어, 실제 환경과 상호작용하며 목표를 달성한다.
+
+#### 기본 LLM vs 에이전트 비교
+
+```
+[기본 LLM]
+사용자 → "내일 서울 날씨에 맞는 옷 추천해줘"
+    → LLM → "일반적으로 봄에는..." (학습 데이터 기반 추측, 실시간 정보 없음)
+
+[LLM 에이전트]
+사용자 → "내일 서울 날씨에 맞는 옷 추천해줘"
+    → LLM: "먼저 내일 서울 날씨를 확인해야겠다"      (사고/Think)
+    → Tool: weather_api("서울", "2026-03-02")         (행동/Act)
+    → 결과: {"temp": 8, "rain_prob": 60%}            (관찰/Observe)
+    → LLM: "기온이 낮고 비 올 확률이 높으니 따뜻한 옷과 우산을 추천하자"
+    → 답변: "내일 서울은 8도에 비 올 확률 60%입니다.
+             따뜻한 겉옷과 우산을 챙기세요."
+```
+
+#### 에이전트의 3대 핵심 구성 요소
+
+```
+┌───────────────────────────────────────────────────────────┐
+│                      LLM 에이전트                          │
+│                                                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
+│  │     LLM     │  │    도구     │  │   메모리     │       │
+│  │   (Brain)   │  │   (Tools)   │  │  (Memory)   │       │
+│  │             │  │             │  │             │       │
+│  │ - 추론      │  │ - 웹 검색   │  │ - 대화 이력  │       │
+│  │ - 계획 수립  │  │ - 코드 실행  │  │ - 작업 상태  │       │
+│  │ - 판단      │  │ - API 호출   │  │ - 과거 경험  │       │
+│  │ - 자연어 이해│  │ - DB 조회   │  │ - 외부 지식  │       │
+│  └─────────────┘  │ - 파일 I/O  │  └─────────────┘       │
+│                   └─────────────┘                        │
+│                                                           │
+│  ┌─────────────────────────────────────────────────┐      │
+│  │            에이전트 루프 (Agent Loop)              │      │
+│  │                                                 │      │
+│  │   ┌──────┐    ┌──────┐    ┌──────┐             │      │
+│  │   │Think │───→│ Act  │───→│Observe│──┐          │      │
+│  │   │(사고) │    │(행동) │    │(관찰) │  │          │      │
+│  │   └──────┘    └──────┘    └──────┘  │          │      │
+│  │       ↑                              │          │      │
+│  │       └──────────────────────────────┘          │      │
+│  │                                                 │      │
+│  │   종료 조건 충족 시 → 최종 답변 반환              │      │
+│  └─────────────────────────────────────────────────┘      │
+└───────────────────────────────────────────────────────────┘
+```
+
+에이전트 루프는 **Think-Act-Observe** 사이클을 반복한다:
+
+1. **Think (사고)**: 현재 상황을 분석하고 다음 행동을 결정
+2. **Act (행동)**: 선택한 도구를 실행하거나 최종 답변을 생성
+3. **Observe (관찰)**: 행동의 결과를 확인하고 다음 단계를 판단
+
+이 루프는 **종료 조건**(답변 완성, 최대 반복 횟수, 오류 발생)을 만족할 때까지 계속된다.
+
+---
+
+### 2. ReAct 패턴 (Reasoning + Acting)
+
+ReAct(2022, Yao et al.)는 LLM이 **추론(Reasoning)**과 **행동(Acting)**을 교차 수행하는 프레임워크다. 순수 Chain-of-Thought(CoT)는 추론만 하고, 순수 Act-only는 근거 없이 행동만 한다. ReAct는 이 둘을 결합하여 **근거 있는 행동**을 가능하게 한다.
+
+#### ReAct vs 순수 CoT vs Act-only 비교
+
+```
+[순수 CoT (Chain-of-Thought)]
+질문: "BTS 멤버 중 가장 나이가 많은 사람의 출생 연도는?"
+Thought 1: BTS 멤버를 떠올려보면... 진이 가장 나이가 많다.
+Thought 2: 진의 출생연도는 1992년이다.
+Answer: 1992년
+→ 문제: 학습 데이터에 의존, 오래된 정보일 수 있음
+
+[Act-only (도구만 사용)]
+Action 1: search("BTS 가장 나이 많은 멤버 출생연도")
+Observation 1: 진(김석진), 1992년 12월 4일
+Answer: 1992년
+→ 문제: 검색 결과가 모호하면 다음 행동을 판단하기 어려움
+
+[ReAct (추론 + 행동)]
+Thought 1: BTS 멤버 중 가장 나이가 많은 사람을 찾아야 한다.
+Action 1:  search("BTS 멤버 나이순 정리")
+Observation 1: 진(1992) > 슈가(1993) > 제이홉(1994) > RM(1994) > ...
+Thought 2: 진이 1992년생으로 가장 나이가 많다. 확인되었다.
+Answer: 진(김석진)의 출생 연도는 1992년입니다.
+→ 장점: 추론 과정이 투명하고, 도구로 사실 확인 가능
+```
+
+#### ReAct의 Thought / Action / Observation 사이클
+
+```
+┌──────────────────────────────────────────────────────┐
+│                  ReAct 실행 흐름                       │
+│                                                      │
+│  사용자 질문                                          │
+│      │                                               │
+│      ▼                                               │
+│  ┌─────────┐                                         │
+│  │Thought 1│  "이 질문에 답하려면 X를 먼저 찾아야 한다"│
+│  └────┬────┘                                         │
+│       ▼                                               │
+│  ┌─────────┐                                         │
+│  │Action 1 │  search("X 관련 정보")                   │
+│  └────┬────┘                                         │
+│       ▼                                               │
+│  ┌──────────────┐                                    │
+│  │Observation 1 │  "X에 대한 검색 결과: ..."          │
+│  └────┬─────────┘                                    │
+│       ▼                                               │
+│  ┌─────────┐                                         │
+│  │Thought 2│  "X를 알았으니 이제 Y를 확인해야 한다"    │
+│  └────┬────┘                                         │
+│       ▼                                               │
+│  ┌─────────┐                                         │
+│  │Action 2 │  calculate(Y)                            │
+│  └────┬────┘                                         │
+│       ▼                                               │
+│  ┌──────────────┐                                    │
+│  │Observation 2 │  "계산 결과: ..."                   │
+│  └────┬─────────┘                                    │
+│       ▼                                               │
+│  ┌─────────┐                                         │
+│  │Thought 3│  "충분한 정보를 얻었다. 답변을 구성한다"  │
+│  └────┬────┘                                         │
+│       ▼                                               │
+│  ┌─────────┐                                         │
+│  │ Answer  │  최종 답변 반환                           │
+│  └─────────┘                                         │
+└──────────────────────────────────────────────────────┘
+```
+
+**ReAct의 핵심 장점:**
+- **투명성**: 추론 과정이 명시적으로 기록되어 디버깅이 용이
+- **정확성**: 외부 도구로 사실을 검증하므로 환각(hallucination) 감소
+- **유연성**: 중간 결과에 따라 계획을 동적으로 수정 가능
+- **추적 가능성**: 각 단계를 로깅하여 에이전트 행동을 분석 가능
+
+---
+
+### 3. Tool Use / Function Calling
+
+에이전트의 핵심 능력 중 하나는 **도구 사용(Tool Use)**이다. LLM은 자체적으로 웹 검색, 계산, 파일 접근 등을 할 수 없지만, **함수 호출(Function Calling)**을 통해 외부 도구를 실행할 수 있다.
+
+#### Function Calling 흐름
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                   Function Calling 실행 흐름                   │
+│                                                              │
+│  1. 도구 스키마 정의 (개발자)                                  │
+│     ┌─────────────────────────────────────┐                  │
+│     │ {                                   │                  │
+│     │   "name": "get_weather",            │                  │
+│     │   "description": "도시의 현재 날씨", │                  │
+│     │   "parameters": {                   │                  │
+│     │     "city": {"type": "string"},      │                  │
+│     │     "unit": {"type": "string"}       │                  │
+│     │   }                                 │                  │
+│     │ }                                   │                  │
+│     └─────────────────────────────────────┘                  │
+│                                                              │
+│  2. 사용자 메시지 + 도구 목록 → LLM에 전달                     │
+│     "서울 날씨 알려줘" + [get_weather, search, ...]           │
+│                                                              │
+│  3. LLM이 도구 호출 결정                                      │
+│     → {"tool": "get_weather", "args": {"city": "서울"}}      │
+│                                                              │
+│  4. 애플리케이션이 실제 함수 실행                               │
+│     → get_weather("서울") → {"temp": 15, "sky": "맑음"}      │
+│                                                              │
+│  5. 실행 결과를 LLM에 다시 전달                                │
+│     → LLM이 자연어 답변 생성                                  │
+│     → "서울의 현재 기온은 15도이고 맑습니다."                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### OpenAI vs Anthropic Function Calling 형식 비교
+
+```
+[OpenAI 형식]
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "주어진 도시의 현재 날씨를 반환",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "도시 이름"},
+            },
+            "required": ["city"]
+        }
+    }
+}]
+
+[Anthropic 형식]
+tools = [{
+    "name": "get_weather",
+    "description": "주어진 도시의 현재 날씨를 반환",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "description": "도시 이름"},
+        },
+        "required": ["city"]
+    }
+}]
+```
+
+**도구 스키마가 중요한 이유:**
+- LLM은 스키마의 `description`을 읽고 **어떤 도구를 언제 사용할지** 판단
+- 파라미터 설명이 명확할수록 LLM이 올바른 인자를 전달할 확률이 높음
+- 잘못된 스키마 → 잘못된 도구 호출 → 에이전트 실패
+
+---
+
+### 4. 메모리 유형 (Memory Types)
+
+에이전트가 효과적으로 작동하려면 다양한 유형의 메모리가 필요하다. 인간의 기억 체계와 유사하게, 에이전트 메모리도 여러 계층으로 구분된다.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     에이전트 메모리 유형                       │
+│                                                             │
+│  ┌─────────────────────┐   ┌─────────────────────┐         │
+│  │  단기 메모리          │   │  장기 메모리          │         │
+│  │  (Short-term)        │   │  (Long-term)         │         │
+│  │                     │   │                     │         │
+│  │  - 현재 대화 이력    │   │  - 벡터 DB 저장      │         │
+│  │  - 컨텍스트 윈도우   │   │  - 과거 대화 요약    │         │
+│  │  - 작업 중간 결과    │   │  - 사용자 선호도     │         │
+│  │                     │   │  - 학습된 패턴       │         │
+│  │  수명: 세션 동안     │   │  수명: 영구 저장     │         │
+│  └─────────────────────┘   └─────────────────────┘         │
+│                                                             │
+│  ┌─────────────────────┐   ┌─────────────────────┐         │
+│  │  에피소드 메모리      │   │  작업 메모리          │         │
+│  │  (Episodic)         │   │  (Working Memory)    │         │
+│  │                     │   │                     │         │
+│  │  - 과거 작업 경험    │   │  - 현재 목표         │         │
+│  │  - 성공/실패 기록    │   │  - 실행 계획         │         │
+│  │  - 유사 상황 참조    │   │  - 중간 추론 결과    │         │
+│  │                     │   │  - 활성 컨텍스트     │         │
+│  │  수명: 장기 저장     │   │  수명: 작업 동안     │         │
+│  └─────────────────────┘   └─────────────────────┘         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| 메모리 유형 | 구현 방식 | 사용 시점 | 예시 |
+|-----------|---------|---------|------|
+| 단기 메모리 | 대화 버퍼, 슬라이딩 윈도우 | 현재 대화 중 | 직전 질문 기억 |
+| 장기 메모리 | 벡터 DB (ChromaDB, Pinecone) | 과거 정보 검색 | 사용자 선호도 참조 |
+| 에피소드 메모리 | 구조화된 로그 저장 | 유사 작업 수행 시 | "지난번에 이 방법이 성공했다" |
+| 작업 메모리 | 상태 변수, 스크래치패드 | 복잡한 추론 중 | 다단계 계산의 중간 결과 |
+
+---
+
+### 5. 계획 수립 (Planning)
+
+복잡한 작업을 수행하려면 에이전트는 **계획을 세우고 실행**해야 한다. 계획 수립은 큰 목표를 작은 하위 작업으로 분해하는 과정이다.
+
+#### Task Decomposition (작업 분해)
+
+```
+[작업 분해 예시]
+
+목표: "한국 AI 스타트업 투자 동향 보고서 작성"
+
+Plan:
+├── Step 1: 한국 AI 스타트업 목록 조사
+│   ├── 1a: 최근 투자 받은 AI 스타트업 검색
+│   └── 1b: 투자 금액 및 투자사 정보 수집
+├── Step 2: 투자 트렌드 분석
+│   ├── 2a: 연도별 투자 금액 추이 파악
+│   └── 2b: 주요 투자 분야 분류 (NLP, CV, MLOps 등)
+├── Step 3: 보고서 구성
+│   ├── 3a: 데이터 시각화 (표, 차트)
+│   └── 3b: 분석 내용 작성
+└── Step 4: 보고서 검토 및 완성
+    ├── 4a: 사실 확인 (출처 검증)
+    └── 4b: 최종 편집
+```
+
+#### Plan-and-Execute 패턴
+
+```
+┌──────────────────────────────────────────────┐
+│           Plan-and-Execute 패턴               │
+│                                              │
+│  ┌────────────┐                              │
+│  │  Planner   │  사용자 요청을 분석하여        │
+│  │  (계획자)   │  실행 계획을 수립              │
+│  └─────┬──────┘                              │
+│        │  계획 (Step 1, 2, 3, ...)            │
+│        ▼                                      │
+│  ┌────────────┐                              │
+│  │  Executor  │  각 단계를 순서대로 실행        │
+│  │  (실행자)   │  도구를 사용하여 작업 수행      │
+│  └─────┬──────┘                              │
+│        │  실행 결과                            │
+│        ▼                                      │
+│  ┌────────────┐                              │
+│  │ Re-planner │  결과를 평가하고               │
+│  │ (재계획자)  │  필요시 계획 수정              │
+│  └─────┬──────┘                              │
+│        │                                      │
+│        ▼                                      │
+│   완료 또는 수정된 계획으로 재실행              │
+└──────────────────────────────────────────────┘
+```
+
+**자기 반성(Self-Reflection):**
+- 에이전트가 자신의 출력을 검토하고 오류를 수정
+- "이 답변이 정확한가?", "빠뜨린 정보가 있는가?" 등의 자문
+- Reflexion(2023) 패턴: 실패한 시도를 메모리에 저장하고 다음 시도에 활용
+
+---
+
+### 6. 프롬프트 엔지니어링 (Prompt Engineering)
+
+에이전트의 성능은 프롬프트 설계에 크게 의존한다. 핵심 기법을 알아보자.
+
+#### 주요 프롬프트 기법
+
+```
+┌────────────────────────────────────────────────────────┐
+│               프롬프트 엔지니어링 기법                    │
+│                                                        │
+│  1. Zero-shot CoT                                      │
+│     "단계별로 생각해보세요" 한 줄 추가만으로 추론 능력 향상 │
+│     → "Let's think step by step."                      │
+│                                                        │
+│  2. Few-shot                                           │
+│     입력-출력 예시를 2~5개 제공하여 패턴 학습 유도        │
+│     → 예시: "질문: ... 답변: ..." × 3개                 │
+│                                                        │
+│  3. Self-Consistency (자기 일관성)                       │
+│     동일 질문에 대해 여러 번 생성 후 다수결(majority vote)│
+│     → 5번 생성 → 가장 빈번한 답변 선택                  │
+│                                                        │
+│  4. Structured Output                                  │
+│     JSON, XML 등 구조화된 형식으로 출력하도록 지시        │
+│     → "다음 JSON 형식으로 답변하세요: {key: value}"      │
+│                                                        │
+│  5. System Prompt                                      │
+│     에이전트의 역할, 규칙, 제약 조건을 사전에 정의        │
+│     → "당신은 데이터 분석 전문가입니다. 항상 출처를 밝히세요"│
+└────────────────────────────────────────────────────────┘
+```
+
+**에이전트 프롬프트 설계 시 주의사항:**
+- 도구 사용 조건을 명확히 기술 ("정확한 수치가 필요하면 calculator를 사용하세요")
+- 답변 형식을 구체적으로 지정 ("최종 답변은 반드시 Answer: 로 시작하세요")
+- 종료 조건을 명시 ("충분한 정보를 얻으면 바로 답변하세요")
+
+---
+
+### 7. 에이전트 디자인 패턴
+
+복잡한 시스템에서는 여러 에이전트를 조합하는 패턴이 사용된다.
+
+```
+[1] Router 패턴 — 하나의 LLM이 요청을 분류하여 적절한 처리 경로로 라우팅
+
+    사용자 요청
+        │
+        ▼
+    ┌────────┐
+    │ Router │  "이 질문은 어떤 유형인가?"
+    │  LLM   │
+    └───┬────┘
+        ├── 코드 질문 → Code Agent
+        ├── 검색 필요 → Search Agent
+        └── 일반 대화 → Chat Agent
+
+
+[2] Supervisor 패턴 — 하나의 관리자가 여러 전문 에이전트를 조율
+
+    사용자 요청
+        │
+        ▼
+    ┌─────────────┐
+    │  Supervisor  │  작업 분배 및 결과 통합
+    └──────┬──────┘
+           ├── Research Agent (조사)
+           ├── Writer Agent (작성)
+           └── Reviewer Agent (검토)
+
+
+[3] Hierarchical 패턴 — 다계층 관리 구조
+
+    사용자 요청
+        │
+        ▼
+    ┌──────────────┐
+    │ Top Manager  │
+    └──────┬───────┘
+           ├── ┌─────────────┐
+           │   │ Sub Manager │
+           │   └──────┬──────┘
+           │          ├── Worker A
+           │          └── Worker B
+           └── ┌─────────────┐
+               │ Sub Manager │
+               └──────┬──────┘
+                      ├── Worker C
+                      └── Worker D
+
+
+[4] Collaborative 패턴 — 에이전트들이 대등한 위치에서 협업/토론
+
+    ┌──────────┐     ┌──────────┐     ┌──────────┐
+    │ Agent A  │────→│ Agent B  │────→│ Agent C  │
+    │ (분석가)  │←────│ (개발자)  │←────│ (검증자)  │
+    └──────────┘     └──────────┘     └──────────┘
+         ↑                                  │
+         └──────────────────────────────────┘
+                    피드백 루프
+```
+
+---
+
+## 코드 예시
+
+### ReAct 에이전트 구현
+
+```python
+"""
+ReAct 에이전트 구현 예시
+Think → Act → Observe 루프를 직접 구현한다.
+"""
+import json
+from dataclasses import dataclass, field
+
+
+# ── 도구 정의 ──────────────────────────────────────────────
+
+def search(query: str) -> str:
+    """웹 검색을 시뮬레이션하는 도구"""
+    # 실제로는 Google API, Tavily 등을 호출
+    mock_results = {
+        "파이썬 최신 버전": "Python 3.13이 2024년 10월에 출시되었습니다.",
+        "서울 인구": "서울의 인구는 약 950만 명입니다. (2024년 기준)",
+        "LangChain 최신 버전": "LangChain 0.3이 2024년 9월에 출시되었습니다.",
+    }
+    for key, value in mock_results.items():
+        if key in query:
+            return value
+    return f"'{query}'에 대한 검색 결과를 찾을 수 없습니다."
+
+
+def calculator(expression: str) -> str:
+    """수학 계산을 수행하는 도구"""
+    try:
+        result = eval(expression)  # 주의: 실제 서비스에서는 안전한 파서 사용
+        return str(result)
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+
+def get_current_date() -> str:
+    """현재 날짜를 반환하는 도구"""
+    from datetime import date
+    return str(date.today())
+
+
+# ── 도구 레지스트리 ──────────────────────────────────────────
+
+TOOL_REGISTRY = {
+    "search": {
+        "function": search,
+        "description": "웹에서 정보를 검색합니다.",
+        "parameters": {"query": "검색할 질문 (문자열)"},
+    },
+    "calculator": {
+        "function": calculator,
+        "description": "수학 표현식을 계산합니다.",
+        "parameters": {"expression": "계산할 수식 (문자열)"},
+    },
+    "get_current_date": {
+        "function": get_current_date,
+        "description": "현재 날짜를 반환합니다.",
+        "parameters": {},
+    },
+}
+
+
+# ── ReAct 에이전트 ───────────────────────────────────────────
+
+@dataclass
+class AgentStep:
+    """에이전트의 한 단계를 기록하는 데이터 클래스"""
+    thought: str
+    action: str | None = None
+    action_input: str | None = None
+    observation: str | None = None
+
+
+@dataclass
+class ReActAgent:
+    """
+    ReAct 패턴을 구현한 에이전트.
+    Think → Act → Observe 루프를 반복하며 문제를 해결한다.
+    """
+    tools: dict = field(default_factory=lambda: TOOL_REGISTRY)
+    max_steps: int = 5            # 최대 반복 횟수
+    history: list = field(default_factory=list)  # 실행 이력
+
+    def think(self, question: str, steps: list[AgentStep]) -> AgentStep:
+        """
+        현재까지의 정보를 바탕으로 다음 행동을 결정한다.
+        실제로는 LLM을 호출하여 Thought/Action을 생성한다.
+        여기서는 규칙 기반으로 시뮬레이션한다.
+        """
+        # --- 실제 구현 시 LLM 호출 부분 ---
+        # prompt = self._build_prompt(question, steps)
+        # response = llm.generate(prompt)
+        # return self._parse_response(response)
+
+        # 시뮬레이션: 단계별 로직
+        step_num = len(steps) + 1
+
+        if step_num == 1:
+            return AgentStep(
+                thought=f"'{question}'에 답하기 위해 검색이 필요하다.",
+                action="search",
+                action_input=question,
+            )
+        elif step_num == 2 and "계산" in question:
+            return AgentStep(
+                thought="검색 결과를 바탕으로 계산이 필요하다.",
+                action="calculator",
+                action_input="950 * 10000",
+            )
+        else:
+            # 충분한 정보가 모이면 최종 답변
+            return AgentStep(
+                thought="충분한 정보를 수집했다. 최종 답변을 생성한다.",
+                action="finish",
+                action_input=None,
+            )
+
+    def act(self, step: AgentStep) -> str:
+        """선택된 도구를 실행하고 결과를 반환한다."""
+        if step.action == "finish":
+            return "작업 완료"
+
+        tool = self.tools.get(step.action)
+        if tool is None:
+            return f"알 수 없는 도구: {step.action}"
+
+        # 도구 실행
+        func = tool["function"]
+        result = func(step.action_input)
+        return result
+
+    def run(self, question: str) -> str:
+        """
+        에이전트를 실행하는 메인 루프.
+        Think → Act → Observe를 반복한다.
+        """
+        print(f"\n{'='*60}")
+        print(f"질문: {question}")
+        print(f"{'='*60}")
+
+        steps: list[AgentStep] = []
+
+        for i in range(self.max_steps):
+            # 1. Think: 다음 행동을 결정
+            step = self.think(question, steps)
+            print(f"\n--- Step {i+1} ---")
+            print(f"Thought: {step.thought}")
+
+            # 종료 조건 확인
+            if step.action == "finish":
+                # 모든 관찰 결과를 종합하여 최종 답변 생성
+                observations = [s.observation for s in steps if s.observation]
+                final_answer = " ".join(observations)
+                print(f"Final Answer: {final_answer}")
+                self.history.append({"question": question, "answer": final_answer})
+                return final_answer
+
+            # 2. Act: 도구 실행
+            print(f"Action: {step.action}({step.action_input})")
+            observation = self.act(step)
+
+            # 3. Observe: 결과 기록
+            step.observation = observation
+            print(f"Observation: {observation}")
+            steps.append(step)
+
+        return "최대 단계 수에 도달했습니다. 답변을 생성할 수 없습니다."
+
+
+# ── 실행 ─────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    agent = ReActAgent()
+
+    # 예시 1: 단순 검색 질문
+    agent.run("서울 인구")
+
+    # 예시 2: 여러 단계가 필요한 질문
+    agent.run("파이썬 최신 버전")
+```
+
+### Function Calling 시뮬레이션
+
+```python
+"""
+Function Calling 시뮬레이션 예시.
+LLM의 도구 선택 과정과 실행 흐름을 보여준다.
+"""
+import json
+from typing import Any, Callable
+
+
+# ── 도구 스키마 정의 (OpenAI 형식) ─────────────────────────
+
+TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "주어진 도시의 현재 날씨 정보를 반환합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "날씨를 조회할 도시 이름",
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "온도 단위 (기본값: celsius)",
+                    },
+                },
+                "required": ["city"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_restaurant",
+            "description": "주어진 도시에서 음식 종류로 식당을 검색합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "검색할 도시",
+                    },
+                    "cuisine": {
+                        "type": "string",
+                        "description": "음식 종류 (예: 한식, 일식, 중식)",
+                    },
+                },
+                "required": ["city", "cuisine"],
+            },
+        },
+    },
+]
+
+
+# ── 실제 도구 함수 구현 ──────────────────────────────────────
+
+def get_weather(city: str, unit: str = "celsius") -> dict:
+    """날씨 API를 호출하여 날씨 정보를 반환 (시뮬레이션)"""
+    mock_data = {
+        "서울": {"temp": 8, "condition": "흐림", "humidity": 65},
+        "부산": {"temp": 12, "condition": "맑음", "humidity": 55},
+        "제주": {"temp": 14, "condition": "비", "humidity": 80},
+    }
+    data = mock_data.get(city, {"temp": 20, "condition": "정보없음", "humidity": 50})
+    if unit == "fahrenheit":
+        data["temp"] = data["temp"] * 9 / 5 + 32
+    return {"city": city, "unit": unit, **data}
+
+
+def search_restaurant(city: str, cuisine: str) -> dict:
+    """식당 검색 API 호출 (시뮬레이션)"""
+    mock_data = {
+        ("서울", "한식"): [
+            {"name": "광화문 국밥", "rating": 4.5},
+            {"name": "종로 불고기", "rating": 4.3},
+        ],
+        ("서울", "일식"): [
+            {"name": "스시 오마카세", "rating": 4.8},
+        ],
+    }
+    results = mock_data.get((city, cuisine), [])
+    return {"city": city, "cuisine": cuisine, "restaurants": results}
+
+
+# ── 도구 실행기 ──────────────────────────────────────────────
+
+# 함수 이름 → 실제 함수 매핑
+FUNCTION_MAP: dict[str, Callable] = {
+    "get_weather": get_weather,
+    "search_restaurant": search_restaurant,
+}
+
+
+def execute_function_call(tool_call: dict) -> Any:
+    """
+    LLM이 반환한 도구 호출 정보를 받아 실제 함수를 실행한다.
+
+    Args:
+        tool_call: {"name": "함수명", "arguments": {"key": "value"}}
+
+    Returns:
+        함수 실행 결과
+    """
+    func_name = tool_call["name"]
+    arguments = tool_call["arguments"]
+
+    # 등록된 함수인지 확인
+    if func_name not in FUNCTION_MAP:
+        raise ValueError(f"알 수 없는 함수: {func_name}")
+
+    # 함수 실행
+    func = FUNCTION_MAP[func_name]
+    result = func(**arguments)
+    return result
+
+
+# ── Function Calling 전체 흐름 시뮬레이션 ─────────────────────
+
+def simulate_function_calling(user_message: str):
+    """
+    Function Calling의 전체 흐름을 시뮬레이션한다.
+    실제로는 LLM API를 호출하지만, 여기서는 규칙 기반으로 동작한다.
+    """
+    print(f"\n{'='*60}")
+    print(f"사용자: {user_message}")
+    print(f"{'='*60}")
+
+    # Step 1: LLM이 사용자 메시지를 분석하여 도구 호출 결정
+    # (실제로는 LLM API 호출)
+    print("\n[Step 1] LLM이 적절한 도구를 선택합니다...")
+
+    # 시뮬레이션: 키워드 기반 도구 선택
+    if "날씨" in user_message:
+        tool_call = {
+            "name": "get_weather",
+            "arguments": {"city": "서울", "unit": "celsius"},
+        }
+    elif "맛집" in user_message or "식당" in user_message:
+        tool_call = {
+            "name": "search_restaurant",
+            "arguments": {"city": "서울", "cuisine": "한식"},
+        }
+    else:
+        print("도구가 필요하지 않습니다. 직접 답변합니다.")
+        return
+
+    print(f"선택된 도구: {tool_call['name']}")
+    print(f"인자: {json.dumps(tool_call['arguments'], ensure_ascii=False)}")
+
+    # Step 2: 실제 함수 실행
+    print("\n[Step 2] 도구를 실행합니다...")
+    result = execute_function_call(tool_call)
+    print(f"실행 결과: {json.dumps(result, ensure_ascii=False)}")
+
+    # Step 3: 결과를 LLM에 전달하여 자연어 답변 생성
+    # (실제로는 결과를 포함하여 LLM API 재호출)
+    print("\n[Step 3] LLM이 결과를 바탕으로 답변을 생성합니다...")
+    print(f"답변: {result}")
+
+
+# ── 실행 ─────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    simulate_function_calling("서울 날씨 어때?")
+    simulate_function_calling("서울 한식 맛집 추천해줘")
+```
+
+---

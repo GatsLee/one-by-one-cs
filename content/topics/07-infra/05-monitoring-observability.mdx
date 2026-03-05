@@ -1,0 +1,735 @@
+---
+title: "모니터링과 옵저버빌리티"
+topic: "07-infra"
+order: 05
+---
+
+
+## 핵심 개념
+
+### 1. 모니터링 vs 옵저버빌리티
+
+모니터링(Monitoring)과 옵저버빌리티(Observability)는 흔히 혼용되지만, 근본적인 차이가 있다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              모니터링 vs 옵저버빌리티                       │
+│                                                          │
+│  모니터링 (Monitoring)                                    │
+│  ─────────────────────                                   │
+│  "미리 알고 있는 문제"를 감시한다                           │
+│  - CPU 사용률 80% 초과 시 알림                             │
+│  - 디스크 용량 90% 초과 시 알림                            │
+│  - 응답 시간 2초 초과 시 알림                              │
+│  → "무엇이 문제인가?" 에 답한다                            │
+│                                                          │
+│  옵저버빌리티 (Observability)                              │
+│  ────────────────────────                                │
+│  "예상하지 못한 문제"를 탐구할 수 있다                      │
+│  - 왜 특정 사용자만 느린가?                                │
+│  - 왜 화요일 오후에만 에러가 급증하는가?                    │
+│  - 이 요청이 어떤 서비스를 거쳐갔는가?                      │
+│  → "왜 문제가 발생했는가?" 에 답한다                       │
+│                                                          │
+│  모니터링 ⊂ 옵저버빌리티                                  │
+│  옵저버빌리티는 모니터링을 포함하는 더 넓은 개념             │
+└──────────────────────────────────────────────────────────┘
+```
+
+| 구분 | 모니터링 | 옵저버빌리티 |
+|------|---------|------------|
+| **접근 방식** | 미리 정의한 지표 추적 | 임의의 질문에 답 가능 |
+| **질문 유형** | "서버가 죽었나?" | "왜 죽었나?" |
+| **데이터** | 대시보드, 알림 규칙 | 메트릭 + 로그 + 트레이스 통합 |
+| **복잡도 대응** | 단일 서버에 적합 | 분산 시스템 필수 |
+
+---
+
+### 2. 옵저버빌리티 3대 축
+
+옵저버빌리티는 **메트릭(Metrics)**, **로그(Logs)**, **트레이스(Traces)** 세 가지 신호(Signal)로 구성된다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              옵저버빌리티 3대 축 (Three Pillars)           │
+│                                                          │
+│        Metrics              Logs              Traces     │
+│      ┌─────────┐        ┌─────────┐        ┌─────────┐  │
+│      │ 숫자    │        │ 텍스트  │        │ 요청    │  │
+│      │ 시계열  │        │ 이벤트  │        │ 흐름    │  │
+│      │ 집계    │        │ 상세    │        │ 인과    │  │
+│      └────┬────┘        └────┬────┘        └────┬────┘  │
+│           │                  │                  │        │
+│      "무엇이       "왜 발생         "어디서             │
+│       발생했나?"    했나?"           발생했나?"           │
+│                                                          │
+│  예시:                                                    │
+│  메트릭: HTTP 5xx 에러율 5% 증가                          │
+│  로그: "NullPointerException at UserService:42"           │
+│  트레이스: 요청이 API→Auth→DB→Cache 순서로 흘렀고,         │
+│           DB 단계에서 3초 지연 발생                        │
+│                                                          │
+│  세 가지를 연결하면 문제의 전체 그림이 보인다               │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. 메트릭 (Metrics)
+
+메트릭은 **시간에 따라 변하는 숫자 데이터**다. 집계와 통계 분석에 최적화되어 있다.
+
+#### 메트릭 유형
+
+```
+┌──────────────────────────────────────────────────────┐
+│              메트릭 유형                               │
+│                                                      │
+│  Counter (카운터)                                     │
+│  ─────────────────                                   │
+│  단조 증가하는 값. 누적 합계를 추적한다.                │
+│  예: 총 HTTP 요청 수, 총 에러 수                       │
+│  그래프:  ╱─────╱──╱                                  │
+│          ╱    ╱  ╱   (항상 증가)                       │
+│                                                      │
+│  Gauge (게이지)                                       │
+│  ──────────────                                      │
+│  올라가거나 내려가는 현재 값.                            │
+│  예: CPU 사용률, 메모리 사용량, 활성 연결 수             │
+│  그래프:  ╱╲  ╱╲╱╲                                   │
+│          ╱  ╲╱     ╲  (오르락내리락)                   │
+│                                                      │
+│  Histogram (히스토그램)                                │
+│  ─────────────────────                               │
+│  값의 분포를 버킷별로 기록한다.                         │
+│  예: 응답 시간 분포 (10ms이하, 50ms이하, 100ms이하)     │
+│  백분위수(P50, P95, P99) 계산에 사용                    │
+│                                                      │
+│  Summary (서머리)                                     │
+│  ────────────────                                    │
+│  클라이언트 측에서 백분위수를 직접 계산.                 │
+│  Histogram과 유사하나 서버 집계 불가                    │
+└──────────────────────────────────────────────────────┘
+```
+
+#### Prometheus와 PromQL
+
+Prometheus는 가장 널리 쓰이는 메트릭 수집 시스템이다. Pull 모델로 타겟의 `/metrics` 엔드포인트를 주기적으로 스크래핑한다.
+
+```python
+# === Python에서 Prometheus 메트릭 노출 ===
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
+import time
+import random
+
+# 메트릭 정의
+REQUEST_COUNT = Counter(
+    "http_requests_total",           # 메트릭 이름
+    "총 HTTP 요청 수",                # 설명
+    ["method", "endpoint", "status"] # 라벨 (차원)
+)
+
+ACTIVE_CONNECTIONS = Gauge(
+    "active_connections",
+    "현재 활성 연결 수"
+)
+
+REQUEST_DURATION = Histogram(
+    "http_request_duration_seconds",
+    "HTTP 요청 처리 시간(초)",
+    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
+)
+
+
+# 미들웨어에서 메트릭 기록
+def handle_request(method: str, endpoint: str):
+    ACTIVE_CONNECTIONS.inc()  # 게이지 증가
+
+    start = time.time()
+    # ... 요청 처리 ...
+    duration = time.time() - start
+
+    status = "200"
+    REQUEST_COUNT.labels(method, endpoint, status).inc()  # 카운터 증가
+    REQUEST_DURATION.observe(duration)  # 히스토그램 기록
+
+    ACTIVE_CONNECTIONS.dec()  # 게이지 감소
+
+
+# Prometheus가 스크래핑할 HTTP 엔드포인트 시작
+start_http_server(8000)  # :8000/metrics 에서 메트릭 노출
+```
+
+#### PromQL 기본 쿼리
+
+```
+# === PromQL 예제 ===
+
+# 1. 초당 HTTP 요청률 (5분 평균)
+rate(http_requests_total[5m])
+
+# 2. 5xx 에러율 (%)
+sum(rate(http_requests_total{status=~"5.."}[5m]))
+/
+sum(rate(http_requests_total[5m])) * 100
+
+# 3. 응답 시간 95번째 백분위수 (P95)
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+
+# 4. 메모리 사용률 (%)
+(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+/ node_memory_MemTotal_bytes * 100
+
+# 5. 특정 서비스의 요청률
+rate(http_requests_total{service="user-api", method="POST"}[5m])
+
+# 6. 상위 5개 고부하 엔드포인트
+topk(5, sum by (endpoint) (rate(http_requests_total[5m])))
+```
+
+---
+
+### 4. 로그 (Logs)
+
+로그는 시스템에서 발생한 **개별 이벤트의 텍스트 기록**이다. 문제의 원인을 파악하는 데 필수적이다.
+
+#### 구조화된 로깅 (Structured Logging)
+
+```
+┌──────────────────────────────────────────────────────┐
+│              비구조화 vs 구조화 로그                    │
+│                                                      │
+│  비구조화 (나쁜 예):                                   │
+│  "2024-01-15 ERROR User login failed for user123"    │
+│  → 파싱 어려움, 검색 비효율                            │
+│                                                      │
+│  구조화 (좋은 예):                                     │
+│  {                                                   │
+│    "timestamp": "2024-01-15T10:30:00Z",              │
+│    "level": "ERROR",                                 │
+│    "message": "User login failed",                   │
+│    "user_id": "user123",                             │
+│    "ip": "192.168.1.100",                            │
+│    "reason": "invalid_password",                     │
+│    "trace_id": "abc-123-def"                         │
+│  }                                                   │
+│  → 필드별 검색, 집계, 트레이스 연결 가능               │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+import logging
+import json
+from datetime import datetime, timezone
+
+
+# === 구조화된 JSON 로거 ===
+class JSONFormatter(logging.Formatter):
+    """로그를 JSON 형식으로 출력하는 포매터"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "line": record.lineno,
+        }
+        # 추가 컨텍스트 필드
+        if hasattr(record, "user_id"):
+            log_data["user_id"] = record.user_id
+        if hasattr(record, "trace_id"):
+            log_data["trace_id"] = record.trace_id
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_data, ensure_ascii=False)
+
+
+# 로거 설정
+logger = logging.getLogger("app")
+handler = logging.StreamHandler()
+handler.setFormatter(JSONFormatter())
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+
+# 사용
+logger.info("사용자 로그인 성공", extra={"user_id": "user123", "trace_id": "abc-123"})
+# {"timestamp": "2024-01-15T10:30:00Z", "level": "INFO", "message": "사용자 로그인 성공", "user_id": "user123", ...}
+
+logger.error("결제 실패", extra={"user_id": "user456", "trace_id": "def-789"})
+```
+
+#### 로그 레벨
+
+| 레벨 | 용도 | 예시 |
+|------|------|------|
+| **DEBUG** | 개발 시 상세 정보 | 변수 값, SQL 쿼리 |
+| **INFO** | 정상 운영 이벤트 | 사용자 로그인, 주문 생성 |
+| **WARNING** | 주의가 필요한 상황 | 디스크 70% 사용, 재시도 발생 |
+| **ERROR** | 기능 실패, 복구 가능 | API 호출 실패, 유효성 검증 실패 |
+| **CRITICAL** | 시스템 중단 수준 | DB 연결 불가, 메모리 부족 |
+
+#### ELK 스택
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              ELK 스택 (로그 파이프라인)                    │
+│                                                          │
+│  App1 ─┐                                                 │
+│        │     ┌───────────┐     ┌───────────────┐         │
+│  App2 ─┼────▶│ Logstash  │────▶│Elasticsearch  │         │
+│        │     │ (수집/변환)│     │ (저장/인덱싱) │         │
+│  App3 ─┘     └───────────┘     └───────┬───────┘         │
+│                                        │                 │
+│                                   ┌────▼────┐            │
+│                                   │ Kibana  │            │
+│                                   │ (시각화)│            │
+│                                   └─────────┘            │
+│                                                          │
+│  Logstash: 로그 수집, 파싱, 변환, 필터링                  │
+│  Elasticsearch: 전문 검색 엔진 기반 저장소                 │
+│  Kibana: 웹 대시보드, 로그 검색, 시각화                    │
+│                                                          │
+│  대안: Loki + Grafana (더 경량화된 로그 시스템)            │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 5. 분산 트레이싱 (Distributed Tracing)
+
+마이크로서비스 환경에서 하나의 요청이 여러 서비스를 거친다. 분산 트레이싱은 이 **요청의 전체 여정을 추적**한다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              분산 트레이싱 개념                                │
+│                                                              │
+│  사용자 요청 → API Gateway → User Service → DB               │
+│                    │                                         │
+│                    └──→ Order Service → Payment API           │
+│                                  │                           │
+│                                  └──→ Inventory Service      │
+│                                                              │
+│  Trace (트레이스): 요청의 전체 여정 (Trace ID: abc-123)       │
+│  Span (스팬): 하나의 작업 단위                                │
+│                                                              │
+│  Trace: abc-123                                              │
+│  ├─ Span 1: API Gateway  [0ms ─────── 150ms]                │
+│  │  ├─ Span 2: User Service  [10ms ── 50ms]                 │
+│  │  │  └─ Span 3: DB Query    [15ms ─ 45ms]  ← 병목!        │
+│  │  └─ Span 4: Order Service  [55ms ─ 140ms]                │
+│  │     ├─ Span 5: Payment API  [60ms ─ 100ms]               │
+│  │     └─ Span 6: Inventory   [105ms ─ 130ms]               │
+│                                                              │
+│  각 Span에 서비스 이름, 시작/종료 시간, 상태, 태그 포함       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### OpenTelemetry
+
+OpenTelemetry(OTel)는 메트릭, 로그, 트레이스를 통합하는 **표준 관측 프레임워크**다. 벤더에 종속되지 않는다.
+
+```python
+# === OpenTelemetry로 트레이싱 설정 (Python) ===
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+# Tracer Provider 설정
+provider = TracerProvider()
+exporter = OTLPSpanExporter(endpoint="http://jaeger:4317")
+provider.add_span_processor(BatchSpanProcessor(exporter))
+trace.set_tracer_provider(provider)
+
+# Tracer 생성
+tracer = trace.get_tracer("order-service")
+
+
+# 사용 예시
+def create_order(user_id: str, items: list):
+    # 부모 스팬: 주문 생성 전체
+    with tracer.start_as_current_span("create_order") as span:
+        span.set_attribute("user.id", user_id)
+        span.set_attribute("order.item_count", len(items))
+
+        # 자식 스팬: 재고 확인
+        with tracer.start_as_current_span("check_inventory"):
+            for item in items:
+                # 각 아이템 재고 확인 로직
+                pass
+
+        # 자식 스팬: 결제 처리
+        with tracer.start_as_current_span("process_payment") as pay_span:
+            pay_span.set_attribute("payment.method", "card")
+            # 결제 API 호출
+            pass
+
+        # 자식 스팬: DB 저장
+        with tracer.start_as_current_span("save_to_db"):
+            # DB INSERT
+            pass
+
+        span.set_attribute("order.status", "completed")
+```
+
+---
+
+### 6. Grafana 대시보드
+
+Grafana는 메트릭, 로그, 트레이스를 **하나의 대시보드에서 시각화**하는 도구다. Prometheus, Loki, Jaeger 등 다양한 데이터 소스를 지원한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              Grafana 대시보드 구성 예시                    │
+│                                                          │
+│  ┌────────────────────────────────────────────────┐      │
+│  │           서비스 개요 대시보드                     │      │
+│  ├────────────────────┬───────────────────────────┤      │
+│  │  요청률 (req/s)     │  에러율 (%)                │      │
+│  │  ╱╲ ╱╲╱╲          │  ─────╲╱──────           │      │
+│  │ ╱  ╲╱    ╲         │                           │      │
+│  │ 현재: 1,234 req/s  │  현재: 0.3%              │      │
+│  ├────────────────────┼───────────────────────────┤      │
+│  │  P95 응답 시간      │  활성 Pod 수              │      │
+│  │  ──╲╱────╱╲──     │  ████████░░ 8/10         │      │
+│  │ 현재: 245ms        │                           │      │
+│  ├────────────────────┴───────────────────────────┤      │
+│  │  서비스별 응답 시간 히트맵                        │      │
+│  │  00:00  06:00  12:00  18:00  24:00             │      │
+│  │  ░░░░░░░░████░░░░░░████████░░░░               │      │
+│  │  (밝을수록 응답 시간이 김)                       │      │
+│  └────────────────────────────────────────────────┘      │
+│                                                          │
+│  알림 규칙 (Alert Rules):                                 │
+│  - P95 응답 시간 > 500ms → Slack 경고                     │
+│  - 에러율 > 1% → PagerDuty 호출                          │
+│  - Pod 가용률 < 50% → 긴급 알림                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7. SLI / SLO / SLA
+
+서비스 신뢰도를 정량적으로 관리하기 위한 프레임워크다. Google SRE에서 체계화했다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              SLI → SLO → SLA 계층 구조                    │
+│                                                          │
+│  SLI (Service Level Indicator) — 지표                     │
+│  ─────────────────────────────                           │
+│  "측정 가능한 서비스 품질 수치"                             │
+│  예: 응답 시간, 에러율, 가용성                             │
+│                                                          │
+│       ▼                                                  │
+│                                                          │
+│  SLO (Service Level Objective) — 목표                     │
+│  ──────────────────────────────                          │
+│  "SLI가 달성해야 할 목표값"                                │
+│  예: P99 응답 시간 < 300ms, 가용성 > 99.9%                │
+│                                                          │
+│       ▼                                                  │
+│                                                          │
+│  SLA (Service Level Agreement) — 계약                     │
+│  ──────────────────────────────                          │
+│  "SLO를 위반했을 때의 비즈니스적 결과"                      │
+│  예: 가용성 99.95% 미달 시 10% 크레딧 환불                 │
+│                                                          │
+│  SLI: 측정 → SLO: 목표 → SLA: 계약 (외부 고객 대상)       │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 9's of Availability (가용성)
+
+| 가용성 | 연간 다운타임 | 월간 다운타임 | 적합한 서비스 |
+|--------|-------------|-------------|-------------|
+| 99% (2 nines) | 3.65일 | 7.3시간 | 내부 도구 |
+| 99.9% (3 nines) | 8.77시간 | 43.8분 | 일반 웹 서비스 |
+| 99.95% | 4.38시간 | 21.9분 | 상용 SaaS |
+| 99.99% (4 nines) | 52.6분 | 4.38분 | 금융, 의료 |
+| 99.999% (5 nines) | 5.26분 | 26.3초 | 통신 인프라 |
+
+#### 에러 버짓 (Error Budget)
+
+```
+┌──────────────────────────────────────────────────────┐
+│              에러 버짓 개념                             │
+│                                                      │
+│  SLO: 99.9% 가용성 (월간)                             │
+│  → 한 달에 0.1%까지 다운 허용 = 약 43.8분              │
+│                                                      │
+│  에러 버짓 = 100% - SLO = 0.1%                        │
+│                                                      │
+│  이번 달 에러 버짓 사용 현황:                           │
+│  ████████████░░░░░░░░  60% 사용 (26.3분 소진)         │
+│                                                      │
+│  에러 버짓 남음: 40% (17.5분)                          │
+│                                                      │
+│  에러 버짓 > 0  → 새 기능 배포 가능 (위험 감수 OK)      │
+│  에러 버짓 = 0  → 배포 동결, 안정성 개선에 집중          │
+│                                                      │
+│  "개발 속도 vs 안정성" 의 정량적 균형 도구              │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+# === 에러 버짓 계산 예시 ===
+from dataclasses import dataclass
+
+
+@dataclass
+class ErrorBudget:
+    """에러 버짓 계산기"""
+    slo_target: float  # 예: 0.999 (99.9%)
+    total_requests: int
+    failed_requests: int
+
+    @property
+    def error_budget_total(self) -> int:
+        """허용 가능한 총 실패 요청 수"""
+        return int(self.total_requests * (1 - self.slo_target))
+
+    @property
+    def error_budget_remaining(self) -> int:
+        """남은 에러 버짓"""
+        return max(0, self.error_budget_total - self.failed_requests)
+
+    @property
+    def budget_consumed_pct(self) -> float:
+        """에러 버짓 소진율 (%)"""
+        if self.error_budget_total == 0:
+            return 100.0
+        return (self.failed_requests / self.error_budget_total) * 100
+
+    @property
+    def can_deploy(self) -> bool:
+        """배포 가능 여부: 에러 버짓이 80% 미만 소진"""
+        return self.budget_consumed_pct < 80
+
+
+# === 사용 ===
+budget = ErrorBudget(
+    slo_target=0.999,        # 99.9%
+    total_requests=1_000_000,  # 이번 달 총 요청
+    failed_requests=500,       # 실패 요청
+)
+
+print(f"에러 버짓 총량: {budget.error_budget_total}건")     # 1000건
+print(f"소진된 버짓: {budget.budget_consumed_pct:.1f}%")    # 50.0%
+print(f"배포 가능: {budget.can_deploy}")                    # True
+```
+
+---
+
+### 8. 알림 전략
+
+잘못된 알림 전략은 **경고 피로(Alert Fatigue)**를 유발하여, 정작 중요한 알림을 놓치게 만든다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              알림 심각도 분류                              │
+│                                                          │
+│  P1 (Critical) — 즉시 대응 필요                           │
+│  ───────────────────────────                             │
+│  - 서비스 완전 장애                                       │
+│  - 데이터 유실 위험                                       │
+│  - 행동: PagerDuty 호출, 온콜 엔지니어 깨움                │
+│  - 목표: 5분 이내 확인, 30분 이내 복구                     │
+│                                                          │
+│  P2 (High) — 1시간 이내 대응                              │
+│  ──────────────────────                                  │
+│  - 일부 기능 장애                                        │
+│  - 성능 심각 저하                                        │
+│  - 행동: Slack 긴급 채널 알림                              │
+│  - 목표: 1시간 이내 대응                                  │
+│                                                          │
+│  P3 (Medium) — 업무 시간 내 대응                          │
+│  ─────────────────────────                               │
+│  - 경미한 성능 저하                                       │
+│  - 비핵심 기능 오류                                       │
+│  - 행동: Jira 티켓 자동 생성                               │
+│                                                          │
+│  P4 (Low) — 참고용                                       │
+│  ──────────────────                                      │
+│  - 디스크 사용량 증가 추세                                 │
+│  - 에러 버짓 50% 소진                                     │
+│  - 행동: 대시보드에 표시, 주간 리뷰에서 논의                │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### Alert Fatigue 방지 원칙
+
+| 원칙 | 설명 |
+|------|------|
+| **증상 기반 알림** | 원인이 아닌 증상에 알림 설정 (예: "CPU 높음" 대신 "응답 시간 느림") |
+| **실행 가능한 알림만** | 알림을 받고 할 일이 없으면 제거 |
+| **그룹핑/중복 제거** | 같은 원인의 알림을 하나로 묶기 |
+| **에스컬레이션** | 미확인 시 상위 담당자에게 자동 에스컬레이션 |
+| **정기 리뷰** | 매월 알림 규칙 리뷰 — 불필요한 알림 정리 |
+
+---
+
+### 9. 실전 모니터링 스택 구성
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              프로덕션 모니터링 스택 예시                       │
+│                                                              │
+│  ┌──────────────────────────────────────────────────┐        │
+│  │                  Applications                    │        │
+│  │  FastAPI  │  Next.js  │  Celery  │  PostgreSQL   │        │
+│  └─────┬──────────┬──────────┬──────────┬───────────┘        │
+│        │          │          │          │                     │
+│        ▼          ▼          ▼          ▼                     │
+│  ┌───────────────────────────────────────────────┐           │
+│  │         OpenTelemetry Collector               │           │
+│  │  (메트릭 + 로그 + 트레이스 통합 수집)           │           │
+│  └────────┬──────────┬──────────┬────────────────┘           │
+│           │          │          │                             │
+│      ┌────▼───┐ ┌───▼────┐ ┌──▼─────┐                      │
+│      │Promethe│ │ Loki   │ │ Tempo/ │                       │
+│      │us      │ │        │ │ Jaeger │                       │
+│      │(메트릭)│ │(로그)  │ │(트레이스│                       │
+│      └────┬───┘ └───┬────┘ └──┬─────┘                      │
+│           │         │         │                              │
+│           └─────────┼─────────┘                              │
+│                     │                                        │
+│              ┌──────▼──────┐                                 │
+│              │   Grafana   │                                 │
+│              │  (통합 대시보드)│                                │
+│              └──────┬──────┘                                 │
+│                     │                                        │
+│              ┌──────▼──────┐                                 │
+│              │  AlertManager│                                │
+│              │  → Slack     │                                │
+│              │  → PagerDuty │                                │
+│              │  → Email     │                                │
+│              └─────────────┘                                 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+```yaml
+# === docker-compose.yml 모니터링 스택 예시 ===
+version: "3.8"
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+
+volumes:
+  grafana-data:
+```
+
+```yaml
+# === prometheus.yml (스크래핑 설정) ===
+global:
+  scrape_interval: 15s       # 15초마다 스크래핑
+  evaluation_interval: 15s   # 15초마다 알림 규칙 평가
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: "fastapi-app"
+    static_configs:
+      - targets: ["app:8000"]
+
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+```
+
+---
+
+### 10. 핵심 메트릭 — RED & USE 방법론
+
+```
+┌──────────────────────────────────────────────────────┐
+│              RED 방법 (서비스 수준)                     │
+│                                                      │
+│  R - Rate      : 초당 요청 수                         │
+│  E - Errors    : 에러 요청 비율                       │
+│  D - Duration  : 요청 처리 시간 (P50, P95, P99)       │
+│                                                      │
+│  → 마이크로서비스에 적합                               │
+│  → "사용자 경험"에 초점                                │
+│                                                      │
+│  ──────────────────────────────────────              │
+│                                                      │
+│              USE 방법 (인프라 수준)                     │
+│                                                      │
+│  U - Utilization : 자원 사용률 (CPU, 메모리, 디스크)   │
+│  S - Saturation  : 포화도 (대기열 길이, 스와핑)        │
+│  E - Errors      : 에러 수 (하드웨어, 네트워크)        │
+│                                                      │
+│  → 인프라/시스템에 적합                                │
+│  → "자원 병목"에 초점                                  │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 모니터링 | "무엇이" 문제인지 감시 — 미리 정의한 지표 추적 |
+| 옵저버빌리티 | "왜" 문제인지 탐구 — 메트릭 + 로그 + 트레이스 통합 |
+| 메트릭 | 시계열 숫자 데이터, Counter/Gauge/Histogram |
+| Prometheus | Pull 기반 메트릭 수집, PromQL로 쿼리 |
+| 로그 | 개별 이벤트 기록, JSON 구조화 로깅 권장 |
+| ELK 스택 | Elasticsearch + Logstash + Kibana 로그 파이프라인 |
+| 분산 트레이싱 | 요청의 서비스 간 여정 추적, Trace/Span 구조 |
+| OpenTelemetry | 벤더 중립 관측 표준 프레임워크 |
+| SLI/SLO/SLA | 지표 → 목표 → 계약 순 서비스 신뢰도 관리 |
+| 에러 버짓 | SLO에서 허용하는 실패 범위 — 배포 속도 vs 안정성 균형 |
+| 알림 전략 | 심각도 분류, Alert Fatigue 방지, 증상 기반 알림 |
+| RED / USE | 서비스(Rate/Error/Duration), 인프라(Utilization/Saturation/Error) |

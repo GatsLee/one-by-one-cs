@@ -1,0 +1,870 @@
+---
+title: "LLM 핵심 기술 (LLM Essentials)"
+topic: "06-ai"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. Pre-training vs Fine-tuning
+
+LLM 학습은 크게 **사전학습(Pre-training)**과 **미세조정(Fine-tuning)** 두 단계로 나뉜다.
+
+```
+LLM 학습 파이프라인:
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                    Phase 1: Pre-training                           │
+  │  ┌─────────────┐     ┌──────────────┐     ┌──────────────────┐    │
+  │  │  대규모 코퍼스  │ ──→ │  토큰 예측     │ ──→ │  Foundation Model │    │
+  │  │  (수 TB 텍스트) │     │  (Next Token) │     │  (범용 지식)       │    │
+  │  └─────────────┘     └──────────────┘     └────────┬─────────┘    │
+  │  비용: GPU 수천 대 × 수개월 = $수백만~수천만                         │
+  └────────────────────────────────────────────────────┼──────────────┘
+                                                       ↓
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                    Phase 2: Fine-tuning                            │
+  │  ┌─────────────┐     ┌──────────────┐     ┌──────────────────┐    │
+  │  │  소규모 데이터  │ ──→ │  가중치 조정    │ ──→ │  Specialized Model│    │
+  │  │  (수천~수만 건) │     │  (일부 파라미터)│     │  (특화 모델)       │    │
+  │  └─────────────┘     └──────────────┘     └──────────────────┘    │
+  │  비용: GPU 1~8대 × 수시간 = $수십~수백                              │
+  └─────────────────────────────────────────────────────────────────────┘
+```
+
+| 구분 | Pre-training | Fine-tuning |
+|------|-------------|-------------|
+| 데이터 규모 | 수 TB (인터넷 전체) | 수천~수만 건 (태스크 특화) |
+| 학습 목표 | 다음 토큰 예측 (범용 언어 이해) | 특정 태스크 성능 극대화 |
+| 비용 | $수백만~수천만 | $수십~수백 |
+| 시간 | 수주~수개월 | 수시간~수일 |
+| 파라미터 | 전체 가중치 학습 | 일부 또는 추가 파라미터만 학습 |
+| 누가 하나 | OpenAI, Meta, Google 등 | 일반 기업/개인 개발자 |
+
+### 2. LoRA (Low-Rank Adaptation)
+
+전체 모델의 가중치를 수정하지 않고, **저랭크 행렬 분해로 작은 어댑터만 학습**하는 효율적 미세조정 기법이다.
+
+```
+핵심 아이디어: ΔW = B × A (저랭크 분해)
+
+원래 가중치 W (d×d) 를 직접 수정하지 않고,
+작은 행렬 B (d×r)와 A (r×d)의 곱으로 변화량을 표현한다.
+
+  입력 x (d차원)
+    │
+    ├──────────────────────────────┐
+    │                              │
+    ▼                              ▼
+  ┌──────┐                    ┌────────┐
+  │  W   │ (d × d)           │   A    │ (r × d)   ← 학습 가능
+  │(동결) │                    └───┬────┘
+  └──┬───┘                        │
+     │                         ┌──▼───┐
+     │                         │  B   │ (d × r)   ← 학습 가능
+     │                         └──┬───┘
+     │                            │
+     ▼                            ▼
+     h_frozen        +        h_adapter
+     ──────────────────────────────
+                   │
+                   ▼
+             h = Wx + BAx
+                (최종 출력)
+
+파라미터 수 비교 (d=4096, r=8):
+
+  원래: d × d = 4096 × 4096 = 16,777,216 (16.7M)
+  LoRA: d × r + r × d = 4096 × 8 + 8 × 4096 = 65,536 (65.5K)
+  절감률: 65,536 / 16,777,216 = 0.39% ← 원래의 0.4%만 학습!
+```
+
+**주요 설정:**
+- **적용 위치**: 주로 Attention의 **Q(Query), V(Value)** 가중치에 적용
+- **Rank r**: 보통 4~64 사이 (작을수록 효율적, 클수록 표현력 증가)
+- **추론 시 머지**: 학습 후 `W' = W + BA`로 병합 → 추론 시 추가 지연 없음
+
+### 3. QLoRA (Quantized LoRA)
+
+**4-bit 양자화된 모델 위에 LoRA를 적용**하여, 메모리를 극단적으로 절약하는 기법이다.
+
+```
+QLoRA의 3가지 핵심 기술:
+
+1. NF4 (NormalFloat 4-bit):
+   ┌──────────────────────────────────────────────┐
+   │  가중치 분포가 정규분포를 따른다는 점을 활용     │
+   │  → 균등 간격(INT4)이 아닌, 정규분포에 최적화된  │
+   │    4-bit 양자화 수준(quantization levels) 사용  │
+   │                                              │
+   │  INT4:  ─┬──┬──┬──┬──┬──┬──┬──┬─  (균등 간격)  │
+   │  NF4:   ─┬┬─┬──┬────┬────┬──┬─┬┬─ (중앙 밀집)  │
+   │          ↑ 정규분포 중심부에 더 많은 표현 할당    │
+   └──────────────────────────────────────────────┘
+
+2. Double Quantization (이중 양자화):
+   ┌──────────────────────────────────────────────┐
+   │  1차 양자화: 가중치를 NF4로 양자화             │
+   │  → 양자화 상수(scale factor) 생성              │
+   │  2차 양자화: 이 양자화 상수까지 8-bit로 양자화! │
+   │  → 메모리 추가 절감 (~0.4GB for 65B 모델)      │
+   └──────────────────────────────────────────────┘
+
+3. Paged Optimizer:
+   ┌──────────────────────────────────────────────┐
+   │  GPU 메모리 부족 시 → CPU RAM으로 자동 페이징   │
+   │  긴 시퀀스 학습 시 OOM 방지                    │
+   └──────────────────────────────────────────────┘
+```
+
+**7B 모델 메모리 비교:**
+
+| 정밀도 | 계산 | 모델 메모리 | 학습 가능 여부 |
+|--------|------|-----------|--------------|
+| FP32 (32-bit) | 7B × 4 bytes | ~28 GB | A100 80GB 1대 |
+| FP16 (16-bit) | 7B × 2 bytes | ~14 GB | A100 1대 가능 |
+| INT8 (8-bit) | 7B × 1 byte | ~7 GB | RTX 3090 가능 |
+| NF4 (4-bit) | 7B × 0.5 byte | ~3.5 GB | RTX 3060 12GB 가능! |
+
+QLoRA 덕분에 **소비자 GPU(RTX 3060 12GB)로도 7B 모델 미세조정이 가능**해졌다.
+
+### 4. RLHF (Reinforcement Learning from Human Feedback)
+
+LLM이 **인간의 선호도에 맞게 행동하도록** 강화학습으로 정렬(alignment)하는 기법이다.
+
+```
+RLHF 3단계 파이프라인:
+
+  Stage 1: SFT (Supervised Fine-Tuning)
+  ┌─────────────────────────────────────────────┐
+  │  고품질 (prompt, response) 쌍으로 지도학습    │
+  │  예: "수도가 어디야?" → "서울입니다"           │
+  │  결과: 기본적으로 대화가 가능한 모델            │
+  └──────────────────────┬──────────────────────┘
+                         ↓
+  Stage 2: Reward Model (RM) 학습
+  ┌─────────────────────────────────────────────┐
+  │  같은 프롬프트에 대해 여러 응답을 생성          │
+  │  인간 평가자가 순위를 매김:                     │
+  │                                             │
+  │  프롬프트: "AI의 위험성에 대해 설명해줘"         │
+  │  응답 A: "AI는 인류를 멸망시킬..." (선정적)  → 3위 │
+  │  응답 B: "AI의 주요 위험으로는..." (균형적)  → 1위 │
+  │  응답 C: "위험은 없습니다" (부정확)          → 2위 │
+  │                                             │
+  │  이 선호 데이터로 보상 모델(RM) 학습            │
+  │  RM(응답) → 스칼라 점수 (높을수록 인간 선호)    │
+  └──────────────────────┬──────────────────────┘
+                         ↓
+  Stage 3: PPO (Proximal Policy Optimization)
+  ┌─────────────────────────────────────────────┐
+  │  SFT 모델을 RM의 보상으로 강화학습              │
+  │                                             │
+  │  ┌──────┐  응답   ┌────┐  점수   ┌─────┐    │
+  │  │ LLM  │ ──────→ │ RM │ ──────→ │ PPO │    │
+  │  │(정책) │ ←────── │    │         │최적화│    │
+  │  └──────┘ 업데이트 └────┘         └─────┘    │
+  │                                             │
+  │  + KL 발산 페널티: 원래 SFT 모델에서 너무       │
+  │    멀어지지 않도록 제약                         │
+  └─────────────────────────────────────────────┘
+```
+
+**왜 RLHF가 필요한가?**
+- SFT만으로는 **유해 콘텐츠 생성, 환각(hallucination), 편향** 문제를 해결하기 어려움
+- 인간의 주관적 선호("도움이 되면서 안전한 답변")는 단순 손실 함수로 표현하기 어려움
+- RM이 인간 선호를 수치화하고, PPO가 이를 최적화
+
+**KL 발산 페널티 (Reward Hacking 방지):**
+
+```
+최종 보상 = RM(응답) - β × KL(π_RL ∥ π_SFT)
+
+  β: KL 페널티 강도 (하이퍼파라미터)
+  π_RL: 현재 RL로 학습 중인 정책
+  π_SFT: 원래 SFT 모델
+
+  KL 페널티가 없으면?
+  → 모델이 RM의 허점을 찾아 비정상적 출력으로 높은 점수 획득
+  → "보상 해킹(Reward Hacking)" 발생
+  → 예: 특정 키워드를 반복하여 RM 점수를 극대화하지만 무의미한 텍스트
+```
+
+### 5. DPO (Direct Preference Optimization)
+
+RLHF의 복잡한 RM+PPO 과정을 **단일 손실 함수로 단순화**한 기법이다.
+
+```
+DPO의 핵심 아이디어:
+
+  RLHF:  선호 데이터 → RM 학습 → PPO로 LLM 학습 (3단계)
+  DPO:   선호 데이터 → LLM 직접 학습 (1단계!)
+
+  ┌────────────────────────────────────────────────────┐
+  │  입력: (프롬프트, 선호 응답, 비선호 응답) 쌍         │
+  │                                                    │
+  │  프롬프트: "좋은 코딩 습관은?"                        │
+  │  y_w (선호): "테스트를 먼저 작성하고..."              │
+  │  y_l (비선호): "되는대로 코딩하고..."                 │
+  │                                                    │
+  │  DPO 손실 함수:                                     │
+  │  L = -log σ(β × [log π(y_w|x)/π_ref(y_w|x)        │
+  │                  - log π(y_l|x)/π_ref(y_l|x)])     │
+  │                                                    │
+  │  → 선호 응답의 확률은 높이고                         │
+  │  → 비선호 응답의 확률은 낮추되                       │
+  │  → 참조 모델(π_ref)에서 너무 벗어나지 않도록          │
+  └────────────────────────────────────────────────────┘
+```
+
+**RLHF vs DPO 비교:**
+
+| 구분 | RLHF | DPO |
+|------|------|-----|
+| 단계 수 | 3단계 (SFT→RM→PPO) | 1단계 (직접 최적화) |
+| 보상 모델 | 별도 학습 필요 | 불필요 (암시적으로 포함) |
+| 학습 안정성 | PPO 하이퍼파라미터 민감 | 상대적으로 안정적 |
+| 메모리 사용 | RM + 정책 모델 동시 로드 | 정책 + 참조 모델 |
+| 구현 복잡도 | 높음 (RL 파이프라인) | 낮음 (분류 문제와 유사) |
+| 성능 | 대규모에서 강점 | 소규모~중규모에서 효율적 |
+| 실무 채택 | GPT-4, Claude 등 대형 모델 | Zephyr, 연구 커뮤니티 |
+
+### 6. 추론 최적화 — KV Cache
+
+Transformer 추론 시 **이전 토큰의 Key, Value를 캐싱**하여 중복 계산을 제거하는 기법이다.
+
+```
+Autoregressive 생성의 문제점:
+
+  토큰을 하나씩 생성할 때마다 전체 시퀀스를 다시 계산?
+
+  "나는"         → K₁,V₁ 계산 → "좋은"
+  "나는 좋은"     → K₁,V₁,K₂,V₂ 재계산 → "사람" ← K₁,V₁ 중복!
+  "나는 좋은 사람" → K₁,V₁,K₂,V₂,K₃,V₃ 재계산 → "이다" ← 전부 중복!
+
+KV Cache 적용:
+
+  Step 1: "나는"       → K₁,V₁ 계산 & 저장        → "좋은"
+  Step 2: "좋은"만     → K₂,V₂ 계산 & 저장        → "사람"
+           캐시에서 K₁,V₁ 재사용!
+  Step 3: "사람"만     → K₃,V₃ 계산 & 저장        → "이다"
+           캐시에서 K₁,V₁,K₂,V₂ 재사용!
+
+  ┌───────────────────────────────────────────┐
+  │  KV Cache 없이:                            │
+  │  Step n의 계산량 = O(n²)  (전체 재계산)     │
+  │                                           │
+  │  KV Cache 사용:                            │
+  │  Step n의 계산량 = O(n)   (새 토큰만 계산)   │
+  │  총 생성 계산량: O(n²) → O(n × d)          │
+  └───────────────────────────────────────────┘
+```
+
+**KV Cache 메모리 계산:**
+
+```
+KV Cache 메모리 = 2 × n_layers × d_model × seq_len × batch_size × precision_bytes
+
+예시 (LLaMA-7B, FP16):
+  n_layers = 32, d_model = 4096, seq_len = 2048, batch = 1
+  = 2 × 32 × 4096 × 2048 × 1 × 2 bytes
+  = 1,073,741,824 bytes ≈ 1 GB
+
+  → 시퀀스가 길어지면 KV Cache만으로 GB 단위 메모리 소모!
+  → 이 문제를 해결하기 위해 PagedAttention(vLLM) 등장
+```
+
+### 7. 양자화 (Quantization)
+
+모델 가중치의 **정밀도를 낮춰 모델 크기와 추론 속도를 개선**하는 기법이다.
+
+```
+양자화 개념:
+
+  FP32:  ████████████████████████████████  (32-bit, 고정밀)
+  FP16:  ████████████████                  (16-bit, 반정밀)
+  INT8:  ████████                          (8-bit, 정수)
+  INT4:  ████                              (4-bit, 극저정밀)
+
+  정밀도 ↓  =  모델 크기 ↓  =  추론 속도 ↑  =  정확도 약간 ↓
+```
+
+**주요 양자화 방식 비교:**
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        GPTQ (GPU 최적화)                         │
+├──────────────────────────────────────────────────────────────────┤
+│  • Post-Training Quantization (학습 후 양자화)                    │
+│  • 보정 데이터셋으로 양자화 오차 최소화 (Hessian 기반)             │
+│  • GPU 추론에 최적화 (CUDA 커널)                                  │
+│  • 정밀도: 주로 4-bit, 8-bit                                     │
+│  • 도구: AutoGPTQ, ExLlama                                       │
+│  • 적합: GPU 서버 배포                                            │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     GGUF (CPU / llama.cpp)                        │
+├──────────────────────────────────────────────────────────────────┤
+│  • llama.cpp 전용 포맷 (GGML → GGUF로 진화)                      │
+│  • CPU 추론에 최적화 (AVX, ARM NEON 등 SIMD 활용)                │
+│  • 다양한 양자화 레벨 지원:                                       │
+│    Q4_0: 4-bit 균등 양자화 (가장 빠름, 품질 ↓)                    │
+│    Q4_K_M: 4-bit K-quant 중간 품질 ← 가장 인기                   │
+│    Q5_K_M: 5-bit K-quant 중간 품질 (품질/크기 균형)               │
+│    Q6_K:  6-bit K-quant (고품질)                                  │
+│    Q8_0:  8-bit 양자화 (거의 무손실)                               │
+│  • 적합: 로컬 PC, 엣지 디바이스, Ollama                           │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                    AWQ (Activation-Aware)                         │
+├──────────────────────────────────────────────────────────────────┤
+│  • 핵심 통찰: 모든 가중치가 동등하게 중요하지 않다!                │
+│  • 활성화(activation) 분포를 분석하여 중요한 채널 식별             │
+│  • 중요 채널은 더 높은 정밀도 유지, 나머지는 공격적으로 양자화      │
+│  • GPTQ 대비 더 빠르고, 품질 손실이 적음                          │
+│  • 적합: GPU 서버 배포 (GPTQ의 개선 버전)                         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+| 방식 | 대상 | 장점 | 단점 | 대표 도구 |
+|------|------|------|------|----------|
+| GPTQ | GPU | 검증된 품질, 넓은 호환성 | 양자화 시간 오래 걸림 | AutoGPTQ, ExLlama |
+| GGUF | CPU/GPU | 로컬 실행, 다양한 레벨 | CPU에서 느릴 수 있음 | llama.cpp, Ollama |
+| AWQ | GPU | 빠른 양자화, 높은 품질 | GPU 전용 | AutoAWQ, vLLM |
+
+### 8. vLLM & Ollama
+
+LLM을 효율적으로 서빙(Serving)하기 위한 대표적인 프레임워크이다.
+
+```
+vLLM — PagedAttention:
+
+  기존 문제: KV Cache 메모리를 요청마다 연속 블록으로 할당
+  → 내부 단편화(fragmentation)와 외부 단편화 발생
+  → 메모리 낭비 55~80%!
+
+  PagedAttention (OS의 가상 메모리에서 영감):
+  ┌─────────────────────────────────────────────────┐
+  │  KV Cache를 고정 크기 "페이지"로 분할              │
+  │                                                 │
+  │  물리 GPU 메모리:                                 │
+  │  ┌───┬───┬───┬───┬───┬───┬───┬───┐              │
+  │  │ P0│ P1│ P2│ P3│ P4│ P5│ P6│ P7│              │
+  │  └───┴───┴───┴───┴───┴───┴───┴───┘              │
+  │                                                 │
+  │  요청 A의 KV: P0 → P3 → P5  (비연속 할당!)       │
+  │  요청 B의 KV: P1 → P2                            │
+  │  요청 C의 KV: P4 → P6 → P7                       │
+  │                                                 │
+  │  → 단편화 제거, 메모리 활용률 ~95%                  │
+  │  → 동시 처리 가능 요청 수 2~4배 증가                │
+  └─────────────────────────────────────────────────┘
+
+  Continuous Batching (연속 배칭):
+  ┌─────────────────────────────────────────────────┐
+  │  기존 (Static Batching):                         │
+  │  배치 내 모든 요청이 끝날 때까지 대기               │
+  │  → 짧은 응답이 긴 응답을 기다림 (GPU 낭비)         │
+  │                                                 │
+  │  Continuous Batching:                            │
+  │  시간→  t1   t2   t3   t4   t5   t6             │
+  │  Req A: ████ ████ ████ (완료)                     │
+  │  Req B: ████ ████ ████ ████ ████ (완료)           │
+  │  Req C:                ████ ████ ████ (새로 투입)  │
+  │                        ↑                         │
+  │                  A 완료 즉시 C 투입!               │
+  │  → GPU 활용률 극대화, 처리량(throughput) 향상       │
+  └─────────────────────────────────────────────────┘
+```
+
+**Ollama — 로컬 LLM 실행 도구:**
+
+```
+Ollama 기본 사용법:
+
+  # 모델 다운로드
+  $ ollama pull llama3.1:8b
+  $ ollama pull llama3.1:8b-q4_K_M      # 특정 양자화 버전
+
+  # 대화형 실행
+  $ ollama run llama3.1:8b
+  >>> 한국의 수도는?
+  서울입니다...
+
+  # API 서버 (기본 포트: 11434)
+  $ curl http://localhost:11434/api/generate \
+      -d '{"model": "llama3.1:8b", "prompt": "Hello"}'
+
+  # 모델 목록 확인
+  $ ollama list
+
+  # Modelfile로 커스텀 모델 생성
+  $ cat Modelfile
+  FROM llama3.1:8b
+  SYSTEM "당신은 한국어 전문 AI 어시스턴트입니다."
+  PARAMETER temperature 0.7
+
+  $ ollama create my-korean-assistant -f Modelfile
+```
+
+### 9. RAG (Retrieval-Augmented Generation)
+
+LLM의 지식을 **외부 문서 검색으로 보강**하여 환각을 줄이고 최신 정보를 활용하는 기법이다.
+
+```
+RAG 파이프라인:
+
+  ┌─────────┐     ┌──────────┐     ┌───────────┐     ┌──────────┐
+  │ 사용자    │     │ Embedding│     │ Vector DB │     │   LLM    │
+  │ 질문      │     │  Model   │     │           │     │          │
+  └────┬────┘     └─────┬────┘     └─────┬─────┘     └────┬─────┘
+       │                │               │                  │
+       │  1. 질문 입력   │               │                  │
+       ├───────────────→│               │                  │
+       │                │  2. 질문 임베딩 │                  │
+       │                ├──────────────→│                  │
+       │                │               │  3. 유사 문서 검색 │
+       │                │               │  (Top-K)         │
+       │                │  4. 관련 문서   │                  │
+       │                │←──────────────┤                  │
+       │                │               │                  │
+       │   5. 프롬프트 = 질문 + 검색된 문서(컨텍스트)          │
+       ├──────────────────────────────────────────────────→│
+       │                                                   │
+       │                              6. 컨텍스트 기반 답변  │
+       │←──────────────────────────────────────────────────┤
+       │                                                   │
+
+  프롬프트 구성 예시:
+  ┌─────────────────────────────────────────────┐
+  │  시스템: 아래 컨텍스트를 참고하여 답변하세요.   │
+  │  컨텍스트에 없는 내용은 모른다고 답하세요.      │
+  │                                             │
+  │  컨텍스트:                                    │
+  │  [검색된 문서 1] ...                          │
+  │  [검색된 문서 2] ...                          │
+  │  [검색된 문서 3] ...                          │
+  │                                             │
+  │  질문: {사용자 질문}                           │
+  └─────────────────────────────────────────────┘
+```
+
+**문서 청킹 (Chunking):**
+
+```
+원본 문서: AAAABBBBCCCCDDDDEEEE (20 토큰)
+
+단순 분할 (chunk_size=8):
+  청크 1: AAAABBBB
+  청크 2: CCCCDDDD      ← B와 C 사이 맥락 단절!
+  청크 3: EEEE
+
+오버랩 분할 (chunk_size=8, overlap=2):
+  청크 1: AAAABBBB
+  청크 2: BBCCCCDD      ← BB가 겹침 → 맥락 유지!
+  청크 3: DDEEEE        ← DD가 겹침
+
+  오버랩의 효과:
+  - 문장이 청크 경계에서 잘리는 문제 완화
+  - 앞뒤 문맥 연결성 보존
+  - 일반적으로 chunk_size의 10~20% 오버랩 권장
+```
+
+**벡터 DB 비교:**
+
+| 구분 | FAISS | ChromaDB | Pinecone |
+|------|-------|----------|----------|
+| 유형 | 라이브러리 (in-memory) | 오픈소스 DB | 관리형 클라우드 |
+| 개발사 | Meta (Facebook) | Chroma Inc. | Pinecone |
+| 장점 | 극한 속도, 대규모 지원 | 설치 쉬움, Python 친화 | 운영 부담 없음, 확장성 |
+| 단점 | 메타데이터 관리 직접 구현 | 대규모 시 성능 제한 | 유료, 종속성 |
+| 적합 | 연구, 대규모 검색 | 프로토타입, 소규모 앱 | 프로덕션 서비스 |
+| 영속성 | 파일 저장 가능 | 내장 영속성 | 클라우드 관리 |
+
+---
+
+## 코드 예시
+
+### 1. LoRA 레이어 구현 (NumPy)
+
+```python
+import numpy as np
+
+class LoRALinear:
+    """LoRA가 적용된 선형 레이어 구현"""
+
+    def __init__(self, d_in: int, d_out: int, rank: int = 8, alpha: float = 16.0):
+        """
+        Args:
+            d_in: 입력 차원
+            d_out: 출력 차원
+            rank: LoRA 랭크 (작을수록 파라미터 적음)
+            alpha: 스케일링 계수
+        """
+        # 원래 가중치 (동결 — 학습하지 않음)
+        self.W = np.random.randn(d_out, d_in) * 0.01  # (d_out, d_in)
+
+        # LoRA 행렬 A, B (학습 대상)
+        # A: Gaussian 초기화, B: 0 초기화 (학습 시작 시 ΔW = 0)
+        self.A = np.random.randn(rank, d_in) * 0.01   # (r, d_in)
+        self.B = np.zeros((d_out, rank))                # (d_out, r)
+
+        self.rank = rank
+        self.alpha = alpha
+        self.scaling = alpha / rank  # 스케일링 팩터
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        """
+        순전파: h = Wx + (α/r) × BAx
+
+        Args:
+            x: 입력 벡터 (d_in,)
+        Returns:
+            출력 벡터 (d_out,)
+        """
+        # 원래 경로 (동결)
+        h_frozen = self.W @ x             # (d_out,)
+
+        # LoRA 경로 (학습 가능)
+        h_adapter = self.B @ (self.A @ x)  # (d_out, r) @ (r,) = (d_out,)
+        h_adapter = self.scaling * h_adapter
+
+        return h_frozen + h_adapter
+
+    def merge(self) -> np.ndarray:
+        """
+        추론 시: W' = W + (α/r) × BA 로 병합
+        → 추론 시 추가 연산 없이 원래 속도 유지
+        """
+        W_merged = self.W + self.scaling * (self.B @ self.A)
+        return W_merged
+
+    def param_count(self) -> dict:
+        """원래 파라미터 vs LoRA 파라미터 수 비교"""
+        original = self.W.shape[0] * self.W.shape[1]
+        lora = self.A.size + self.B.size
+        return {
+            "원래 파라미터": original,
+            "LoRA 파라미터": lora,
+            "비율": f"{lora / original * 100:.2f}%",
+            "절감": f"{(1 - lora / original) * 100:.2f}%"
+        }
+
+
+# ── 사용 예시 ──────────────────────────────────
+if __name__ == "__main__":
+    d_in, d_out = 4096, 4096  # Transformer 차원
+    rank = 8
+
+    layer = LoRALinear(d_in, d_out, rank=rank)
+    x = np.random.randn(d_in)
+
+    # 순전파
+    output = layer.forward(x)
+    print(f"입력 차원: {d_in}, 출력 차원: {d_out}")
+    print(f"출력 shape: {output.shape}")
+
+    # 파라미터 비교
+    stats = layer.param_count()
+    print(f"\n파라미터 비교:")
+    print(f"  원래: {stats['원래 파라미터']:,}")
+    print(f"  LoRA: {stats['LoRA 파라미터']:,}")
+    print(f"  비율: {stats['비율']}")
+
+    # 추론용 병합
+    W_merged = layer.merge()
+    output_merged = W_merged @ x
+    diff = np.abs(output - output_merged).max()
+    print(f"\n병합 전후 최대 오차: {diff:.10f}")  # 부동소수점 오차만 존재
+```
+
+### 2. DPO 손실 함수 구현
+
+```python
+import numpy as np
+
+def log_softmax(logits: np.ndarray) -> np.ndarray:
+    """수치 안정적인 log-softmax"""
+    max_val = np.max(logits, axis=-1, keepdims=True)
+    shifted = logits - max_val
+    return shifted - np.log(np.sum(np.exp(shifted), axis=-1, keepdims=True))
+
+
+def compute_log_prob(logits: np.ndarray, token_ids: np.ndarray) -> float:
+    """
+    시퀀스의 로그 확률 계산
+
+    Args:
+        logits: 모델 출력 로짓 (seq_len, vocab_size)
+        token_ids: 정답 토큰 ID (seq_len,)
+    Returns:
+        시퀀스의 평균 로그 확률
+    """
+    log_probs = log_softmax(logits)
+    # 각 위치에서 정답 토큰의 로그 확률만 선택
+    token_log_probs = log_probs[np.arange(len(token_ids)), token_ids]
+    return token_log_probs.mean()
+
+
+def dpo_loss(
+    pi_logits_chosen: np.ndarray,    # 정책 모델 — 선호 응답 로짓
+    pi_logits_rejected: np.ndarray,  # 정책 모델 — 비선호 응답 로짓
+    ref_logits_chosen: np.ndarray,   # 참조 모델 — 선호 응답 로짓
+    ref_logits_rejected: np.ndarray, # 참조 모델 — 비선호 응답 로짓
+    chosen_ids: np.ndarray,          # 선호 응답 토큰 ID
+    rejected_ids: np.ndarray,        # 비선호 응답 토큰 ID
+    beta: float = 0.1               # 온도 파라미터 (KL 제어)
+) -> float:
+    """
+    DPO 손실 함수:
+    L = -log σ(β × [log π(y_w|x)/π_ref(y_w|x) - log π(y_l|x)/π_ref(y_l|x)])
+
+    직관:
+    - 선호 응답의 로그 확률 비율(정책/참조)이 높고
+    - 비선호 응답의 로그 확률 비율이 낮을수록
+    - 시그모이드 안의 값이 커지고 → 손실이 작아짐
+    """
+    # 각 모델-응답 조합의 로그 확률 계산
+    pi_logp_w = compute_log_prob(pi_logits_chosen, chosen_ids)
+    pi_logp_l = compute_log_prob(pi_logits_rejected, rejected_ids)
+    ref_logp_w = compute_log_prob(ref_logits_chosen, chosen_ids)
+    ref_logp_l = compute_log_prob(ref_logits_rejected, rejected_ids)
+
+    # 로그 확률 비율 (log-ratio)
+    log_ratio_w = pi_logp_w - ref_logp_w  # log π(y_w|x) / π_ref(y_w|x)
+    log_ratio_l = pi_logp_l - ref_logp_l  # log π(y_l|x) / π_ref(y_l|x)
+
+    # DPO 손실 계산
+    logit = beta * (log_ratio_w - log_ratio_l)
+    loss = -np.log(1 / (1 + np.exp(-logit)))  # -log(sigmoid(logit))
+
+    return loss
+
+
+# ── 시뮬레이션 ─────────────────────────────────
+if __name__ == "__main__":
+    np.random.seed(42)
+    seq_len = 10
+    vocab_size = 100
+
+    # 가상 로짓 생성
+    pi_chosen = np.random.randn(seq_len, vocab_size)
+    pi_rejected = np.random.randn(seq_len, vocab_size)
+    ref_chosen = np.random.randn(seq_len, vocab_size)
+    ref_rejected = np.random.randn(seq_len, vocab_size)
+
+    chosen_ids = np.random.randint(0, vocab_size, seq_len)
+    rejected_ids = np.random.randint(0, vocab_size, seq_len)
+
+    loss = dpo_loss(
+        pi_chosen, pi_rejected,
+        ref_chosen, ref_rejected,
+        chosen_ids, rejected_ids,
+        beta=0.1
+    )
+    print(f"DPO Loss: {loss:.4f}")
+
+    # β 값에 따른 손실 변화
+    print("\nβ 값에 따른 DPO 손실:")
+    for beta in [0.01, 0.1, 0.5, 1.0, 2.0]:
+        l = dpo_loss(pi_chosen, pi_rejected, ref_chosen, ref_rejected,
+                     chosen_ids, rejected_ids, beta)
+        print(f"  β={beta:.2f}: loss={l:.4f}")
+```
+
+### 3. RAG 파이프라인 시뮬레이션
+
+```python
+import numpy as np
+from typing import List, Tuple
+
+
+class SimpleEmbedding:
+    """간단한 임베딩 모델 시뮬레이션 (실제로는 sentence-transformers 등 사용)"""
+
+    def __init__(self, dim: int = 64):
+        self.dim = dim
+        # 단어별 고정 임베딩 (재현성)
+        self._cache = {}
+
+    def encode(self, text: str) -> np.ndarray:
+        """텍스트를 벡터로 변환 (해시 기반 시뮬레이션)"""
+        if text not in self._cache:
+            # 텍스트의 해시로 시드 설정 → 같은 텍스트 = 같은 벡터
+            seed = hash(text) % (2**31)
+            rng = np.random.RandomState(seed)
+            vec = rng.randn(self.dim)
+            # L2 정규화
+            vec = vec / (np.linalg.norm(vec) + 1e-8)
+            self._cache[text] = vec
+        return self._cache[text]
+
+
+class SimpleVectorDB:
+    """코사인 유사도 기반 간단한 벡터 데이터베이스"""
+
+    def __init__(self, embedding_model: SimpleEmbedding):
+        self.model = embedding_model
+        self.documents: List[str] = []
+        self.vectors: List[np.ndarray] = []
+        self.metadata: List[dict] = []
+
+    def add_documents(self, docs: List[str], chunk_size: int = 100, overlap: int = 20):
+        """
+        문서를 청킹하여 저장
+
+        Args:
+            docs: 원본 문서 리스트
+            chunk_size: 청크 크기 (문자 수)
+            overlap: 오버랩 크기
+        """
+        for doc_id, doc in enumerate(docs):
+            chunks = self._chunk_text(doc, chunk_size, overlap)
+            for chunk_id, chunk in enumerate(chunks):
+                vec = self.model.encode(chunk)
+                self.documents.append(chunk)
+                self.vectors.append(vec)
+                self.metadata.append({
+                    "doc_id": doc_id,
+                    "chunk_id": chunk_id,
+                })
+        print(f"총 {len(self.documents)}개 청크 저장 완료")
+
+    def _chunk_text(self, text: str, chunk_size: int, overlap: int) -> List[str]:
+        """오버랩 기반 텍스트 청킹"""
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            if chunk.strip():  # 빈 청크 제외
+                chunks.append(chunk)
+            start += chunk_size - overlap
+        return chunks
+
+    def search(self, query: str, top_k: int = 3) -> List[Tuple[str, float]]:
+        """
+        쿼리와 가장 유사한 문서 검색
+
+        Args:
+            query: 검색 질문
+            top_k: 반환할 문서 수
+        Returns:
+            (문서, 유사도) 튜플 리스트
+        """
+        query_vec = self.model.encode(query)
+
+        # 코사인 유사도 계산
+        similarities = []
+        for vec in self.vectors:
+            # 이미 L2 정규화 → 내적 = 코사인 유사도
+            sim = np.dot(query_vec, vec)
+            similarities.append(sim)
+
+        # 상위 K개 인덱스
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+
+        results = []
+        for idx in top_indices:
+            results.append((self.documents[idx], similarities[idx]))
+        return results
+
+
+class RAGPipeline:
+    """RAG 파이프라인 (LLM 호출은 시뮬레이션)"""
+
+    def __init__(self, vector_db: SimpleVectorDB, top_k: int = 3):
+        self.db = vector_db
+        self.top_k = top_k
+
+    def build_prompt(self, query: str, contexts: List[str]) -> str:
+        """검색 결과를 포함한 프롬프트 생성"""
+        context_str = "\n\n".join([
+            f"[문서 {i+1}] {ctx}" for i, ctx in enumerate(contexts)
+        ])
+
+        prompt = f"""아래 컨텍스트를 참고하여 질문에 답변하세요.
+컨텍스트에 없는 내용은 "해당 정보가 없습니다"라고 답하세요.
+
+=== 컨텍스트 ===
+{context_str}
+
+=== 질문 ===
+{query}
+
+=== 답변 ==="""
+        return prompt
+
+    def query(self, question: str) -> dict:
+        """
+        RAG 전체 파이프라인 실행
+
+        1. 질문 임베딩 → 2. 벡터 검색 → 3. 프롬프트 구성 → 4. (LLM 호출)
+        """
+        # Step 1-2: 벡터 검색
+        results = self.db.search(question, top_k=self.top_k)
+
+        # Step 3: 프롬프트 구성
+        contexts = [doc for doc, _ in results]
+        prompt = self.build_prompt(question, contexts)
+
+        # Step 4: LLM 호출 시뮬레이션 (실제로는 OpenAI API 등 사용)
+        answer = f"[LLM 응답 시뮬레이션] 검색된 {len(contexts)}개 문서 기반 답변"
+
+        return {
+            "question": question,
+            "retrieved_docs": results,
+            "prompt": prompt,
+            "answer": answer,
+        }
+
+
+# ── 실행 예시 ─────────────────────────────────
+if __name__ == "__main__":
+    # 1. 임베딩 모델 & 벡터 DB 초기화
+    embedder = SimpleEmbedding(dim=64)
+    db = SimpleVectorDB(embedder)
+
+    # 2. 문서 추가
+    documents = [
+        "LoRA는 Low-Rank Adaptation의 약자로, 대형 언어 모델을 효율적으로 미세조정하는 기법이다. "
+        "원래 가중치 행렬을 동결하고, 저랭크 행렬 B와 A의 곱으로 가중치 변화량을 학습한다. "
+        "랭크 r이 작을수록 파라미터가 적어 효율적이지만, 표현력은 감소할 수 있다.",
+
+        "RLHF는 인간 피드백으로부터의 강화학습으로, LLM을 인간 선호에 맞게 정렬하는 기법이다. "
+        "3단계로 구성된다: SFT(지도 미세조정), 보상 모델 학습, PPO 최적화. "
+        "KL 발산 페널티를 통해 보상 해킹을 방지한다.",
+
+        "RAG는 Retrieval-Augmented Generation의 약자로, 외부 문서를 검색하여 LLM의 답변을 보강한다. "
+        "질문을 임베딩하고 벡터 DB에서 유사 문서를 검색한 후, 컨텍스트와 함께 LLM에 전달한다. "
+        "이를 통해 환각을 줄이고 최신 정보를 활용할 수 있다.",
+
+        "양자화는 모델 가중치의 정밀도를 낮춰 크기와 속도를 개선하는 기법이다. "
+        "GPTQ는 GPU 추론에 최적화되어 있고, GGUF는 llama.cpp에서 CPU 추론에 사용된다. "
+        "AWQ는 활성화 분포를 고려하여 더 높은 품질을 유지한다.",
+    ]
+    db.add_documents(documents, chunk_size=120, overlap=20)
+
+    # 3. 질문 & 검색
+    rag = RAGPipeline(db, top_k=3)
+
+    questions = [
+        "LoRA의 핵심 원리는 무엇인가?",
+        "RLHF가 왜 필요한가?",
+        "RAG 파이프라인의 동작 과정을 설명해줘",
+    ]
+
+    for q in questions:
+        print(f"\n{'='*60}")
+        result = rag.query(q)
+        print(f"질문: {result['question']}")
+        print(f"\n검색된 문서 (유사도):")
+        for doc, sim in result['retrieved_docs']:
+            print(f"  [{sim:.3f}] {doc[:60]}...")
+        print(f"\n생성된 프롬프트 길이: {len(result['prompt'])} 문자")
+```
+
+---

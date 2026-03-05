@@ -1,0 +1,784 @@
+---
+title: "문자열 알고리즘과 트라이"
+topic: "01-data-structures"
+order: 10
+---
+
+
+## 핵심 개념
+
+### 문자열 알고리즘의 중요성
+
+문자열 처리는 컴퓨터 과학의 가장 기본적이면서도 광범위하게 활용되는 분야다. 텍스트 편집기의 찾기/바꾸기, 검색 엔진의 키워드 매칭, DNA 서열 분석, 자동완성 기능 등 모두 문자열 알고리즘에 기반한다.
+
+> **비유**: 도서관에서 특정 문장이 포함된 책을 찾는다고 하자. 모든 책의 모든 페이지를 한 글자씩 대조하는 것은 비효율적이다. 문자열 알고리즘은 이 과정을 체계적으로 최적화한다.
+
+### 용어 정의
+
+| 용어 | 설명 | 예시 (텍스트 "ABCABD") |
+|------|------|----------------------|
+| **텍스트(Text)** | 검색 대상 문자열, 길이 n | "ABCABD" (n=6) |
+| **패턴(Pattern)** | 찾으려는 문자열, 길이 m | "ABD" (m=3) |
+| **부분 문자열(Substring)** | 연속된 부분 | "BCA", "ABD" |
+| **부분 수열(Subsequence)** | 순서 유지, 비연속 가능 | "ACD", "ABD" |
+| **접두사(Prefix)** | 앞에서부터의 부분 | "A", "AB", "ABC" |
+| **접미사(Suffix)** | 뒤에서부터의 부분 | "D", "BD", "ABD" |
+
+
+---
+
+## 브루트 포스 패턴 매칭
+
+### 원리
+
+가장 단순한 방법으로, 텍스트의 모든 위치에서 패턴을 한 글자씩 비교한다.
+
+```
+텍스트:  A B C A B D A B C
+패턴:    A B D
+
+시도 1: A B C A B D A B C
+        A B D
+        ^^X   → 3번째에서 불일치
+
+시도 2: A B C A B D A B C
+          A B D
+          X     → 1번째에서 불일치
+
+시도 3: A B C A B D A B C
+            A B D
+            X     → 1번째에서 불일치
+
+시도 4: A B C A B D A B C
+              A B D
+              ^^^  → 매칭 성공! (인덱스 3)
+```
+
+### Python 구현
+
+```python
+def brute_force_search(text, pattern):
+    """
+    브루트 포스 패턴 매칭 - O(nm)
+    text: 텍스트 문자열
+    pattern: 패턴 문자열
+    반환: 패턴이 나타나는 모든 시작 인덱스 리스트
+    """
+    n, m = len(text), len(pattern)
+    positions = []
+
+    for i in range(n - m + 1):
+        match = True
+        for j in range(m):
+            if text[i + j] != pattern[j]:
+                match = False
+                break
+        if match:
+            positions.append(i)
+
+    return positions
+
+
+# 테스트
+text = "ABCABDABC"
+pattern = "ABD"
+print(brute_force_search(text, pattern))  # [3]
+
+text2 = "AAAAAAA"
+pattern2 = "AAA"
+print(brute_force_search(text2, pattern2))  # [0, 1, 2, 3, 4]
+```
+
+| 항목 | 값 |
+|------|-----|
+| 시간복잡도 | 최악 O(nm), 평균 O(n) |
+| 공간복잡도 | O(1) |
+| 장점 | 구현이 단순, 전처리 불필요 |
+| 단점 | 최악의 경우 매우 느림 |
+
+
+---
+
+## KMP 알고리즘
+
+### 핵심 아이디어
+
+KMP(Knuth-Morris-Pratt) 알고리즘은 **불일치가 발생했을 때 텍스트를 되돌아가지 않고**, 패턴의 **실패 함수(failure function)** 정보를 이용하여 건너뛰는 양을 결정한다.
+
+```
+브루트 포스: 불일치 시 텍스트 포인터를 1칸만 이동
+KMP: 불일치 시 패턴의 접두사=접미사 정보를 활용해 여러 칸 건너뜀
+
+텍스트:  A B C A B C A B D
+패턴:    A B C A B D
+                  ^X (불일치)
+
+브루트 포스: 텍스트 인덱스 1부터 다시 시작
+KMP: 패턴 "ABCAB"에서 접두사=접미사 = "AB" (길이 2)
+     → 패턴을 2칸 위치로 이동하여 계속 비교
+
+텍스트:  A B C A B C A B D
+패턴:          A B C A B D
+                        ^  → 매칭 성공!
+```
+
+### 실패 함수 (Failure Function / pi 배열)
+
+`pi[i]`는 패턴의 `P[0..i]` 부분 문자열에서 **접두사와 접미사가 같은 최대 길이**를 의미한다 (전체 문자열 제외).
+
+```
+패턴: A B C A B D
+인덱스: 0 1 2 3 4 5
+
+pi[0] = 0  "A"       → 접두사=접미사 없음
+pi[1] = 0  "AB"      → 없음
+pi[2] = 0  "ABC"     → 없음
+pi[3] = 1  "ABCA"    → "A" (접두사 A = 접미사 A)
+pi[4] = 2  "ABCAB"   → "AB" (접두사 AB = 접미사 AB)
+pi[5] = 0  "ABCABD"  → 없음
+
+pi = [0, 0, 0, 1, 2, 0]
+```
+
+```
+패턴: A A B A A B A A C
+인덱스: 0 1 2 3 4 5 6 7 8
+
+pi[0] = 0  "A"
+pi[1] = 1  "AA"       → "A"
+pi[2] = 0  "AAB"      → 없음
+pi[3] = 1  "AABA"     → "A"
+pi[4] = 2  "AABAA"    → "AA"
+pi[5] = 3  "AABAAB"   → "AAB"
+pi[6] = 4  "AABAABA"  → "AABA"
+pi[7] = 5  "AABAABAA" → "AABAA"
+pi[8] = 0  "AABAABAAC" → 없음
+
+pi = [0, 1, 0, 1, 2, 3, 4, 5, 0]
+```
+
+### Python 구현
+
+```python
+def compute_failure(pattern):
+    """
+    실패 함수(pi 배열) 계산 - O(m)
+    pattern: 패턴 문자열
+    """
+    m = len(pattern)
+    pi = [0] * m
+    length = 0  # 이전 최장 접두사=접미사 길이
+    i = 1
+
+    while i < m:
+        if pattern[i] == pattern[length]:
+            length += 1
+            pi[i] = length
+            i += 1
+        else:
+            if length != 0:
+                length = pi[length - 1]  # 이전 실패 함수로 이동
+            else:
+                pi[i] = 0
+                i += 1
+
+    return pi
+
+
+def kmp_search(text, pattern):
+    """
+    KMP 패턴 매칭 - O(n + m)
+    text: 텍스트 문자열
+    pattern: 패턴 문자열
+    반환: 패턴이 나타나는 모든 시작 인덱스 리스트
+    """
+    n, m = len(text), len(pattern)
+    if m == 0:
+        return []
+
+    pi = compute_failure(pattern)
+    positions = []
+
+    j = 0  # 패턴 인덱스
+    for i in range(n):  # 텍스트 인덱스 (되돌아가지 않음!)
+        while j > 0 and text[i] != pattern[j]:
+            j = pi[j - 1]  # 실패 함수를 이용해 패턴 이동
+
+        if text[i] == pattern[j]:
+            j += 1
+
+        if j == m:  # 패턴 전체 매칭 성공
+            positions.append(i - m + 1)
+            j = pi[j - 1]  # 다음 매칭을 위해 이동
+
+    return positions
+
+
+# 테스트
+text = "ABABDABACDABABCABAB"
+pattern = "ABABCABAB"
+print(kmp_search(text, pattern))  # [9]
+
+text2 = "AAAAAA"
+pattern2 = "AAA"
+print(kmp_search(text2, pattern2))  # [0, 1, 2, 3]
+```
+
+### KMP 동작 과정 상세
+
+```
+텍스트:  A B A B D A B A C D A B A B C A B A B
+패턴:    A B A B C A B A B
+pi:     [0, 0, 1, 2, 0, 1, 2, 3, 4]
+
+i=0: T[0]=A, P[0]=A → j=1
+i=1: T[1]=B, P[1]=B → j=2
+i=2: T[2]=A, P[2]=A → j=3
+i=3: T[3]=B, P[3]=B → j=4
+i=4: T[4]=D, P[4]=C → 불일치!
+     j = pi[3] = 2   ← "AB"만큼 건너뜀
+     T[4]=D, P[2]=A → 불일치!
+     j = pi[1] = 0
+     T[4]=D, P[0]=A → 불일치!
+     j = 0 (다음으로)
+i=5: T[5]=A, P[0]=A → j=1
+...계속 진행
+```
+
+| 항목 | 값 |
+|------|-----|
+| 시간복잡도 | O(n + m) |
+| 공간복잡도 | O(m) (pi 배열) |
+| 전처리 | O(m) - 실패 함수 계산 |
+| 핵심 | 텍스트 포인터가 절대 뒤로 가지 않음 |
+
+
+---
+
+## 라빈-카프 알고리즘 (Rabin-Karp)
+
+### 핵심 아이디어
+
+**해시 함수**를 이용하여 패턴과 텍스트 부분 문자열의 해시값을 비교한다. 해시값이 같으면 실제 문자열을 비교하고, 다르면 즉시 건너뛴다. **롤링 해시(Rolling Hash)**로 해시값을 O(1)에 갱신한다.
+
+```
+텍스트: "ABCABD"  패턴: "ABD"
+
+해시 함수: h(s) = (s[0]*d^2 + s[1]*d^1 + s[2]*d^0) mod q
+  d=256 (문자 집합 크기), q=101 (소수)
+
+패턴 해시:    h("ABD") = 해시값 X
+
+롤링 해시:
+  h("ABC") = Y₁  → Y₁ ≠ X → 스킵
+  h("BCA") = Y₂  → Y₂ ≠ X → 스킵
+  h("CAB") = Y₃  → Y₃ ≠ X → 스킵
+  h("ABD") = Y₄  → Y₄ = X → 문자열 비교 → 매칭!
+
+롤링 해시 갱신:
+  h("BCA") = (h("ABC") - h(A)*d^2) * d + h(A)  ← O(1)
+```
+
+### Python 구현
+
+```python
+def rabin_karp(text, pattern, d=256, q=101):
+    """
+    라빈-카프 알고리즘 - 평균 O(n+m), 최악 O(nm)
+    d: 문자 집합 크기 (ASCII: 256)
+    q: 해시 모듈러 (큰 소수)
+    """
+    n, m = len(text), len(pattern)
+    if m > n:
+        return []
+
+    positions = []
+    h = pow(d, m - 1, q)  # d^(m-1) mod q (가장 높은 자릿수 계수)
+
+    # 패턴과 텍스트 첫 윈도우의 해시값 계산
+    p_hash = 0  # 패턴 해시
+    t_hash = 0  # 텍스트 윈도우 해시
+
+    for i in range(m):
+        p_hash = (d * p_hash + ord(pattern[i])) % q
+        t_hash = (d * t_hash + ord(text[i])) % q
+
+    # 슬라이딩 윈도우
+    for i in range(n - m + 1):
+        if p_hash == t_hash:
+            # 해시 충돌 가능 → 실제 문자열 비교
+            if text[i:i + m] == pattern:
+                positions.append(i)
+
+        # 다음 윈도우의 해시값 계산 (롤링 해시)
+        if i < n - m:
+            t_hash = (d * (t_hash - ord(text[i]) * h) + ord(text[i + m])) % q
+            if t_hash < 0:
+                t_hash += q
+
+    return positions
+
+
+# 테스트
+text = "ABABDABACDABABCABAB"
+pattern = "ABAB"
+print(rabin_karp(text, pattern))  # [0, 10, 14]
+
+# 다중 패턴 검색에 유용
+patterns = ["ABA", "BAD", "CAB"]
+for p in patterns:
+    result = rabin_karp(text, p)
+    print(f"'{p}' 위치: {result}")
+```
+
+### 라빈-카프의 장단점
+
+| 항목 | 값 |
+|------|-----|
+| 평균 시간복잡도 | O(n + m) |
+| 최악 시간복잡도 | O(nm) - 모든 해시가 충돌할 때 |
+| 공간복잡도 | O(1) |
+| 장점 | 다중 패턴 검색에 효율적 |
+| 단점 | 해시 충돌 시 성능 저하 |
+
+
+---
+
+## 트라이 (Trie)
+
+### 트라이란?
+
+트라이(Trie, Prefix Tree)는 **문자열을 효율적으로 저장하고 검색**하기 위한 트리 자료구조다. 각 노드는 하나의 문자를 나타내며, 루트에서 특정 노드까지의 경로가 하나의 문자열(또는 접두사)을 표현한다.
+
+```
+저장된 단어: "apple", "app", "apt", "bat", "bad"
+
+           루트
+          / | \
+         a  b  ...
+        /     \
+       p       a
+      / \      |
+     p   t*    t*
+     |         |
+     l         (end)  ← "bat"
+     |
+     e*        d*
+     |
+    (end)      (end)  ← "bad"
+    ← "apple"
+
+* 표시: 해당 노드에서 하나의 완전한 단어가 끝남
+  "app"은 a→p→p에서 끝남 (is_end = True)
+  "apt"는 a→p→t에서 끝남
+```
+
+### 트라이 구조 상세 ASCII 다이어그램
+
+```
+단어: "car", "card", "care", "cat", "do", "dog"
+
+                     [루트]
+                    /      \
+                 [c]        [d]
+                  |           |
+                 [a]        [o]*
+                /   \         |
+             [r]*   [t]*    [g]*
+            /    \
+         [d]*   [e]*
+
+노드별 정보:
+  [루트] → children: {c, d}
+  [c]   → children: {a}
+  [a]   → children: {r, t}
+  [r]   → is_end: True ("car"), children: {d, e}
+  [d]   → is_end: True ("card")
+  [e]   → is_end: True ("care")
+  [t]   → is_end: True ("cat")
+  [d]   → children: {o}
+  [o]   → is_end: True ("do"), children: {g}
+  [g]   → is_end: True ("dog")
+```
+
+### Python 구현
+
+```python
+class TrieNode:
+    """트라이 노드"""
+
+    def __init__(self):
+        self.children = {}   # {문자: TrieNode}
+        self.is_end = False  # 이 노드에서 단어가 끝나는지
+
+
+class Trie:
+    """
+    트라이 자료구조
+    삽입/검색/접두사 검색 모두 O(m), m = 문자열 길이
+    """
+
+    def __init__(self):
+        self.root = TrieNode()
+
+    def insert(self, word):
+        """단어 삽입 - O(m)"""
+        node = self.root
+        for char in word:
+            if char not in node.children:
+                node.children[char] = TrieNode()
+            node = node.children[char]
+        node.is_end = True
+
+    def search(self, word):
+        """단어 존재 여부 검색 - O(m)"""
+        node = self._find_node(word)
+        return node is not None and node.is_end
+
+    def starts_with(self, prefix):
+        """접두사로 시작하는 단어 존재 여부 - O(m)"""
+        return self._find_node(prefix) is not None
+
+    def _find_node(self, prefix):
+        """접두사에 해당하는 마지막 노드 반환"""
+        node = self.root
+        for char in prefix:
+            if char not in node.children:
+                return None
+            node = node.children[char]
+        return node
+
+    def autocomplete(self, prefix, limit=10):
+        """
+        자동완성: 접두사로 시작하는 모든 단어 반환
+        """
+        node = self._find_node(prefix)
+        if node is None:
+            return []
+
+        results = []
+        self._collect_words(node, prefix, results, limit)
+        return results
+
+    def _collect_words(self, node, current, results, limit):
+        """DFS로 단어 수집"""
+        if len(results) >= limit:
+            return
+        if node.is_end:
+            results.append(current)
+        for char in sorted(node.children):  # 사전순
+            self._collect_words(
+                node.children[char], current + char, results, limit
+            )
+
+    def delete(self, word):
+        """단어 삭제 - O(m)"""
+        self._delete_helper(self.root, word, 0)
+
+    def _delete_helper(self, node, word, depth):
+        """재귀적 삭제"""
+        if depth == len(word):
+            if not node.is_end:
+                return False  # 단어가 존재하지 않음
+            node.is_end = False
+            return len(node.children) == 0  # 자식 없으면 삭제 가능
+
+        char = word[depth]
+        if char not in node.children:
+            return False
+
+        should_delete = self._delete_helper(
+            node.children[char], word, depth + 1
+        )
+
+        if should_delete:
+            del node.children[char]
+            return not node.is_end and len(node.children) == 0
+
+        return False
+
+
+# 테스트
+trie = Trie()
+words = ["apple", "app", "apt", "application", "bat", "bad", "badge"]
+
+for w in words:
+    trie.insert(w)
+
+# 검색
+print(trie.search("app"))        # True
+print(trie.search("ap"))         # False (접두사일 뿐)
+print(trie.starts_with("ap"))    # True
+
+# 자동완성
+print(trie.autocomplete("app"))  # ['app', 'apple', 'application']
+print(trie.autocomplete("ba"))   # ['bad', 'badge', 'bat']
+
+# 삭제
+trie.delete("app")
+print(trie.search("app"))        # False
+print(trie.search("apple"))      # True (영향 없음)
+```
+
+### 트라이 연산 복잡도
+
+| 연산 | 시간복잡도 | 설명 |
+|------|-----------|------|
+| 삽입 | O(m) | 문자열 길이만큼 순회 |
+| 검색 | O(m) | 문자열 길이만큼 순회 |
+| 접두사 검색 | O(m) | 접두사 길이만큼 순회 |
+| 자동완성 | O(m + k) | m: 접두사 길이, k: 결과 문자 수 |
+| 삭제 | O(m) | 문자열 길이만큼 순회 |
+| 공간복잡도 | O(N * A) | N: 총 문자 수, A: 알파벳 크기 |
+
+
+---
+
+## 접미사 배열 (Suffix Array) 기초
+
+### 개념
+
+접미사 배열은 문자열의 **모든 접미사를 사전순으로 정렬한 인덱스 배열**이다. 접미사 트리보다 공간 효율적이면서 유사한 문자열 검색 기능을 제공한다.
+
+```
+문자열 S = "banana"
+
+모든 접미사:
+  인덱스 0: "banana"
+  인덱스 1: "anana"
+  인덱스 2: "nana"
+  인덱스 3: "ana"
+  인덱스 4: "na"
+  인덱스 5: "a"
+
+사전순 정렬:
+  인덱스 5: "a"
+  인덱스 3: "ana"
+  인덱스 1: "anana"
+  인덱스 0: "banana"
+  인덱스 4: "na"
+  인덱스 2: "nana"
+
+접미사 배열: [5, 3, 1, 0, 4, 2]
+```
+
+### 간단한 구현
+
+```python
+def build_suffix_array(s):
+    """
+    접미사 배열 구축 - O(n log^2 n) (단순 정렬)
+    고급 알고리즘으로 O(n log n) 또는 O(n) 가능
+    """
+    n = len(s)
+    # (접미사, 시작 인덱스) 쌍을 정렬
+    suffixes = sorted(range(n), key=lambda i: s[i:])
+    return suffixes
+
+
+def search_suffix_array(s, sa, pattern):
+    """
+    접미사 배열에서 이진 탐색으로 패턴 검색 - O(m log n)
+    m: 패턴 길이, n: 텍스트 길이
+    """
+    n, m = len(s), len(pattern)
+    lo, hi = 0, n - 1
+    result = []
+
+    # 하한(lower bound) 찾기
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        suffix = s[sa[mid]:sa[mid] + m]
+        if suffix < pattern:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    start = lo
+
+    # 상한(upper bound) 찾기
+    hi = n - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        suffix = s[sa[mid]:sa[mid] + m]
+        if suffix <= pattern:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    end = lo
+
+    return sorted(sa[start:end])
+
+
+# 테스트
+s = "banana"
+sa = build_suffix_array(s)
+print(f"접미사 배열: {sa}")  # [5, 3, 1, 0, 4, 2]
+
+# 패턴 검색
+print(search_suffix_array(s, sa, "ana"))  # [1, 3]
+print(search_suffix_array(s, sa, "na"))   # [2, 4]
+```
+
+| 항목 | 값 |
+|------|-----|
+| 구축 시간 | O(n log^2 n) ~ O(n) (알고리즘에 따라) |
+| 검색 시간 | O(m log n) - 이진 탐색 |
+| 공간복잡도 | O(n) |
+| 장점 | 접미사 트리보다 공간 효율적 |
+
+
+---
+
+## 문자열 알고리즘 활용
+
+### 자동완성 (Autocomplete)
+
+트라이를 이용한 자동완성은 검색 엔진, IDE, 스마트폰 키보드 등에서 널리 사용된다.
+
+```python
+class AutocompleteSystem:
+    """트라이 기반 자동완성 시스템 (빈도 포함)"""
+
+    def __init__(self):
+        self.root = TrieNode()
+        self.freq = {}  # 단어별 검색 빈도
+
+    def add_word(self, word, frequency=1):
+        """단어와 빈도 추가"""
+        node = self.root
+        for char in word:
+            if char not in node.children:
+                node.children[char] = TrieNode()
+            node = node.children[char]
+        node.is_end = True
+        self.freq[word] = self.freq.get(word, 0) + frequency
+
+    def suggest(self, prefix, top_k=5):
+        """접두사 기반 추천 (빈도순)"""
+        node = self.root
+        for char in prefix:
+            if char not in node.children:
+                return []
+            node = node.children[char]
+
+        # DFS로 모든 단어 수집
+        candidates = []
+        self._dfs(node, prefix, candidates)
+
+        # 빈도순 정렬, 상위 k개 반환
+        candidates.sort(key=lambda w: -self.freq.get(w, 0))
+        return candidates[:top_k]
+
+    def _dfs(self, node, current, candidates):
+        if node.is_end:
+            candidates.append(current)
+        for char in node.children:
+            self._dfs(node.children[char], current + char, candidates)
+
+
+# 테스트
+ac = AutocompleteSystem()
+words_freq = [
+    ("python", 100), ("pytorch", 80), ("pycharm", 60),
+    ("pandas", 90), ("parallelism", 20), ("package", 50)
+]
+for word, freq in words_freq:
+    ac.add_word(word, freq)
+
+print(ac.suggest("py", 3))   # ['python', 'pytorch', 'pycharm']
+print(ac.suggest("pa", 3))   # ['pandas', 'package', 'parallelism']
+```
+
+### 사전(Dictionary) 구현
+
+```python
+class Dictionary:
+    """트라이 기반 사전: 단어 + 뜻 저장"""
+
+    def __init__(self):
+        self.trie = Trie()
+        self.definitions = {}
+
+    def add(self, word, definition):
+        self.trie.insert(word)
+        self.definitions[word] = definition
+
+    def lookup(self, word):
+        if self.trie.search(word):
+            return self.definitions.get(word, "뜻 없음")
+        return None
+
+    def search_prefix(self, prefix):
+        return self.trie.autocomplete(prefix)
+```
+
+### DNA 서열 분석
+
+```python
+def find_repeated_sequences(dna, length=10):
+    """
+    DNA 서열에서 반복되는 부분 문자열 찾기
+    라빈-카프의 롤링 해시 활용
+    """
+    if len(dna) < length:
+        return []
+
+    seen = set()
+    repeated = set()
+
+    for i in range(len(dna) - length + 1):
+        seq = dna[i:i + length]
+        if seq in seen:
+            repeated.add(seq)
+        seen.add(seq)
+
+    return list(repeated)
+
+
+# 테스트
+dna = "AAAAACCCCCAAAAACCCCCCAAAAAGGGTTT"
+print(find_repeated_sequences(dna))
+# ['AAAAACCCCC', 'CCCCCAAAAA']
+```
+
+
+---
+
+## 시간복잡도 비교 테이블
+
+| 알고리즘 | 전처리 | 검색 | 공간 | 특징 |
+|----------|--------|------|------|------|
+| 브루트 포스 | 없음 | O(nm) | O(1) | 단순, 짧은 패턴에 적합 |
+| KMP | O(m) | O(n) | O(m) | 항상 O(n+m) 보장 |
+| 라빈-카프 | O(m) | 평균 O(n) | O(1) | 다중 패턴 검색에 유리 |
+| 트라이 | O(N) 구축 | O(m) | O(N*A) | 접두사 검색, 자동완성 |
+| 접미사 배열 | O(n log n) | O(m log n) | O(n) | 공간 효율적 |
+
+(n: 텍스트 길이, m: 패턴 길이, N: 총 문자 수, A: 알파벳 크기)
+
+### 알고리즘 선택 가이드
+
+| 상황 | 추천 알고리즘 | 이유 |
+|------|-------------|------|
+| 단일 패턴, 간단한 구현 | 브루트 포스 | 구현 가장 단순 |
+| 단일 패턴, 최적 성능 | KMP | O(n+m) 보장 |
+| 다중 패턴 동시 검색 | 라빈-카프 | 해시 기반 병렬 비교 |
+| 접두사 검색, 자동완성 | 트라이 | O(m) 접두사 매칭 |
+| 반복 패턴 찾기 | 접미사 배열 | 정렬된 접미사로 이진 탐색 |
+
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 브루트 포스 | 모든 위치에서 비교, O(nm), 전처리 없음 |
+| KMP | 실패 함수로 불필요한 비교 스킵, O(n+m) |
+| 실패 함수 | 접두사=접미사 최대 길이, 불일치 시 이동량 결정 |
+| 라빈-카프 | 롤링 해시로 O(1) 해시 갱신, 평균 O(n+m) |
+| 트라이 | 접두사 트리, 삽입/검색 O(m), 자동완성에 최적 |
+| 접미사 배열 | 모든 접미사의 정렬된 인덱스, O(m log n) 검색 |
+| 활용 분야 | 자동완성, 검색 엔진, DNA 분석, 맞춤법 교정 |

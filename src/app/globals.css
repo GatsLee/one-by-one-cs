@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-paper: #fbf8f3;
+  --color-paper-dark: #f4efe6;
+  --color-paper-modal: #fdfbf7;
+  --color-ink: #2b2b2b;
+  --color-ink-light: #5e5e5e;
+  --color-wood: #d4c5b0;
+  --color-wood-dark: #b0a08b;
+  --color-book-red: #a63a3a;
+  --color-book-blue: #3a5fa6;
+  --color-book-green: #3a8f5a;
+  --color-book-charcoal: #333333;
+  --color-book-umber: #634e3b;
+  --color-book-navy: #1e2b42;
+
+  --font-display: "Noto Sans KR", sans-serif;
+  --font-serif: "Noto Sans KR", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-handwriting: "Noto Sans KR", sans-serif;
+}
+
+body {
+  background-color: #fbf8f3;
+  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+.paper-texture {
+  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperNoise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperNoise)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+.notebook-lines {
+  background-image: linear-gradient(#e5e5e5 1px, transparent 1px);
+  background-size: 100% 2.5rem;
+  background-position: 0 0.5rem;
+}
+
+::-webkit-scrollbar { width: 6px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: rgba(94, 94, 94, 0.3); border-radius: 10px; }
+
+pre, pre code {
+  background-color: #1e1e2e !important;
+  color: #e4e4e7 !important;
+}

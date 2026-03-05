@@ -1,0 +1,777 @@
+---
+title: "입출력 시스템"
+topic: "02-os"
+order: 7
+---
+
+## 핵심 개념
+
+운영체제의 **입출력(I/O) 시스템**은 다양한 하드웨어 장치를 관리하고,
+응용 프로그램에 통일된 인터페이스를 제공하는 역할을 한다.
+키보드, 디스크, 네트워크 카드, GPU 등 수백 가지 장치를 효율적으로
+제어하는 것은 운영체제의 핵심 기능 중 하나이다.
+
+```
+┌─────────────────────────────────────────┐
+│            응용 프로그램                  │
+├─────────────────────────────────────────┤
+│     커널 I/O 서브시스템                   │
+│  (스케줄링, 버퍼링, 캐싱, 스풀링)         │
+├─────────────────────────────────────────┤
+│         장치 드라이버                     │
+├────────┬────────┬────────┬──────────────┤
+│ 디스크  │ 키보드 │ 네트워크│  기타 장치   │
+│컨트롤러│컨트롤러│컨트롤러 │  컨트롤러    │
+├────────┴────────┴────────┴──────────────┤
+│            하드웨어 장치                  │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## I/O 하드웨어
+
+### 기본 구성 요소
+
+I/O 장치와 컴퓨터 시스템은 다음 요소로 연결된다:
+
+| 구성 요소 | 역할 | 예시 |
+|-----------|------|------|
+| **포트(Port)** | 장치와의 연결 지점 | USB 포트, SATA 포트 |
+| **버스(Bus)** | 여러 장치를 연결하는 공유 통신 경로 | PCI, PCIe, USB 버스 |
+| **컨트롤러(Controller)** | 포트/버스/장치를 관리하는 전자 회로 | 디스크 컨트롤러, USB 호스트 컨트롤러 |
+| **장치(Device)** | 실제 I/O를 수행하는 하드웨어 | HDD, SSD, 키보드, 마우스 |
+
+### 장치 컨트롤러의 레지스터
+
+CPU는 컨트롤러의 레지스터를 통해 장치와 통신한다:
+
+```
+┌─────────────────────────────────────┐
+│           장치 컨트롤러              │
+├──────────┬──────────┬───────────────┤
+│ 상태     │ 명령     │ 데이터        │
+│ 레지스터 │ 레지스터  │ 레지스터      │
+│          │          │               │
+│ busy=1   │ read     │ [데이터 버퍼] │
+│ done=0   │ write    │               │
+│ error=0  │ reset    │               │
+└──────────┴──────────┴───────────────┘
+```
+
+- **상태 레지스터**: 장치의 현재 상태 (준비, 완료, 오류)
+- **명령 레지스터**: CPU가 장치에게 내리는 명령
+- **데이터 레지스터**: 전송할 데이터를 임시 저장
+
+### I/O 주소 접근 방식
+
+| 방식 | 설명 | 예시 |
+|------|------|------|
+| **포트 매핑 I/O** | 별도의 I/O 주소 공간 사용, 전용 명령어(in/out) | x86 (0x60=키보드) |
+| **메모리 매핑 I/O** | 메모리 주소 공간에 장치 레지스터 매핑 | ARM, GPU VRAM |
+
+```python
+# 메모리 매핑 I/O 개념 시뮬레이션
+class MemoryMappedIO:
+    """메모리 매핑 I/O - 장치 레지스터를 메모리 주소로 접근"""
+    def __init__(self):
+        self.memory = {}  # 주소 → 값 매핑
+
+    def write(self, address, value):
+        """특정 메모리 주소에 값 쓰기 (장치에 명령 전달)"""
+        self.memory[address] = value
+        if 0xFFFF0000 <= address <= 0xFFFF00FF:
+            print(f"장치 레지스터 쓰기: 주소 {hex(address)} = {value}")
+
+    def read(self, address):
+        """특정 메모리 주소에서 값 읽기 (장치 상태 확인)"""
+        return self.memory.get(address, 0)
+
+mmio = MemoryMappedIO()
+# GPU VRAM에 픽셀 데이터 쓰기 (개념적 예시)
+mmio.write(0xFFFF0000, 0xFF)  # 장치 레지스터에 명령 전달
+```
+
+---
+
+## I/O 제어 방식
+
+CPU가 I/O 장치와 데이터를 주고받는 세 가지 핵심 방식이다.
+
+### 폴링(Polling) / 프로그램 I/O
+
+CPU가 장치의 상태 레지스터를 **반복적으로 확인**하는 방식이다.
+
+```
+CPU                        장치 컨트롤러
+ │                              │
+ │  1. 명령 레지스터에 쓰기      │
+ │─────────────────────────────▶│
+ │                              │
+ │  2. 상태 레지스터 읽기 (busy?)│
+ │◀─────────────────────────────│  busy=1
+ │  3. 상태 레지스터 읽기 (busy?)│
+ │◀─────────────────────────────│  busy=1
+ │  4. 상태 레지스터 읽기 (busy?)│
+ │◀─────────────────────────────│  busy=1
+ │       ... (반복 대기) ...     │
+ │  N. 상태 레지스터 읽기        │
+ │◀─────────────────────────────│  busy=0, done=1
+ │                              │
+ │  데이터 레지스터 읽기          │
+ │◀─────────────────────────────│
+ │                              │
+```
+
+```python
+# 폴링 방식 시뮬레이션
+import time
+
+class PollingIODevice:
+    def __init__(self, name, process_time=0.5):
+        self.name = name
+        self.busy = False
+        self.data = None
+        self.process_time = process_time
+
+    def send_command(self, command):
+        """장치에 명령 전달"""
+        self.busy = True
+        self.data = None
+        print(f"[{self.name}] 명령 수신: {command}")
+        # 실제로는 하드웨어가 비동기로 처리
+        import threading
+        threading.Timer(self.process_time,
+                        self._complete, args=[command]).start()
+
+    def _complete(self, command):
+        self.busy = False
+        self.data = f"{command}의 결과"
+
+    def poll_status(self):
+        """CPU가 상태를 확인 (폴링)"""
+        return not self.busy
+
+    def read_data(self):
+        return self.data
+
+# 폴링 루프
+device = PollingIODevice("디스크", process_time=0.3)
+device.send_command("섹터 42 읽기")
+
+poll_count = 0
+while not device.poll_status():
+    poll_count += 1
+    time.sleep(0.05)  # CPU가 계속 확인 (바쁜 대기)
+
+print(f"폴링 횟수: {poll_count}")
+print(f"데이터: {device.read_data()}")
+```
+
+### 인터럽트(Interrupt) 구동 I/O
+
+장치가 작업을 완료하면 **인터럽트 신호**를 보내 CPU에게 알린다.
+
+```
+CPU                        장치 컨트롤러
+ │                              │
+ │  1. 명령 레지스터에 쓰기      │
+ │─────────────────────────────▶│
+ │                              │
+ │  2. 다른 작업 수행            │  장치가 독립적으로
+ │  (프로세스 실행 등)           │  I/O 처리 중...
+ │     ...                      │     ...
+ │                              │
+ │  3. 인터럽트 발생!            │
+ │◀═══════════════════ IRQ ════│  완료!
+ │                              │
+ │  4. 인터럽트 핸들러 실행      │
+ │     - 현재 상태 저장          │
+ │     - 데이터 전송             │
+ │     - 프로세스에 알림         │
+ │                              │
+ │  5. 원래 작업 복귀            │
+ │                              │
+```
+
+```python
+# 인터럽트 구동 I/O 시뮬레이션
+import threading
+
+class InterruptController:
+    """인터럽트 컨트롤러 시뮬레이션"""
+    def __init__(self):
+        self.handlers = {}       # IRQ 번호 → 핸들러 매핑
+        self.pending = []        # 대기 중인 인터럽트
+
+    def register_handler(self, irq, handler):
+        """인터럽트 핸들러 등록"""
+        self.handlers[irq] = handler
+        print(f"IRQ {irq} 핸들러 등록 완료")
+
+    def raise_interrupt(self, irq, data=None):
+        """인터럽트 발생"""
+        print(f"[IRQ {irq}] 인터럽트 발생!")
+        if irq in self.handlers:
+            # 현재 상태 저장 → 핸들러 실행 → 복귀
+            self.handlers[irq](data)
+
+# 사용 예
+ic = InterruptController()
+
+def disk_handler(data):
+    print(f"  디스크 인터럽트 처리: {data}")
+
+def keyboard_handler(data):
+    print(f"  키보드 인터럽트 처리: 키 '{data}' 입력")
+
+ic.register_handler(14, disk_handler)    # IRQ 14 = 디스크
+ic.register_handler(1, keyboard_handler) # IRQ 1 = 키보드
+
+ic.raise_interrupt(14, "섹터 42 읽기 완료")
+ic.raise_interrupt(1, "A")
+```
+
+### DMA (Direct Memory Access)
+
+대량 데이터 전송 시 **CPU 개입 없이** 장치가 메모리에 직접 접근하는 방식이다.
+
+```
+       CPU                 DMA 컨트롤러           메모리
+        │                      │                   │
+   1. DMA 초기화:              │                   │
+   ─────────────────▶          │                   │
+   (소스, 목적지, 크기)         │                   │
+        │                      │                   │
+   2. CPU는 다른 작업 수행      │                   │
+        │               3. 데이터 직접 전송         │
+        │                ═════════════════════════▶ │
+        │                ═════════════════════════▶ │
+        │                ═════════════════════════▶ │
+        │                      │   (블록 단위)      │
+        │                      │                   │
+   4. 전송 완료 인터럽트  ◀════│                   │
+        │                      │                   │
+   5. 완료 처리                │                   │
+        │                      │                   │
+```
+
+```python
+# DMA 전송 시뮬레이션
+class DMAController:
+    """DMA 컨트롤러 시뮬레이션"""
+    def __init__(self, memory):
+        self.memory = memory  # 시스템 메모리 참조
+
+    def initiate_transfer(self, source_addr, dest_addr, size,
+                          callback=None):
+        """
+        DMA 전송 시작
+        CPU는 초기 설정만 하고, 실제 전송은 DMA가 수행
+        """
+        print(f"DMA 전송 시작: {hex(source_addr)} → {hex(dest_addr)}, "
+              f"크기: {size} 바이트")
+
+        # CPU 개입 없이 데이터 전송 (실제로는 하드웨어가 수행)
+        transferred = 0
+        block_size = 512  # 한 번에 전송하는 단위
+        while transferred < size:
+            chunk = min(block_size, size - transferred)
+            # 메모리 간 직접 복사 (CPU 사이클 소모 없음)
+            src = source_addr + transferred
+            dst = dest_addr + transferred
+            self.memory[dst:dst+chunk] = self.memory[src:src+chunk]
+            transferred += chunk
+
+        print(f"DMA 전송 완료: {transferred} 바이트 전송")
+
+        # 전송 완료 인터럽트 발생
+        if callback:
+            callback(transferred)
+
+# 사용 예
+memory = bytearray(65536)  # 64KB 메모리
+memory[0x1000:0x1004] = b"DATA"  # 디스크 버퍼 영역
+
+dma = DMAController(memory)
+dma.initiate_transfer(
+    source_addr=0x1000,
+    dest_addr=0x4000,
+    size=4096,
+    callback=lambda n: print(f"  인터럽트: {n}바이트 전송 완료")
+)
+```
+
+### I/O 제어 방식 비교
+
+| 항목 | 폴링 | 인터럽트 | DMA |
+|------|------|----------|-----|
+| **CPU 관여도** | 매우 높음 (바쁜 대기) | 보통 (핸들러 실행) | 낮음 (초기화만) |
+| **데이터 전송** | CPU가 바이트 단위 | CPU가 바이트 단위 | DMA가 블록 단위 |
+| **CPU 효율** | 낮음 | 높음 | 매우 높음 |
+| **구현 복잡도** | 단순 | 보통 | 복잡 |
+| **적합 사례** | 빠른 장치, 짧은 대기 | 일반 I/O | 대량 데이터 전송 |
+| **대표 사용** | 임베디드 SPI | 키보드, 마우스 | 디스크, 네트워크 |
+
+---
+
+## 커널 I/O 서브시스템
+
+운영체제 커널은 다양한 기법으로 I/O 성능을 최적화한다.
+
+### I/O 스케줄링
+
+여러 I/O 요청의 실행 순서를 재배치하여 성능을 향상시킨다.
+
+```python
+# I/O 요청 큐와 스케줄링 개념
+from collections import deque
+
+class IOScheduler:
+    def __init__(self):
+        self.request_queue = deque()
+
+    def submit(self, request):
+        """I/O 요청 제출"""
+        self.request_queue.append(request)
+        print(f"요청 제출: {request}")
+
+    def reorder(self):
+        """요청 재정렬 (디스크 스케줄링 등)"""
+        # 예: 섹터 번호 기준 정렬
+        sorted_queue = deque(sorted(self.request_queue,
+                                     key=lambda r: r['sector']))
+        self.request_queue = sorted_queue
+        print("요청 재정렬 완료")
+
+    def dispatch(self):
+        """다음 요청 디스패치"""
+        if self.request_queue:
+            req = self.request_queue.popleft()
+            print(f"디스패치: 섹터 {req['sector']}")
+            return req
+        return None
+
+scheduler = IOScheduler()
+scheduler.submit({'sector': 98, 'type': 'read'})
+scheduler.submit({'sector': 37, 'type': 'read'})
+scheduler.submit({'sector': 14, 'type': 'write'})
+scheduler.reorder()  # 14 → 37 → 98 순으로 재정렬
+```
+
+### 버퍼링(Buffering)
+
+데이터 전송 시 **중간 저장 공간(버퍼)**을 사용하여 속도 차이를 완화한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ 단일 버퍼 (Single Buffer)                                │
+│                                                          │
+│  장치 ──▶ [버퍼] ──▶ 사용자 공간                          │
+│           (커널)                                          │
+│  장치가 버퍼에 쓰는 동안, CPU는 이전 버퍼 데이터 처리 가능  │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ 이중 버퍼 (Double Buffer)                                │
+│                                                          │
+│  장치 ──▶ [버퍼 A] ──▶ 사용자 공간                        │
+│      └──▶ [버퍼 B] ──┘                                   │
+│                                                          │
+│  장치가 버퍼 A에 쓰는 동안, CPU는 버퍼 B의 데이터 처리     │
+│  → 오버래핑으로 처리량 증가                                │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ 순환 버퍼 (Circular Buffer)                              │
+│                                                          │
+│  장치 ──▶ [0][1][2][3][4][5][6][7] ──▶ 사용자 공간       │
+│           ↑ write_ptr    ↑ read_ptr                      │
+│                                                          │
+│  생산자-소비자 패턴으로 연속적인 데이터 스트림 처리          │
+└──────────────────────────────────────────────────────────┘
+```
+
+```python
+# 순환 버퍼 구현
+class CircularBuffer:
+    """순환 버퍼 - I/O 버퍼링에 사용"""
+    def __init__(self, size):
+        self.buffer = [None] * size
+        self.size = size
+        self.head = 0    # 쓰기 포인터
+        self.tail = 0    # 읽기 포인터
+        self.count = 0   # 현재 저장된 항목 수
+
+    def write(self, data):
+        """버퍼에 데이터 쓰기 (생산자)"""
+        if self.count == self.size:
+            print("버퍼 가득 참! (오버플로우)")
+            return False
+        self.buffer[self.head] = data
+        self.head = (self.head + 1) % self.size
+        self.count += 1
+        return True
+
+    def read(self):
+        """버퍼에서 데이터 읽기 (소비자)"""
+        if self.count == 0:
+            print("버퍼 비었음! (언더플로우)")
+            return None
+        data = self.buffer[self.tail]
+        self.tail = (self.tail + 1) % self.size
+        self.count -= 1
+        return data
+
+    def __repr__(self):
+        items = []
+        idx = self.tail
+        for _ in range(self.count):
+            items.append(str(self.buffer[idx]))
+            idx = (idx + 1) % self.size
+        return f"CircularBuffer([{', '.join(items)}])"
+
+# 사용 예
+buf = CircularBuffer(4)
+buf.write("패킷1")
+buf.write("패킷2")
+buf.write("패킷3")
+print(buf)           # CircularBuffer([패킷1, 패킷2, 패킷3])
+print(buf.read())    # 패킷1
+buf.write("패킷4")
+buf.write("패킷5")
+print(buf)           # CircularBuffer([패킷2, 패킷3, 패킷4, 패킷5])
+```
+
+### 캐싱(Caching)
+
+자주 접근하는 데이터를 **빠른 메모리**에 복사본으로 유지한다.
+
+| 구분 | 버퍼링 | 캐싱 |
+|------|--------|------|
+| **목적** | 속도 차이 완화, 전송 단위 조절 | 접근 속도 향상 |
+| **데이터 위치** | 유일한 복사본 | 원본의 복사본 |
+| **동기화** | 필요 없음 | 일관성 유지 필요 |
+
+### 스풀링(Spooling)
+
+**동시 접근이 불가능한 장치**(예: 프린터)를 위해 출력 데이터를 디스크에
+임시 저장한 후 순차적으로 처리하는 기법이다.
+
+```
+프로세스 A ──▶ ┌─────────┐
+프로세스 B ──▶ │ 스풀 큐  │ ──▶ 프린터
+프로세스 C ──▶ │ (디스크) │
+               └─────────┘
+
+각 프로세스는 자신의 출력이 완료된 것처럼 느끼고,
+실제 인쇄는 스풀러 데몬이 순차적으로 처리한다.
+```
+
+---
+
+## 디스크 스케줄링 알고리즘
+
+디스크 헤드의 이동 거리를 최소화하여 I/O 성능을 향상시키는 알고리즘이다.
+
+**공통 조건**: 현재 헤드 위치 = 53, 요청 큐 = [98, 183, 37, 122, 14, 124, 65, 67]
+
+### FCFS (First-Come, First-Served)
+
+요청이 도착한 순서대로 처리한다.
+
+```
+헤드 이동: 53 → 98 → 183 → 37 → 122 → 14 → 124 → 65 → 67
+
+  0    14   37  53  65 67  98  122 124     183
+  |     |    |   |   ||    |    |   |       |
+  |     |    |   *───────▶ |    |   |       |
+  |     |    |          |──────────────────▶|
+  |     |    |◀─────────────────────────────|
+  |     |    |──────────────▶    |   |      |
+  |     |◀───────────────────────|   |      |
+  |     |────────────────────────────▶      |
+  |     |                    ▶|  |          |
+  |     |                     |▶ |          |
+
+총 헤드 이동 거리: 640 실린더
+```
+
+### SSTF (Shortest Seek Time First)
+
+현재 위치에서 **가장 가까운 요청**을 먼저 처리한다.
+
+```
+헤드 이동: 53 → 65 → 67 → 37 → 14 → 98 → 122 → 124 → 183
+
+총 헤드 이동 거리: 236 실린더
+
+* 단점: 기아(starvation) 발생 가능 - 먼 요청이 계속 밀림
+```
+
+### SCAN (엘리베이터 알고리즘)
+
+헤드가 한 방향으로 끝까지 이동하며 요청을 처리하고, 끝에 도달하면 반대 방향으로 이동한다.
+
+```
+방향: → (증가 방향으로 이동 중)
+
+  0    14   37  53  65 67  98  122 124     183  199
+  |     |    |   |   ||    |    |   |       |    |
+  |     |    |   *──▶||───▶|───▶|──▶|──────▶|───▶| (끝)
+  |     |◀───|───────────────────────────────────|  (방향 전환)
+  |◀────|    |
+
+총 헤드 이동 거리: 331 실린더 (53→199→14)
+```
+
+### C-SCAN (Circular SCAN)
+
+한 방향으로만 서비스하고, 끝에 도달하면 **시작으로 즉시 이동**한다.
+
+```
+방향: → (항상 증가 방향으로만 서비스)
+
+  0    14   37  53  65 67  98  122 124     183  199
+  |     |    |   |   ||    |    |   |       |    |
+  |     |    |   *──▶||───▶|───▶|──▶|──────▶|───▶| (끝)
+  |◀═══════════════════════════════════════════════| (점프, 서비스 없음)
+  |────▶|───▶|
+
+총 헤드 이동 거리: 382 실린더
+* 대기 시간이 더 균일함
+```
+
+### LOOK / C-LOOK
+
+SCAN/C-SCAN의 변형으로, 실제 요청이 있는 범위까지만 이동한다.
+
+```
+C-LOOK:
+  0    14   37  53  65 67  98  122 124     183
+  |     |    |   |   ||    |    |   |       |
+  |     |    |   *──▶||───▶|───▶|──▶|──────▶| (마지막 요청)
+  |     |◀══════════════════════════════════| (점프)
+  |────▶|───▶|
+
+총 헤드 이동 거리: 299 실린더
+```
+
+### 디스크 스케줄링 비교
+
+```python
+# 디스크 스케줄링 알고리즘 시뮬레이션
+def fcfs(head, requests):
+    """FCFS 스케줄링"""
+    total_movement = 0
+    current = head
+    order = []
+    for r in requests:
+        total_movement += abs(current - r)
+        current = r
+        order.append(r)
+    return total_movement, order
+
+def sstf(head, requests):
+    """SSTF 스케줄링"""
+    total_movement = 0
+    current = head
+    remaining = list(requests)
+    order = []
+    while remaining:
+        # 가장 가까운 요청 선택
+        closest = min(remaining, key=lambda r: abs(current - r))
+        total_movement += abs(current - closest)
+        current = closest
+        remaining.remove(closest)
+        order.append(closest)
+    return total_movement, order
+
+def scan(head, requests, direction='right', max_cylinder=199):
+    """SCAN 스케줄링"""
+    total_movement = 0
+    current = head
+    order = []
+    left = sorted([r for r in requests if r < head])
+    right = sorted([r for r in requests if r >= head])
+
+    if direction == 'right':
+        # 오른쪽으로 이동
+        for r in right:
+            total_movement += abs(current - r)
+            current = r
+            order.append(r)
+        # 끝까지 이동
+        if right:
+            total_movement += abs(current - max_cylinder)
+            current = max_cylinder
+        # 왼쪽으로 이동
+        for r in reversed(left):
+            total_movement += abs(current - r)
+            current = r
+            order.append(r)
+    return total_movement, order
+
+# 실행
+head = 53
+requests = [98, 183, 37, 122, 14, 124, 65, 67]
+
+for name, func in [("FCFS", fcfs), ("SSTF", sstf)]:
+    movement, order = func(head, requests)
+    print(f"{name}: 이동거리={movement}, 순서={order}")
+
+movement, order = scan(head, requests)
+print(f"SCAN: 이동거리={movement}, 순서={order}")
+```
+
+| 알고리즘 | 총 이동 거리 | 장점 | 단점 |
+|----------|-------------|------|------|
+| **FCFS** | 640 | 공정, 구현 간단 | 성능 최악 |
+| **SSTF** | 236 | 평균 대기시간 짧음 | 기아 가능 |
+| **SCAN** | 331 | 기아 없음 | 끝 근처 불공평 |
+| **C-SCAN** | 382 | 균일한 대기시간 | 이동 거리 약간 증가 |
+| **C-LOOK** | 299 | SCAN보다 효율적 | 구현 약간 복잡 |
+
+---
+
+## RAID (Redundant Array of Independent Disks)
+
+여러 개의 디스크를 조합하여 **성능 향상**과 **데이터 보호**를 달성하는 기술이다.
+
+```
+┌────────────────────────────────────────────────────────┐
+│ RAID 0 - 스트라이핑 (Striping)                          │
+│                                                        │
+│  데이터: [A1][A2][A3][A4][A5][A6]                       │
+│                                                        │
+│  디스크0: [A1][A3][A5]                                  │
+│  디스크1: [A2][A4][A6]                                  │
+│                                                        │
+│  장점: 읽기/쓰기 속도 2배                                │
+│  단점: 중복성 없음 - 디스크 하나 고장 시 전체 데이터 손실  │
+└────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────┐
+│ RAID 1 - 미러링 (Mirroring)                             │
+│                                                        │
+│  데이터: [A1][A2][A3]                                    │
+│                                                        │
+│  디스크0: [A1][A2][A3]  (원본)                           │
+│  디스크1: [A1][A2][A3]  (복제본)                         │
+│                                                        │
+│  장점: 완전한 중복성, 읽기 속도 향상                      │
+│  단점: 저장 효율 50%, 쓰기 시 두 번 기록                  │
+└────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────┐
+│ RAID 5 - 분산 패리티 (Distributed Parity)               │
+│                                                        │
+│  디스크0: [A1]  [B2]  [C_P]                             │
+│  디스크1: [A2]  [B_P] [C1]                              │
+│  디스크2: [A_P] [B1]  [C2]                              │
+│                                                        │
+│  _P = 패리티 블록 (XOR로 계산)                           │
+│  장점: 읽기 빠름, 디스크 1개 고장 허용, 저장 효율 좋음    │
+│  단점: 쓰기 시 패리티 계산 오버헤드                       │
+└────────────────────────────────────────────────────────┘
+```
+
+### RAID 레벨 비교
+
+| 항목 | RAID 0 | RAID 1 | RAID 5 | RAID 6 | RAID 10 |
+|------|--------|--------|--------|--------|---------|
+| **최소 디스크** | 2 | 2 | 3 | 4 | 4 |
+| **중복성** | 없음 | 미러링 | 단일 패리티 | 이중 패리티 | 미러+스트라이프 |
+| **고장 허용** | 0개 | 1개 | 1개 | 2개 | 미러당 1개 |
+| **저장 효율** | 100% | 50% | (n-1)/n | (n-2)/n | 50% |
+| **읽기 성능** | 우수 | 우수 | 우수 | 우수 | 우수 |
+| **쓰기 성능** | 우수 | 보통 | 보통 | 낮음 | 보통 |
+| **용도** | 임시 데이터 | OS, 로그 | 범용 서버 | 고가용성 | DB 서버 |
+
+```python
+# RAID 5 패리티 계산 시뮬레이션
+def raid5_parity(blocks):
+    """XOR 연산으로 패리티 블록 계산"""
+    parity = 0
+    for block in blocks:
+        parity ^= block
+    return parity
+
+def raid5_recover(blocks, parity, failed_index):
+    """고장난 디스크의 데이터 복구"""
+    # XOR의 성질: A ^ B ^ C = P → A = B ^ C ^ P
+    result = parity
+    for i, block in enumerate(blocks):
+        if i != failed_index:
+            result ^= block
+    return result
+
+# 예시: 3개 디스크의 데이터
+data_blocks = [0b10110011, 0b01101010, 0b11001100]
+parity = raid5_parity(data_blocks)
+print(f"패리티: {bin(parity)}")
+
+# 디스크 1 고장 시 복구
+recovered = raid5_recover(data_blocks, parity, failed_index=1)
+print(f"원본 디스크1: {bin(data_blocks[1])}")
+print(f"복구 디스크1: {bin(recovered)}")
+print(f"복구 성공: {recovered == data_blocks[1]}")  # True
+```
+
+---
+
+## SSD vs HDD 비교
+
+| 항목 | HDD (하드 디스크) | SSD (솔리드 스테이트) |
+|------|-------------------|---------------------|
+| **저장 매체** | 자기 디스크 플래터 | NAND 플래시 메모리 |
+| **동작 부품** | 회전 플래터 + 이동 헤드 | 없음 (반도체) |
+| **읽기 속도** | 100~200 MB/s | 500~7000 MB/s (NVMe) |
+| **IOPS** | ~200 | 100,000~1,000,000 |
+| **지연 시간** | 5~10ms | 0.02~0.1ms |
+| **임의 접근** | 느림 (헤드 이동 필요) | 빠름 (전자적 접근) |
+| **전력 소비** | 높음 | 낮음 |
+| **내구성** | 진동/충격에 약함 | 강함 |
+| **수명** | 기계적 마모 | 쓰기 횟수 제한 (TBW) |
+| **가격/TB** | 낮음 | 높음 |
+| **디스크 스케줄링** | 필수 (헤드 이동 최적화) | 불필요 (NOOP 사용) |
+
+### SSD 특유의 문제
+
+- **쓰기 증폭(Write Amplification)**: 페이지 단위 쓰기, 블록 단위 삭제로 인해 실제 쓰기량이 증가
+- **가비지 컬렉션(GC)**: 유효 페이지를 이동하고 빈 블록을 확보하는 과정
+- **TRIM 명령**: OS가 삭제된 블록을 SSD에 알려 GC 효율 향상
+- **웨어 레벨링(Wear Leveling)**: 쓰기를 고르게 분산하여 수명 연장
+
+```
+SSD 내부 구조:
+┌───────────────────────────────────────┐
+│           SSD 컨트롤러 (FTL)          │
+│  ┌─────────┬──────────┬────────────┐  │
+│  │ 주소 변환│ 웨어 레벨링│ 가비지 컬렉션│  │
+│  └─────────┴──────────┴────────────┘  │
+├───────────────────────────────────────┤
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ │
+│  │NAND 0│ │NAND 1│ │NAND 2│ │NAND 3│ │
+│  │채널 0│ │채널 1│ │채널 2│ │채널 3│ │
+│  └──────┘ └──────┘ └──────┘ └──────┘ │
+│  (병렬 접근으로 대역폭 극대화)          │
+└───────────────────────────────────────┘
+```
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| **I/O 하드웨어** | 포트, 버스, 컨트롤러를 통해 CPU와 장치 연결 |
+| **폴링** | CPU가 상태를 반복 확인, 단순하지만 CPU 낭비 |
+| **인터럽트** | 장치가 완료 시 신호 전송, CPU 효율 높음 |
+| **DMA** | 대량 데이터를 CPU 개입 없이 직접 전송 |
+| **버퍼링** | 속도 차이 완화를 위한 중간 저장 (단일/이중/순환) |
+| **캐싱** | 자주 접근하는 데이터의 빠른 복사본 유지 |
+| **스풀링** | 독점 장치(프린터 등)의 출력을 큐잉 |
+| **디스크 스케줄링** | FCFS, SSTF, SCAN, C-SCAN, LOOK으로 헤드 이동 최적화 |
+| **RAID** | 여러 디스크 조합으로 성능/안정성 향상 (0, 1, 5, 6, 10) |
+| **SSD** | 플래시 기반, 임의 접근 빠름, 쓰기 증폭/수명 관리 필요 |

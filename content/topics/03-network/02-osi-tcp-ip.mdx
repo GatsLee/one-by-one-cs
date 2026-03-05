@@ -1,0 +1,422 @@
+---
+title: "OSI 7계층과 TCP/IP"
+topic: "03-network"
+order: 02
+---
+
+
+## 핵심 개념
+
+### 왜 계층 모델이 필요한가?
+
+네트워크 통신은 매우 복잡하다. 물리적 전기 신호부터 웹 페이지 렌더링까지 수많은 과정이 필요하다. 이것을 **계층(Layer)**으로 나누면:
+
+- 각 계층이 독립적으로 발전 가능 (하드웨어 변경이 소프트웨어에 영향 없음)
+- 문제 발생 시 어느 계층의 문제인지 빠르게 파악 가능
+- 표준화 용이
+
+> **비유**: 우편 시스템도 계층적이다. 편지 작성(응용) → 봉투에 넣기(표현) → 우체국 접수(세션) → 배송 경로 결정(네트워크) → 트럭으로 운반(전송/데이터링크) → 도로(물리)
+
+### OSI 7계층 모델
+
+ISO(국제 표준화 기구)에서 정의한 통신 표준 모델. **이론적 참조 모델**.
+
+```
+┌───────────────────────────────────────────┐
+│ 7. 응용 계층 (Application)                 │  ← 사용자와 직접 상호작용
+│    HTTP, FTP, SMTP, DNS                    │
+├───────────────────────────────────────────┤
+│ 6. 표현 계층 (Presentation)                │  ← 데이터 형식 변환
+│    암호화, 압축, 인코딩 (SSL/TLS, JPEG)     │
+├───────────────────────────────────────────┤
+│ 5. 세션 계층 (Session)                     │  ← 연결 관리
+│    세션 설정/유지/종료 (NetBIOS, RPC)        │
+├───────────────────────────────────────────┤
+│ 4. 전송 계층 (Transport)                   │  ← 종단 간 통신
+│    TCP, UDP / 포트 번호                     │
+├───────────────────────────────────────────┤
+│ 3. 네트워크 계층 (Network)                  │  ← 라우팅, 경로 결정
+│    IP, ICMP, ARP / IP 주소                  │
+├───────────────────────────────────────────┤
+│ 2. 데이터 링크 계층 (Data Link)             │  ← 인접 노드 간 전송
+│    이더넷, Wi-Fi / MAC 주소                  │
+├───────────────────────────────────────────┤
+│ 1. 물리 계층 (Physical)                    │  ← 비트 전송
+│    전기 신호, 광 신호, 케이블, 허브            │
+└───────────────────────────────────────────┘
+```
+
+### 각 계층 상세 설명
+
+#### 7계층 — 응용 계층 (Application Layer)
+
+사용자가 직접 사용하는 응용 프로그램과 네트워크 사이의 인터페이스.
+
+| 프로토콜 | 용도 | 포트 |
+|---------|------|------|
+| HTTP/HTTPS | 웹 페이지 전송 | 80/443 |
+| FTP | 파일 전송 | 20, 21 |
+| SMTP | 이메일 발송 | 25, 587 |
+| DNS | 도메인 → IP 변환 | 53 |
+| SSH | 원격 접속 (암호화) | 22 |
+
+#### 6계층 — 표현 계층 (Presentation Layer)
+
+데이터의 **형식 변환, 암호화, 압축**을 담당.
+
+- 데이터 인코딩: ASCII, UTF-8, EBCDIC 변환
+- 암호화/복호화: SSL/TLS (실질적으로 4~7계층에 걸침)
+- 압축: 데이터 크기 줄이기
+
+#### 5계층 — 세션 계층 (Session Layer)
+
+통신 **세션의 설정, 유지, 종료**를 관리.
+
+- 대화 제어: 반이중(Half-duplex), 전이중(Full-duplex)
+- 동기화: 체크포인트 설정으로 오류 시 복구 지점 제공
+- 실제로는 응용 계층에 통합되는 경우가 많음
+
+#### 4계층 — 전송 계층 (Transport Layer)
+
+**종단 간(End-to-End)** 신뢰성 있는 데이터 전송. 포트 번호로 프로세스 식별.
+
+```
+송신 호스트                            수신 호스트
+┌──────────┐                         ┌──────────┐
+│ 프로세스 A │ ← 포트 12345            │ 프로세스 B │ ← 포트 80
+│ (브라우저) │ ─────────────────────→ │ (웹서버)  │
+└──────────┘   TCP 연결 (신뢰성)      └──────────┘
+```
+
+- **TCP**: 연결 지향, 신뢰성, 순서 보장, 흐름/혼잡 제어
+- **UDP**: 비연결, 빠름, 순서/신뢰성 보장 안 됨
+
+#### 3계층 — 네트워크 계층 (Network Layer)
+
+**라우팅**: 패킷이 출발지에서 목적지까지 최적 경로를 따라 전달.
+
+- **IP 주소**: 네트워크상 장치 식별 (논리적 주소)
+- **라우터**: 경로 결정 장비
+- **IP 프로토콜**: 패킷 전달 (비연결, 최선형 전달)
+- **ICMP**: 에러 보고 (ping 명령어)
+- **ARP**: IP 주소 → MAC 주소 변환
+
+#### 2계층 — 데이터 링크 계층 (Data Link Layer)
+
+**인접한 노드 간**의 데이터 전송. 프레임 단위.
+
+- **MAC 주소**: 하드웨어 고유 식별자 (48비트, AA:BB:CC:DD:EE:FF)
+- **프레임**: 데이터 링크 계층의 PDU (Protocol Data Unit)
+- **이더넷**: 유선 LAN 표준
+- **Wi-Fi (802.11)**: 무선 LAN 표준
+- **스위치**: 이 계층에서 동작하는 장비
+
+#### 1계층 — 물리 계층 (Physical Layer)
+
+**비트를 물리적 신호로 변환**하여 전송.
+
+- 전기 신호 (구리선), 광 신호 (광섬유), 전파 (무선)
+- 케이블 종류, 커넥터, 핀 배치
+- 허브, 리피터: 신호 증폭/재생
+
+### TCP/IP 4계층 모델
+
+실제 인터넷에서 사용하는 모델. OSI 7계층보다 **실용적**.
+
+```
+OSI 7계층              TCP/IP 4계층           주요 프로토콜
+┌─────────────┐
+│ 7. 응용      │
+├─────────────┤       ┌─────────────┐
+│ 6. 표현      │  ───→ │ 4. 응용      │       HTTP, DNS, FTP, SMTP
+├─────────────┤       └─────────────┘
+│ 5. 세션      │
+├─────────────┤       ┌─────────────┐
+│ 4. 전송      │  ───→ │ 3. 전송      │       TCP, UDP
+├─────────────┤       └─────────────┘
+│ 3. 네트워크   │       ┌─────────────┐
+│             │  ───→ │ 2. 인터넷    │       IP, ICMP, ARP
+├─────────────┤       └─────────────┘
+│ 2. 데이터링크 │       ┌─────────────┐
+├─────────────┤  ───→ │ 1. 네트워크   │       이더넷, Wi-Fi
+│ 1. 물리      │       │   인터페이스  │
+└─────────────┘       └─────────────┘
+```
+
+**TCP/IP 모델의 특징:**
+- OSI의 5, 6, 7계층을 **응용 계층** 하나로 통합
+- OSI의 1, 2계층을 **네트워크 인터페이스 계층**으로 통합
+- 실제 인터넷 프로토콜에 기반한 실용적 모델
+
+### 패킷 캡슐화 / 역캡슐화
+
+데이터가 각 계층을 지나면서 **헤더(Header)**가 추가(캡슐화)되고, 수신 측에서 역순으로 제거(역캡슐화)된다.
+
+```
+[송신 측 — 캡슐화]
+
+응용 계층:     [데이터]
+전송 계층:     [TCP 헤더 | 데이터]                    ← 세그먼트
+네트워크 계층:  [IP 헤더 | TCP 헤더 | 데이터]           ← 패킷
+데이터 링크:   [이더넷 헤더 | IP 헤더 | TCP | 데이터 | FCS] ← 프레임
+물리 계층:     01001101001011001010...                ← 비트
+
+[수신 측 — 역캡슐화: 헤더를 역순으로 제거]
+```
+
+**각 계층의 PDU (Protocol Data Unit):**
+
+| 계층 | PDU 이름 | 내용 |
+|------|---------|------|
+| 응용 | 메시지/데이터 | 순수 애플리케이션 데이터 |
+| 전송 | **세그먼트** (TCP) / 데이터그램 (UDP) | + 포트 번호, 시퀀스 번호 |
+| 네트워크 | **패킷** | + 출발지/목적지 IP 주소 |
+| 데이터 링크 | **프레임** | + 출발지/목적지 MAC 주소 |
+| 물리 | **비트** | 0과 1의 전기/광 신호 |
+
+### 실제 네트워크 장비와 계층
+
+```
+┌──────────────────────────────────────────────┐
+│ 7-4 계층: 방화벽, 로드밸런서, L4/L7 스위치      │
+├──────────────────────────────────────────────┤
+│ 3 계층: 라우터 (IP 주소 기반 경로 결정)           │
+├──────────────────────────────────────────────┤
+│ 2 계층: 스위치 (MAC 주소 기반 프레임 전달)        │
+├──────────────────────────────────────────────┤
+│ 1 계층: 허브, 리피터 (신호 증폭/재생)             │
+└──────────────────────────────────────────────┘
+```
+
+| 장비 | 계층 | 역할 |
+|------|------|------|
+| **허브** | 1 | 신호를 모든 포트로 전달 (브로드캐스트) |
+| **스위치** | 2 | MAC 주소 테이블로 해당 포트로만 전달 |
+| **라우터** | 3 | IP 주소 기반 패킷 경로 결정 |
+| **방화벽** | 3-7 | 패킷 필터링, 접근 제어 |
+| **로드밸런서** | 4-7 | 트래픽 분산 |
+
+### 실제 웹 요청 흐름 예시
+
+브라우저에서 `https://www.example.com`에 접속할 때:
+
+```
+1. DNS 조회: www.example.com → 93.184.216.34
+2. TCP 3-way handshake (4계층)
+3. TLS 핸드셰이크 (암호화 설정)
+4. HTTP GET 요청 전송 (7계층)
+
+캡슐화 과정:
+[HTTP GET /index.html]                              ← 응용
+[TCP HDR(포트 443) | HTTP GET]                       ← 전송
+[IP HDR(93.184.216.34) | TCP | HTTP]                ← 네트워크
+[ETH HDR(라우터 MAC) | IP | TCP | HTTP | FCS]        ← 데이터 링크
+[비트 스트림]                                         ← 물리
+
+→ 라우터들을 거쳐 목적지 서버에 도달
+→ 서버에서 역캡슐화 후 HTTP 응답 생성
+→ 동일한 과정으로 응답 반환
+```
+
+## 코드 예시
+
+### HTTP 요청 분석 (응용 계층)
+
+```python
+import socket
+
+def simple_http_request(host, path="/"):
+    """
+    소켓으로 직접 HTTP 요청 보내기.
+    응용 계층(HTTP) → 전송 계층(TCP) → 네트워크 계층(IP) 과정을 체험.
+    """
+    # 1. TCP 소켓 생성 (전송 계층)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # 2. 서버에 연결 (3-way handshake)
+    sock.connect((host, 80))
+    print(f"연결 성공: {host}:80")
+
+    # 3. HTTP 요청 전송 (응용 계층)
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        f"Connection: close\r\n"
+        f"\r\n"
+    )
+    sock.sendall(request.encode())
+    print(f"요청 전송:\n{request}")
+
+    # 4. 응답 수신
+    response = b""
+    while True:
+        data = sock.recv(4096)
+        if not data:
+            break
+        response += data
+
+    sock.close()
+
+    # 5. 응답 파싱
+    response_str = response.decode('utf-8', errors='replace')
+    header, _, body = response_str.partition('\r\n\r\n')
+    print(f"응답 헤더:\n{header[:500]}")
+    print(f"\n응답 본문 (처음 200자):\n{body[:200]}")
+
+
+# simple_http_request("example.com")
+```
+
+### DNS 조회 (응용 → 네트워크 계층)
+
+```python
+import socket
+
+def dns_lookup(hostname):
+    """
+    DNS 조회: 도메인 이름 → IP 주소.
+    DNS는 응용 계층 프로토콜이지만, 결과는 네트워크 계층(IP)에서 사용.
+    """
+    try:
+        # getaddrinfo: 이름 해석 (IPv4, IPv6 모두)
+        results = socket.getaddrinfo(hostname, None)
+
+        print(f"DNS 조회: {hostname}")
+        seen = set()
+        for family, socktype, proto, canonname, sockaddr in results:
+            ip = sockaddr[0]
+            if ip not in seen:
+                seen.add(ip)
+                family_name = "IPv4" if family == socket.AF_INET else "IPv6"
+                print(f"  {family_name}: {ip}")
+
+        # 간단한 방법
+        ip = socket.gethostbyname(hostname)
+        print(f"\n기본 IP (IPv4): {ip}")
+        return ip
+
+    except socket.gaierror as e:
+        print(f"DNS 조회 실패: {e}")
+        return None
+
+
+dns_lookup("google.com")
+dns_lookup("naver.com")
+```
+
+### 네트워크 계층 정보 확인
+
+```python
+import socket
+import struct
+
+def analyze_ip_address(ip_str):
+    """IP 주소 분석 — 네트워크 계층 이해"""
+    octets = ip_str.split('.')
+    print(f"\nIP 주소 분석: {ip_str}")
+    print(f"  옥텟: {octets}")
+
+    # 이진 표현
+    binary = '.'.join(f'{int(o):08b}' for o in octets)
+    print(f"  이진: {binary}")
+
+    # 정수 표현
+    packed = socket.inet_aton(ip_str)
+    int_val = struct.unpack('!I', packed)[0]
+    print(f"  정수: {int_val}")
+
+    # 사설 IP 확인
+    first = int(octets[0])
+    second = int(octets[1])
+    if first == 10:
+        print(f"  유형: 사설 IP (Class A: 10.0.0.0/8)")
+    elif first == 172 and 16 <= second <= 31:
+        print(f"  유형: 사설 IP (Class B: 172.16.0.0/12)")
+    elif first == 192 and second == 168:
+        print(f"  유형: 사설 IP (Class C: 192.168.0.0/16)")
+    elif first == 127:
+        print(f"  유형: 루프백 (localhost)")
+    else:
+        print(f"  유형: 공인 IP")
+
+
+analyze_ip_address("192.168.1.100")
+analyze_ip_address("10.0.0.1")
+analyze_ip_address("8.8.8.8")
+analyze_ip_address("127.0.0.1")
+```
+
+### 계층별 PDU 시뮬레이션
+
+```python
+def simulate_encapsulation(data, src_ip, dst_ip, src_port, dst_port, src_mac, dst_mac):
+    """
+    패킷 캡슐화 과정 시뮬레이션.
+    각 계층에서 헤더가 추가되는 과정을 보여준다.
+    """
+    print("=== 패킷 캡슐화 과정 ===\n")
+
+    # 응용 계층: 원본 데이터
+    app_data = data
+    print(f"[응용 계층] 데이터: '{app_data}'")
+    print(f"  크기: {len(app_data)} 바이트\n")
+
+    # 전송 계층: TCP 헤더 추가 (세그먼트)
+    tcp_header = f"[TCP src_port={src_port} dst_port={dst_port} seq=1 ack=1]"
+    segment = tcp_header + " | " + app_data
+    print(f"[전송 계층] 세그먼트:")
+    print(f"  {tcp_header}")
+    print(f"  + 데이터: '{app_data}'")
+    print(f"  총 크기: ~{len(segment)} 바이트 (헤더 20바이트 + 데이터)\n")
+
+    # 네트워크 계층: IP 헤더 추가 (패킷)
+    ip_header = f"[IP src={src_ip} dst={dst_ip} TTL=64 proto=TCP]"
+    packet = ip_header + " | " + segment
+    print(f"[네트워크 계층] 패킷:")
+    print(f"  {ip_header}")
+    print(f"  + 세그먼트")
+    print(f"  총 크기: ~{len(packet)} 바이트 (IP 헤더 20바이트 + 세그먼트)\n")
+
+    # 데이터 링크 계층: 이더넷 헤더/트레일러 추가 (프레임)
+    eth_header = f"[ETH src={src_mac} dst={dst_mac} type=0x0800]"
+    fcs = "[FCS: 체크섬]"
+    frame = eth_header + " | " + packet + " | " + fcs
+    print(f"[데이터 링크 계층] 프레임:")
+    print(f"  {eth_header}")
+    print(f"  + 패킷")
+    print(f"  + {fcs}")
+    print(f"  총 크기: ~{len(frame)} 바이트\n")
+
+    # 물리 계층: 비트 변환
+    print(f"[물리 계층] 비트 스트림:")
+    sample = data[:8].encode()
+    bits = ''.join(f'{b:08b}' for b in sample)
+    print(f"  '{data[:8]}' → {bits}...")
+    print(f"  전기/광 신호로 변환되어 전송\n")
+
+    print("=" * 50)
+    print("수신 측에서는 역순으로 헤더를 제거 (역캡슐화)")
+
+
+simulate_encapsulation(
+    data="GET / HTTP/1.1",
+    src_ip="192.168.1.100",
+    dst_ip="93.184.216.34",
+    src_port=12345,
+    dst_port=80,
+    src_mac="AA:BB:CC:DD:EE:01",
+    dst_mac="AA:BB:CC:DD:EE:02"
+)
+```
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| OSI 7계층 | 이론적 참조 모델 (물리→데이터링크→네트워크→전송→세션→표현→응용) |
+| TCP/IP 4계층 | 실용적 모델 (네트워크 인터페이스→인터넷→전송→응용) |
+| 캡슐화 | 데이터가 하위 계층으로 내려가면서 헤더가 추가되는 과정 |
+| 역캡슐화 | 수신 측에서 헤더를 역순으로 제거하는 과정 |
+| PDU | 세그먼트(전송), 패킷(네트워크), 프레임(데이터링크), 비트(물리) |
+| 주소 체계 | MAC 주소(2계층), IP 주소(3계층), 포트 번호(4계층) |
+| 장비 | 허브(1계층), 스위치(2계층), 라우터(3계층) |

@@ -1,0 +1,942 @@
+---
+title: "행위 패턴"
+topic: "09-architecture"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 1. 행위 패턴 개요
+
+행위 패턴(Behavioral Patterns)은 **객체 간의 책임 분배와 알고리즘 캡슐화**에 관한 패턴이다. 객체들이 어떻게 상호작용하고, 어떻게 제어 흐름을 분산시킬 것인가를 다룬다.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              행위 패턴 분류                                │
+│                                                         │
+│  ┌────────────────┐                                     │
+│  │ 알고리즘 캡슐화 │  Strategy  — 알고리즘 교체           │
+│  │                │  Template  — 알고리즘 뼈대 고정       │
+│  └────────────────┘                                     │
+│                                                         │
+│  ┌────────────────┐                                     │
+│  │ 객체 간 통신   │  Observer  — 이벤트 발행/구독          │
+│  │                │  Command   — 요청을 객체로 캡슐화      │
+│  │                │  CoR       — 처리자 체인              │
+│  └────────────────┘                                     │
+│                                                         │
+│  ┌────────────────┐                                     │
+│  │ 상태/순회      │  State     — 상태별 행동 변화          │
+│  │                │  Iterator  — 컬렉션 순회 추상화        │
+│  └────────────────┘                                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. Observer 패턴
+
+> **객체 상태 변화를 관찰자들에게 자동으로 알린다. 1:N 의존 관계.**
+
+이벤트 기반 시스템의 핵심 패턴이다. 발행자(Publisher)가 상태를 변경하면, 구독자(Subscriber)들이 자동으로 통보받는다.
+
+```
+┌──────────────────────────────────────────────────────┐
+│              Observer 구조                             │
+│                                                      │
+│  ┌──────────────┐       ┌──────────────┐             │
+│  │  Publisher    │       │  Subscriber  │ (인터페이스) │
+│  │              │       │              │             │
+│  │ - subscribers│       │ + update()   │             │
+│  │ + subscribe()│       └──────┬───────┘             │
+│  │ + unsubscribe()│         │                       │
+│  │ + notify()   │      ┌────┴────┐                   │
+│  └──────────────┘      │         │                   │
+│         │          ┌───▼──┐  ┌──▼────┐               │
+│    상태 변경 시     │ 로거 │  │ 알림  │               │
+│    notify() 호출   │      │  │ 서비스│               │
+│                    └──────┘  └───────┘               │
+│                                                      │
+│  notify() → 모든 subscriber의 update() 호출           │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+from typing import Any
+
+
+# === Observer 인터페이스 ===
+class EventListener(ABC):
+    @abstractmethod
+    def update(self, event: str, data: Any) -> None:
+        pass
+
+
+# === Publisher (EventEmitter 스타일) ===
+class EventEmitter:
+    """이벤트 발행자: 구독자를 관리하고 이벤트를 전파한다"""
+
+    def __init__(self):
+        self._listeners: dict[str, list[EventListener]] = {}
+
+    def on(self, event: str, listener: EventListener) -> None:
+        """이벤트 구독"""
+        if event not in self._listeners:
+            self._listeners[event] = []
+        self._listeners[event].append(listener)
+
+    def off(self, event: str, listener: EventListener) -> None:
+        """이벤트 구독 해제"""
+        if event in self._listeners:
+            self._listeners[event].remove(listener)
+
+    def emit(self, event: str, data: Any = None) -> None:
+        """이벤트 발행 → 모든 구독자에게 알림"""
+        for listener in self._listeners.get(event, []):
+            listener.update(event, data)
+
+
+# === 구체 구독자들 ===
+class LoggingListener(EventListener):
+    def update(self, event: str, data: Any) -> None:
+        print(f"[LOG] 이벤트 '{event}' 발생: {data}")
+
+
+class NotificationListener(EventListener):
+    def update(self, event: str, data: Any) -> None:
+        print(f"[알림] 사용자에게 통보: {event} - {data}")
+
+
+class MetricsListener(EventListener):
+    def __init__(self):
+        self.event_count: dict[str, int] = {}
+
+    def update(self, event: str, data: Any) -> None:
+        self.event_count[event] = self.event_count.get(event, 0) + 1
+        print(f"[메트릭] {event} 발생 횟수: {self.event_count[event]}")
+
+
+# === 사용 예시: 사용자 서비스 ===
+class UserService:
+    def __init__(self):
+        self.events = EventEmitter()
+
+    def register(self, username: str) -> None:
+        # 비즈니스 로직
+        print(f"사용자 '{username}' 등록 완료")
+        # 이벤트 발행 → 구독자들이 알아서 처리
+        self.events.emit("user:registered", {"username": username})
+
+    def login(self, username: str) -> None:
+        print(f"사용자 '{username}' 로그인")
+        self.events.emit("user:login", {"username": username})
+
+
+# === 조립 ===
+service = UserService()
+service.events.on("user:registered", LoggingListener())
+service.events.on("user:registered", NotificationListener())
+service.events.on("user:login", MetricsListener())
+
+service.register("alice")
+# [LOG] 이벤트 'user:registered' 발생: {'username': 'alice'}
+# [알림] 사용자에게 통보: user:registered - {'username': 'alice'}
+
+service.login("alice")
+# [메트릭] user:login 발생 횟수: 1
+```
+
+**핵심**: UserService는 로깅, 알림, 메트릭 수집에 대해 전혀 모른다. 새로운 기능을 추가할 때 UserService를 수정할 필요가 없다.
+
+---
+
+### 3. Strategy 패턴
+
+> **알고리즘을 캡슐화하고 런타임에 교체할 수 있게 한다.**
+
+조건문(if/else)으로 알고리즘을 분기하는 대신, 각 알고리즘을 독립된 클래스로 분리한다.
+
+```
+┌──────────────────────────────────────────────────┐
+│              Strategy 구조                        │
+│                                                  │
+│  ┌────────────┐     ┌───────────────┐            │
+│  │  Context   │────▶│   Strategy    │ (인터페이스)│
+│  │            │     │               │            │
+│  │ - strategy │     │ + execute()   │            │
+│  │ + do_work()│     └───────┬───────┘            │
+│  └────────────┘         │       │                │
+│                     ┌───▼───┐ ┌─▼──────┐         │
+│                     │ 전략A │ │ 전략B  │         │
+│                     └───────┘ └────────┘         │
+│                                                  │
+│  Context는 Strategy 인터페이스에만 의존한다        │
+│  런타임에 전략 교체 가능                           │
+└──────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === Strategy 인터페이스 ===
+class SortStrategy(ABC):
+    @abstractmethod
+    def sort(self, data: list[int]) -> list[int]:
+        pass
+
+
+# === 구체 전략들 ===
+class BubbleSort(SortStrategy):
+    """작은 데이터에 적합한 버블 정렬"""
+
+    def sort(self, data: list[int]) -> list[int]:
+        arr = data.copy()
+        n = len(arr)
+        for i in range(n):
+            for j in range(0, n - i - 1):
+                if arr[j] > arr[j + 1]:
+                    arr[j], arr[j + 1] = arr[j + 1], arr[j]
+        print(f"[BubbleSort] O(n²) 정렬 완료 — {len(arr)}개 요소")
+        return arr
+
+
+class QuickSort(SortStrategy):
+    """큰 데이터에 적합한 퀵 정렬"""
+
+    def sort(self, data: list[int]) -> list[int]:
+        if len(data) <= 1:
+            return data
+        pivot = data[len(data) // 2]
+        left = [x for x in data if x < pivot]
+        middle = [x for x in data if x == pivot]
+        right = [x for x in data if x > pivot]
+        result = self.sort(left) + middle + self.sort(right)
+        return result
+
+
+class TimSort(SortStrategy):
+    """Python 내장 정렬 (하이브리드)"""
+
+    def sort(self, data: list[int]) -> list[int]:
+        result = sorted(data)
+        print(f"[TimSort] O(n log n) 정렬 완료 — {len(result)}개 요소")
+        return result
+
+
+# === Context: 전략을 사용하는 클래스 ===
+class DataProcessor:
+    def __init__(self, strategy: SortStrategy):
+        self._strategy = strategy
+
+    def set_strategy(self, strategy: SortStrategy) -> None:
+        """런타임에 전략 교체"""
+        self._strategy = strategy
+
+    def process(self, data: list[int]) -> list[int]:
+        print(f"데이터 크기: {len(data)}")
+        return self._strategy.sort(data)
+
+
+# === 데이터 크기에 따라 전략 자동 선택 ===
+def auto_sort(data: list[int]) -> list[int]:
+    processor = DataProcessor(BubbleSort())
+
+    if len(data) > 1000:
+        processor.set_strategy(QuickSort())
+    elif len(data) > 100:
+        processor.set_strategy(TimSort())
+
+    return processor.process(data)
+
+
+print(auto_sort([5, 3, 8, 1, 9]))       # BubbleSort 사용
+print(auto_sort(list(range(500, 0, -1)))) # TimSort 사용
+```
+
+---
+
+### 4. State 패턴
+
+> **객체의 내부 상태에 따라 행동을 변경한다. 상태 머신을 객체지향으로 구현한다.**
+
+```
+┌───────────────────────────────────────────────────────┐
+│           TCP 연결 상태 머신 다이어그램                   │
+│                                                       │
+│  ┌────────┐  connect()  ┌──────────┐  send()          │
+│  │ CLOSED │────────────▶│CONNECTED │────────┐         │
+│  │        │             │          │        │         │
+│  └────────┘             └──────┬───┘        │         │
+│       ▲                        │            ▼         │
+│       │   disconnect()         │      ┌──────────┐    │
+│       │◀───────────────────────┘      │ SENDING  │    │
+│       │                               │          │    │
+│       │◀──────────────────────────────┤ complete │    │
+│       │        disconnect()           └──────────┘    │
+│                                                       │
+│  각 상태가 별도 클래스 → 상태 전이 로직이 명확함          │
+└───────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === State 인터페이스 ===
+class ConnectionState(ABC):
+    @abstractmethod
+    def connect(self, ctx: "TCPConnection") -> None:
+        pass
+
+    @abstractmethod
+    def disconnect(self, ctx: "TCPConnection") -> None:
+        pass
+
+    @abstractmethod
+    def send(self, ctx: "TCPConnection", data: str) -> None:
+        pass
+
+
+# === 구체 상태들 ===
+class ClosedState(ConnectionState):
+    def connect(self, ctx: "TCPConnection") -> None:
+        print("[CLOSED → CONNECTED] TCP 핸드셰이크 수행")
+        ctx.set_state(ConnectedState())
+
+    def disconnect(self, ctx: "TCPConnection") -> None:
+        print("[CLOSED] 이미 연결이 닫혀 있음")
+
+    def send(self, ctx: "TCPConnection", data: str) -> None:
+        print("[CLOSED] 오류: 연결되지 않은 상태에서 전송 불가")
+
+
+class ConnectedState(ConnectionState):
+    def connect(self, ctx: "TCPConnection") -> None:
+        print("[CONNECTED] 이미 연결됨")
+
+    def disconnect(self, ctx: "TCPConnection") -> None:
+        print("[CONNECTED → CLOSED] 연결 종료")
+        ctx.set_state(ClosedState())
+
+    def send(self, ctx: "TCPConnection", data: str) -> None:
+        print(f"[CONNECTED → SENDING] 데이터 전송 시작: '{data}'")
+        ctx.set_state(SendingState())
+
+
+class SendingState(ConnectionState):
+    def connect(self, ctx: "TCPConnection") -> None:
+        print("[SENDING] 전송 중에는 재연결 불가")
+
+    def disconnect(self, ctx: "TCPConnection") -> None:
+        print("[SENDING → CLOSED] 전송 취소, 연결 종료")
+        ctx.set_state(ClosedState())
+
+    def send(self, ctx: "TCPConnection", data: str) -> None:
+        print(f"[SENDING] 전송 완료, 대기 상태로 복귀")
+        ctx.set_state(ConnectedState())
+
+
+# === Context ===
+class TCPConnection:
+    def __init__(self):
+        self._state: ConnectionState = ClosedState()
+
+    def set_state(self, state: ConnectionState) -> None:
+        self._state = state
+
+    def connect(self) -> None:
+        self._state.connect(self)
+
+    def disconnect(self) -> None:
+        self._state.disconnect(self)
+
+    def send(self, data: str) -> None:
+        self._state.send(self, data)
+
+
+# === 실행 ===
+conn = TCPConnection()
+conn.send("hello")      # [CLOSED] 오류: 전송 불가
+conn.connect()           # [CLOSED → CONNECTED]
+conn.send("hello")       # [CONNECTED → SENDING]
+conn.send("world")       # [SENDING] 전송 완료 → CONNECTED
+conn.disconnect()        # [CONNECTED → CLOSED]
+```
+
+---
+
+### 5. Command 패턴
+
+> **요청을 객체로 캡슐화하여 실행, 취소(Undo), 큐잉을 가능하게 한다.**
+
+```
+┌──────────────────────────────────────────────────────┐
+│              Command 패턴 구조                        │
+│                                                      │
+│  ┌────────┐  실행요청   ┌─────────┐  execute()       │
+│  │Invoker │────────────▶│ Command │─────────────┐    │
+│  │        │             │         │             │    │
+│  │ 이력   │             │ + execute()│           ▼    │
+│  │ 관리   │             │ + undo()  │     ┌──────┐   │
+│  │        │             └─────────┘     │Receiver│   │
+│  └────────┘                             │(실제   │   │
+│       │                                 │ 수행자)│   │
+│       ▼                                 └──────┘    │
+│  [cmd1, cmd2, cmd3]  ← 실행 이력 스택               │
+│  undo() → cmd3.undo() 호출                          │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+
+
+# === Command 인터페이스 ===
+class Command(ABC):
+    @abstractmethod
+    def execute(self) -> None:
+        pass
+
+    @abstractmethod
+    def undo(self) -> None:
+        pass
+
+
+# === Receiver: 실제 작업을 수행하는 객체 ===
+class TextDocument:
+    def __init__(self):
+        self.content: str = ""
+
+    def insert(self, text: str, position: int) -> None:
+        self.content = self.content[:position] + text + self.content[position:]
+
+    def delete(self, position: int, length: int) -> str:
+        deleted = self.content[position:position + length]
+        self.content = self.content[:position] + self.content[position + length:]
+        return deleted
+
+    def __repr__(self) -> str:
+        return f"Document('{self.content}')"
+
+
+# === 구체 Command들 ===
+class InsertCommand(Command):
+    def __init__(self, document: TextDocument, text: str, position: int):
+        self.doc = document
+        self.text = text
+        self.position = position
+
+    def execute(self) -> None:
+        self.doc.insert(self.text, self.position)
+        print(f"[삽입] '{self.text}' at {self.position} → {self.doc}")
+
+    def undo(self) -> None:
+        self.doc.delete(self.position, len(self.text))
+        print(f"[삽입 취소] → {self.doc}")
+
+
+class DeleteCommand(Command):
+    def __init__(self, document: TextDocument, position: int, length: int):
+        self.doc = document
+        self.position = position
+        self.length = length
+        self._deleted_text: str = ""
+
+    def execute(self) -> None:
+        self._deleted_text = self.doc.delete(self.position, self.length)
+        print(f"[삭제] '{self._deleted_text}' → {self.doc}")
+
+    def undo(self) -> None:
+        self.doc.insert(self._deleted_text, self.position)
+        print(f"[삭제 취소] → {self.doc}")
+
+
+# === Invoker: 명령 실행 및 이력 관리 ===
+class TextEditor:
+    def __init__(self):
+        self._history: list[Command] = []
+
+    def execute(self, command: Command) -> None:
+        command.execute()
+        self._history.append(command)
+
+    def undo(self) -> None:
+        if self._history:
+            command = self._history.pop()
+            command.undo()
+        else:
+            print("되돌릴 명령이 없습니다")
+
+    def undo_all(self) -> None:
+        """모든 명령 되돌리기 (매크로 undo)"""
+        while self._history:
+            self.undo()
+
+
+# === 사용 ===
+doc = TextDocument()
+editor = TextEditor()
+
+editor.execute(InsertCommand(doc, "Hello", 0))
+editor.execute(InsertCommand(doc, " World", 5))
+editor.execute(DeleteCommand(doc, 5, 6))
+# Document('Hello')
+
+editor.undo()   # [삭제 취소] → Document('Hello World')
+editor.undo()   # [삽입 취소] → Document('Hello')
+```
+
+---
+
+### 6. Template Method 패턴
+
+> **알고리즘의 뼈대를 정의하고, 세부 단계는 서브클래스가 구현한다.**
+
+```
+┌───────────────────────────────────────────────────┐
+│              Template Method 구조                  │
+│                                                   │
+│  AbstractClass                                    │
+│  ┌────────────────────────────────┐               │
+│  │ template_method():             │  ← 뼈대 고정  │
+│  │   step1()   # 공통            │               │
+│  │   step2()   # 추상 → 서브구현  │               │
+│  │   step3()   # 추상 → 서브구현  │               │
+│  │   step4()   # 공통            │               │
+│  └─────────────┬──────────────────┘               │
+│                │                                  │
+│        ┌───────┴────────┐                         │
+│    ┌───▼─────┐     ┌───▼─────┐                    │
+│    │ CSV     │     │ JSON    │                    │
+│    │ Parser  │     │ Parser  │                    │
+│    │         │     │         │                    │
+│    │ step2() │     │ step2() │  ← 각자 구현       │
+│    │ step3() │     │ step3() │                    │
+│    └─────────┘     └─────────┘                    │
+└───────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+import json
+
+
+class DataMiner(ABC):
+    """데이터 마이닝 알고리즘의 템플릿"""
+
+    def mine(self, path: str) -> dict:
+        """템플릿 메서드: 전체 알고리즘 뼈대"""
+        raw = self.extract(path)          # 1. 데이터 추출
+        parsed = self.parse(raw)          # 2. 파싱 (서브클래스)
+        analyzed = self.analyze(parsed)   # 3. 분석 (서브클래스)
+        self.report(analyzed)             # 4. 보고서 (공통)
+        return analyzed
+
+    @abstractmethod
+    def extract(self, path: str) -> str:
+        """데이터 소스에서 원본 데이터 추출"""
+        pass
+
+    @abstractmethod
+    def parse(self, raw: str) -> list[dict]:
+        """원본 데이터를 구조화된 형태로 파싱"""
+        pass
+
+    def analyze(self, data: list[dict]) -> dict:
+        """공통 분석 로직 (오버라이드 가능)"""
+        return {"total_records": len(data), "data": data}
+
+    def report(self, result: dict) -> None:
+        """공통 보고서 출력"""
+        print(f"=== 분석 결과 ===")
+        print(f"총 레코드: {result['total_records']}")
+
+
+class CSVDataMiner(DataMiner):
+    def extract(self, path: str) -> str:
+        print(f"[CSV] 파일 읽기: {path}")
+        return "이름,나이\n홍길동,25\n김영희,30"
+
+    def parse(self, raw: str) -> list[dict]:
+        lines = raw.strip().split("\n")
+        headers = lines[0].split(",")
+        result = []
+        for line in lines[1:]:
+            values = line.split(",")
+            result.append(dict(zip(headers, values)))
+        return result
+
+
+class JSONDataMiner(DataMiner):
+    def extract(self, path: str) -> str:
+        print(f"[JSON] 파일 읽기: {path}")
+        return '[{"이름": "홍길동", "나이": 25}]'
+
+    def parse(self, raw: str) -> list[dict]:
+        return json.loads(raw)
+
+
+# === 동일한 mine() 흐름, 다른 추출/파싱 ===
+csv_miner = CSVDataMiner()
+csv_miner.mine("data.csv")
+
+json_miner = JSONDataMiner()
+json_miner.mine("data.json")
+```
+
+---
+
+### 7. Iterator 패턴
+
+> **컬렉션의 내부 구조를 노출하지 않고 요소를 순차적으로 접근한다.**
+
+Python에서는 `__iter__`와 `__next__` 매직 메서드로 Iterator 패턴을 자연스럽게 구현한다.
+
+```
+┌───────────────────────────────────────────────────┐
+│              Iterator 프로토콜 (Python)             │
+│                                                   │
+│  Iterable                  Iterator               │
+│  ┌────────────────┐        ┌────────────────┐     │
+│  │ __iter__()     │───────▶│ __next__()     │     │
+│  │   → Iterator   │        │   → 다음 요소   │     │
+│  └────────────────┘        │   (끝이면       │     │
+│                            │    StopIteration)│    │
+│  for item in iterable:     └────────────────┘     │
+│    → __iter__() 호출                              │
+│    → __next__() 반복 호출                          │
+│    → StopIteration 시 종료                         │
+└───────────────────────────────────────────────────┘
+```
+
+```python
+class BinaryTree:
+    """이진 트리 노드"""
+
+    def __init__(self, value, left=None, right=None):
+        self.value = value
+        self.left = left
+        self.right = right
+
+    def __iter__(self):
+        """중위 순회(in-order) Iterator 반환"""
+        return InOrderIterator(self)
+
+
+class InOrderIterator:
+    """이진 트리를 중위 순회하는 Iterator"""
+
+    def __init__(self, root: BinaryTree):
+        self._stack: list[BinaryTree] = []
+        self._push_left(root)
+
+    def _push_left(self, node: BinaryTree | None) -> None:
+        """왼쪽 자식을 스택에 모두 쌓는다"""
+        while node:
+            self._stack.append(node)
+            node = node.left
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if not self._stack:
+            raise StopIteration
+
+        node = self._stack.pop()
+        self._push_left(node.right)
+        return node.value
+
+
+# === 트리 구성 ===
+#        4
+#       / \
+#      2   6
+#     / \ / \
+#    1  3 5  7
+tree = BinaryTree(
+    4,
+    BinaryTree(2, BinaryTree(1), BinaryTree(3)),
+    BinaryTree(6, BinaryTree(5), BinaryTree(7))
+)
+
+# for 문으로 자연스럽게 순회
+for value in tree:
+    print(value, end=" ")  # 1 2 3 4 5 6 7
+print()
+
+# 리스트 변환도 가능
+values = list(tree)  # [1, 2, 3, 4, 5, 6, 7]
+```
+
+#### Python 제너레이터: 더 간단한 Iterator
+
+```python
+def in_order(node: BinaryTree | None):
+    """제너레이터로 구현한 중위 순회 — 훨씬 간결하다"""
+    if node:
+        yield from in_order(node.left)
+        yield node.value
+        yield from in_order(node.right)
+
+for value in in_order(tree):
+    print(value, end=" ")  # 1 2 3 4 5 6 7
+```
+
+---
+
+### 8. Chain of Responsibility 패턴
+
+> **요청을 처리자 체인을 따라 전달하며, 적절한 처리자가 처리한다.**
+
+```
+┌──────────────────────────────────────────────────────┐
+│        Chain of Responsibility 흐름                   │
+│                                                      │
+│  Request                                             │
+│    │                                                 │
+│    ▼                                                 │
+│  ┌──────────┐  처리 못함  ┌──────────┐  처리 못함     │
+│  │ Handler1 │───────────▶│ Handler2 │──────────▶    │
+│  │ (인증)   │            │ (권한)   │               │
+│  └──────────┘            └──────────┘               │
+│                                        ┌──────────┐  │
+│                                ───────▶│ Handler3 │  │
+│                                        │ (로깅)   │  │
+│                                        └──────────┘  │
+│                                                      │
+│  각 핸들러는 요청을 처리하거나 다음에게 전달한다         │
+│  미들웨어 패턴과 동일한 구조                           │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass
+class Request:
+    """HTTP 요청을 흉내낸 객체"""
+    path: str
+    method: str
+    headers: dict
+    user: str | None = None
+    body: dict | None = None
+
+
+@dataclass
+class Response:
+    status: int
+    body: str
+
+
+class Middleware(ABC):
+    """미들웨어 체인의 기반 클래스"""
+
+    def __init__(self):
+        self._next: Middleware | None = None
+
+    def set_next(self, handler: "Middleware") -> "Middleware":
+        self._next = handler
+        return handler  # 체이닝 지원
+
+    def handle(self, request: Request) -> Response | None:
+        if self._next:
+            return self._next.handle(request)
+        return None
+
+
+class AuthMiddleware(Middleware):
+    """인증 미들웨어: API 키 확인"""
+
+    def handle(self, request: Request) -> Response | None:
+        api_key = request.headers.get("Authorization")
+        if not api_key:
+            return Response(401, "인증 필요: API 키가 없습니다")
+        if api_key != "Bearer valid-token":
+            return Response(403, "잘못된 API 키입니다")
+        request.user = "authenticated_user"
+        print(f"[인증] 통과 — user: {request.user}")
+        return super().handle(request)
+
+
+class RateLimitMiddleware(Middleware):
+    """속도 제한 미들웨어"""
+
+    def __init__(self, max_requests: int = 100):
+        super().__init__()
+        self._count: dict[str, int] = {}
+        self._max = max_requests
+
+    def handle(self, request: Request) -> Response | None:
+        user = request.user or "anonymous"
+        self._count[user] = self._count.get(user, 0) + 1
+        if self._count[user] > self._max:
+            return Response(429, "요청 횟수 초과")
+        print(f"[속도제한] {user}: {self._count[user]}/{self._max}")
+        return super().handle(request)
+
+
+class LoggingMiddleware(Middleware):
+    """로깅 미들웨어"""
+
+    def handle(self, request: Request) -> Response | None:
+        print(f"[로그] {request.method} {request.path}")
+        response = super().handle(request)
+        if response:
+            print(f"[로그] 응답: {response.status}")
+        return response
+
+
+class RouteHandler(Middleware):
+    """최종 처리: 실제 비즈니스 로직"""
+
+    def handle(self, request: Request) -> Response:
+        return Response(200, f"'{request.path}' 처리 완료")
+
+
+# === 미들웨어 체인 구성 ===
+auth = AuthMiddleware()
+rate = RateLimitMiddleware(max_requests=10)
+log = LoggingMiddleware()
+handler = RouteHandler()
+
+# 체이닝: auth → rate → log → handler
+auth.set_next(rate).set_next(log).set_next(handler)
+
+# 정상 요청
+req = Request(
+    path="/api/users",
+    method="GET",
+    headers={"Authorization": "Bearer valid-token"}
+)
+response = auth.handle(req)
+print(response)  # Response(status=200, body="'/api/users' 처리 완료")
+
+# 인증 실패 요청
+bad_req = Request(path="/api/users", method="GET", headers={})
+response = auth.handle(bad_req)
+print(response)  # Response(status=401, body="인증 필요...")
+```
+
+---
+
+### 9. 실전 활용 사례
+
+행위 패턴은 프레임워크와 라이브러리의 핵심 설계에 광범위하게 사용된다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              실전에서의 행위 패턴                               │
+│                                                              │
+│  Framework / Library          적용된 패턴                     │
+│  ─────────────────────────────────────────                   │
+│  Django/Flask 미들웨어         Chain of Responsibility        │
+│  React useState/Redux         Observer (상태 변경 → 리렌더)   │
+│  Python sorted(key=...)       Strategy (정렬 기준 교체)       │
+│  JS Promise.then().catch()    Chain of Responsibility        │
+│  Ctrl+Z / Undo 기능           Command (실행/취소)             │
+│  Python for ... in ...        Iterator (__iter__/__next__)   │
+│  Django CBV (TemplateView)    Template Method                │
+│  TCP 상태 머신                 State                          │
+│  게임 AI 행동 트리             State + Strategy               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### TypeScript에서의 Strategy 패턴 예시
+
+```typescript
+// === Strategy 인터페이스 ===
+interface PricingStrategy {
+  calculate(basePrice: number): number;
+}
+
+// === 구체 전략들 ===
+class RegularPricing implements PricingStrategy {
+  calculate(basePrice: number): number {
+    return basePrice; // 정가
+  }
+}
+
+class PremiumPricing implements PricingStrategy {
+  calculate(basePrice: number): number {
+    return basePrice * 0.8; // 20% 할인
+  }
+}
+
+class SeasonalPricing implements PricingStrategy {
+  constructor(private discountRate: number) {}
+
+  calculate(basePrice: number): number {
+    return basePrice * (1 - this.discountRate);
+  }
+}
+
+// === Context ===
+class Order {
+  constructor(
+    private items: { name: string; price: number }[],
+    private pricing: PricingStrategy
+  ) {}
+
+  // 런타임에 전략 교체 가능
+  setPricing(strategy: PricingStrategy): void {
+    this.pricing = strategy;
+  }
+
+  getTotal(): number {
+    const base = this.items.reduce((sum, item) => sum + item.price, 0);
+    return this.pricing.calculate(base);
+  }
+}
+
+// === 사용 ===
+const order = new Order(
+  [{ name: "노트북", price: 1000000 }, { name: "마우스", price: 50000 }],
+  new RegularPricing()
+);
+
+console.log(order.getTotal());  // 1050000
+
+order.setPricing(new PremiumPricing());
+console.log(order.getTotal());  // 840000
+
+order.setPricing(new SeasonalPricing(0.3));
+console.log(order.getTotal());  // 735000
+```
+
+---
+
+### 10. 패턴 비교 테이블
+
+| 패턴 | 의도 | 결합도 | 주요 사용 사례 |
+|------|------|--------|---------------|
+| **Observer** | 상태 변경 자동 통보 | 느슨 (인터페이스) | 이벤트 시스템, UI 반응성 |
+| **Strategy** | 알고리즘 교체 가능 | 느슨 (인터페이스) | 정렬, 가격 정책, 인증 |
+| **State** | 상태별 행동 변화 | 중간 (상태↔컨텍스트) | 상태 머신, UI 모드 |
+| **Command** | 요청 객체화, Undo | 느슨 (명령 큐) | 편집기, 트랜잭션, 매크로 |
+| **Template Method** | 뼈대 고정, 세부 교체 | 강함 (상속) | 프레임워크 훅, 파서 |
+| **Iterator** | 순회 추상화 | 느슨 (프로토콜) | 컬렉션, 스트림, 페이징 |
+| **CoR** | 처리자 체인 | 느슨 (체인) | 미들웨어, 이벤트 버블링 |
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 행위 패턴 | 객체 간 책임 분배와 알고리즘 캡슐화 |
+| Observer | 1:N 이벤트 발행/구독, 느슨한 결합 |
+| Strategy | 알고리즘을 캡슐화하여 런타임에 교체 |
+| State | 상태에 따라 행동 변화, 상태 머신 구현 |
+| Command | 요청을 객체로 캡슐화, 실행/취소 지원 |
+| Template Method | 알고리즘 뼈대 고정, 세부 단계를 서브클래스에서 |
+| Iterator | 컬렉션 내부 구조 숨기고 순차 접근 |
+| CoR | 처리자 체인을 따라 요청 전달 |
+| 실전 원칙 | 패턴을 위한 패턴 적용 금지 — 문제가 먼저 |
+| Python 활용 | 제너레이터, 데코레이터, 프로토콜 등 언어 기능 적극 활용 |

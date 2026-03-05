@@ -1,0 +1,866 @@
+---
+title: "IaC와 GitOps"
+topic: "07-infra"
+order: 06
+---
+
+
+## 핵심 개념
+
+### 1. Infrastructure as Code (IaC) 개요
+
+IaC는 **인프라를 코드로 정의하고 관리**하는 방식이다. 수동으로 서버를 클릭해서 설정하는 대신, 코드 파일로 선언하고 버전 관리한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              수동 관리 vs IaC                              │
+│                                                          │
+│  수동 관리 (ClickOps)                                     │
+│  ──────────────────                                      │
+│  1. AWS 콘솔 로그인                                       │
+│  2. EC2 → "인스턴스 시작" 클릭                             │
+│  3. AMI, 인스턴스 타입, 보안 그룹 수동 설정                 │
+│  4. 다음 서버도 같은 과정 반복                              │
+│  5. 3개월 후... "이 서버 설정이 뭐였지?"                    │
+│                                                          │
+│  문제점:                                                  │
+│  - 재현 불가능 (눈송이 서버 — Snowflake Server)            │
+│  - 변경 이력 없음                                         │
+│  - 환경 간 차이 발생 (dev ≠ staging ≠ prod)               │
+│  - 사람 실수 (Human Error) 위험                            │
+│                                                          │
+│  ──────────────────────────────────────                   │
+│                                                          │
+│  IaC (Infrastructure as Code)                             │
+│  ────────────────────────────                            │
+│  1. main.tf 파일에 인프라 선언                             │
+│  2. git commit → PR → 리뷰 → merge                       │
+│  3. terraform apply → 자동 생성                           │
+│  4. 동일한 코드로 dev/staging/prod 동일하게 생성            │
+│  5. 변경 이력: git log로 "누가, 언제, 무엇을" 추적         │
+│                                                          │
+│  장점: 재현 가능, 버전 관리, 코드 리뷰, 자동화              │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. 선언적 vs 명령형 접근
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              선언적 (Declarative) vs 명령형 (Imperative)   │
+│                                                          │
+│  명령형: "어떻게(How)" 할 것인지 단계별로 기술              │
+│  ─────────────────────────────────────                   │
+│  1. 서버를 생성하라                                       │
+│  2. 보안 그룹을 추가하라                                   │
+│  3. IP를 할당하라                                         │
+│  4. 디스크를 붙여라                                       │
+│  → 순서가 중요, 실패 시 중간 상태 처리 필요                │
+│  → 대표: Ansible (일부), Shell 스크립트                    │
+│                                                          │
+│  선언적: "무엇(What)"이 되어야 하는지만 기술                │
+│  ─────────────────────────────────────                   │
+│  "t3.medium EC2 인스턴스 2대가 존재해야 한다"              │
+│  → 현재 0대면 2대 생성                                    │
+│  → 현재 3대면 1대 삭제                                    │
+│  → 현재 2대면 아무것도 안 함                               │
+│  → 대표: Terraform, Kubernetes YAML, CloudFormation       │
+│                                                          │
+│  대부분의 IaC 도구는 선언적 접근을 선호한다                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+| 구분 | 선언적 | 명령형 |
+|------|--------|--------|
+| **기술 방식** | 최종 상태 (What) | 절차 (How) |
+| **멱등성** | 기본 보장 | 직접 구현 필요 |
+| **상태 관리** | 도구가 자동 관리 | 수동 추적 |
+| **학습 곡선** | DSL 학습 필요 | 스크립트라 친숙 |
+| **대표 도구** | Terraform, K8s | Ansible, Shell |
+
+---
+
+### 3. Terraform
+
+Terraform은 HashiCorp이 만든 **선언적 IaC 도구**다. HCL(HashiCorp Configuration Language)로 인프라를 정의한다.
+
+#### Terraform 핵심 개념
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              Terraform 핵심 구성 요소                      │
+│                                                          │
+│  Provider                                                │
+│  ────────                                                │
+│  클라우드/서비스 플러그인 (AWS, GCP, Azure, K8s 등)        │
+│                                                          │
+│  Resource                                                │
+│  ────────                                                │
+│  관리할 인프라 자원 (EC2, VPC, S3, RDS 등)                │
+│                                                          │
+│  State                                                   │
+│  ─────                                                   │
+│  현재 인프라 상태를 기록한 파일 (terraform.tfstate)        │
+│  "코드 vs 실제"를 비교하는 기준점                          │
+│                                                          │
+│  Module                                                  │
+│  ──────                                                  │
+│  재사용 가능한 인프라 구성 단위                            │
+│                                                          │
+│  Variable / Output                                       │
+│  ────────────────                                        │
+│  입력값과 출력값 — 모듈 간 데이터 전달                     │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### Plan / Apply 흐름
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              Terraform 워크플로                            │
+│                                                          │
+│  main.tf (코드)     terraform.tfstate (현재 상태)         │
+│       │                      │                           │
+│       └──────────┬───────────┘                           │
+│                  │                                       │
+│                  ▼                                       │
+│          terraform plan                                  │
+│          (코드 vs 현재 상태 비교)                          │
+│                  │                                       │
+│                  ▼                                       │
+│          실행 계획 출력:                                   │
+│          + 생성: aws_instance.web (NEW)                   │
+│          ~ 수정: aws_security_group.web (CHANGED)         │
+│          - 삭제: aws_instance.old (REMOVED)               │
+│                  │                                       │
+│                  ▼                                       │
+│          terraform apply                                 │
+│          (계획대로 실제 인프라 변경)                        │
+│                  │                                       │
+│                  ▼                                       │
+│          terraform.tfstate 업데이트                       │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### Terraform 코드 예제
+
+```hcl
+# === terraform/main.tf ===
+
+# --- Provider 설정 ---
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+  required_version = ">= 1.5"
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+
+# --- 변수 정의 ---
+variable "aws_region" {
+  description = "AWS 리전"
+  type        = string
+  default     = "ap-northeast-2"  # 서울 리전
+}
+
+variable "environment" {
+  description = "배포 환경 (dev, staging, prod)"
+  type        = string
+}
+
+variable "instance_type" {
+  description = "EC2 인스턴스 타입"
+  type        = string
+  default     = "t3.medium"
+}
+
+
+# --- VPC 네트워크 ---
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+
+  tags = {
+    Name        = "${var.environment}-vpc"
+    Environment = var.environment
+  }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.aws_region}a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.environment}-public-subnet"
+  }
+}
+
+
+# --- 보안 그룹 ---
+resource "aws_security_group" "web" {
+  name        = "${var.environment}-web-sg"
+  description = "웹 서버 보안 그룹"
+  vpc_id      = aws_vpc.main.id
+
+  # HTTP 허용
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTPS 허용
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # 아웃바운드 전체 허용
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.environment}-web-sg"
+  }
+}
+
+
+# --- EC2 인스턴스 ---
+resource "aws_instance" "web" {
+  count = 2  # 2대 생성
+
+  ami                    = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.web.id]
+
+  user_data = <<-EOF
+    #!/bin/bash
+    yum update -y
+    yum install -y docker
+    systemctl start docker
+    systemctl enable docker
+  EOF
+
+  tags = {
+    Name        = "${var.environment}-web-${count.index + 1}"
+    Environment = var.environment
+  }
+}
+
+
+# --- 출력값 ---
+output "instance_ips" {
+  description = "웹 서버 퍼블릭 IP 목록"
+  value       = aws_instance.web[*].public_ip
+}
+
+output "vpc_id" {
+  description = "VPC ID"
+  value       = aws_vpc.main.id
+}
+```
+
+```bash
+# === Terraform 실행 명령어 ===
+
+# 초기화: Provider 플러그인 다운로드
+terraform init
+
+# 실행 계획 확인 (실제 변경 없음)
+terraform plan -var="environment=dev"
+
+# 인프라 생성/변경
+terraform apply -var="environment=dev" -auto-approve
+
+# 현재 상태 확인
+terraform state list
+terraform state show aws_instance.web[0]
+
+# 인프라 삭제
+terraform destroy -var="environment=dev"
+```
+
+---
+
+### 4. Terraform State 관리
+
+State 파일은 Terraform이 **"코드에 선언된 것"과 "실제 존재하는 것"을 매핑**하는 핵심 파일이다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              State 관리: 로컬 vs 원격                      │
+│                                                          │
+│  로컬 State (기본값)                                      │
+│  ──────────────────                                      │
+│  terraform.tfstate가 로컬 파일로 저장                     │
+│  문제: 팀 작업 불가 (충돌), 유실 위험                      │
+│                                                          │
+│  원격 State (권장)                                        │
+│  ────────────────                                        │
+│  S3 + DynamoDB로 원격 저장 + 잠금(Lock) 관리              │
+│                                                          │
+│  ┌──────────┐    state read/write    ┌──────────┐        │
+│  │ 개발자 A │◀──────────────────────▶│ S3 버킷  │        │
+│  └──────────┘                        │ (State)  │        │
+│                                      └──────────┘        │
+│  ┌──────────┐    state read/write        ▲               │
+│  │ 개발자 B │◀──────────────────────────┘│               │
+│  └──────────┘                            │               │
+│                                    ┌─────┴─────┐         │
+│                   Lock 관리 ──────▶│ DynamoDB  │         │
+│                                    │ (Lock)    │         │
+│                                    └───────────┘         │
+│                                                          │
+│  A가 apply 중이면 DynamoDB Lock으로 B의 apply 차단        │
+└──────────────────────────────────────────────────────────┘
+```
+
+```hcl
+# === 원격 State 설정 ===
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "prod/terraform.tfstate"
+    region         = "ap-northeast-2"
+    dynamodb_table = "terraform-lock"
+    encrypt        = true
+  }
+}
+
+# DynamoDB 테이블 (Lock용) — 별도 Terraform으로 먼저 생성
+resource "aws_dynamodb_table" "terraform_lock" {
+  name         = "terraform-lock"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+}
+```
+
+---
+
+### 5. Ansible
+
+Ansible은 Red Hat이 관리하는 **서버 구성 관리(Configuration Management) 도구**다. SSH를 통해 에이전트 없이(Agentless) 서버를 관리한다.
+
+```
+┌──────────────────────────────────────────────────────┐
+│              Ansible 핵심 개념                         │
+│                                                      │
+│  Control Node (관리 노드)                             │
+│       │                                              │
+│       │ SSH                                          │
+│       ▼                                              │
+│  Managed Nodes (관리 대상 서버들)                      │
+│                                                      │
+│  Inventory: 관리 대상 서버 목록                        │
+│  Playbook: 실행할 작업 정의 (YAML)                    │
+│  Role: 재사용 가능한 Playbook 묶음                    │
+│  Module: 개별 작업 단위 (apt, copy, docker 등)        │
+│                                                      │
+│  핵심 특징:                                           │
+│  - Agentless: 대상 서버에 에이전트 설치 불필요         │
+│  - Idempotent: 여러 번 실행해도 동일한 결과           │
+│  - YAML: 사람이 읽기 쉬운 설정 형식                   │
+└──────────────────────────────────────────────────────┘
+```
+
+```yaml
+# === inventory.yml (서버 목록) ===
+all:
+  children:
+    web_servers:
+      hosts:
+        web-1:
+          ansible_host: 10.0.1.10
+        web-2:
+          ansible_host: 10.0.1.11
+    db_servers:
+      hosts:
+        db-1:
+          ansible_host: 10.0.2.10
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/deploy_key
+```
+
+```yaml
+# === playbook.yml (서버 구성 Playbook) ===
+---
+- name: 웹 서버 구성
+  hosts: web_servers
+  become: true  # sudo 권한
+
+  vars:
+    app_port: 8000
+    docker_compose_version: "2.24.0"
+
+  tasks:
+    # 1. 시스템 패키지 업데이트
+    - name: 시스템 패키지 업데이트
+      apt:
+        update_cache: true
+        upgrade: safe
+
+    # 2. Docker 설치
+    - name: Docker 의존성 패키지 설치
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+    - name: Docker GPG 키 추가
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Docker 저장소 추가
+      apt_repository:
+        repo: "deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Docker 설치
+      apt:
+        name: docker-ce
+        state: present
+
+    - name: Docker 서비스 시작
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    # 3. 애플리케이션 배포
+    - name: 앱 디렉토리 생성
+      file:
+        path: /opt/app
+        state: directory
+        mode: "0755"
+
+    - name: docker-compose.yml 복사
+      template:
+        src: templates/docker-compose.yml.j2
+        dest: /opt/app/docker-compose.yml
+      notify: 앱 재시작
+
+    # 4. 방화벽 설정
+    - name: HTTP 포트 허용
+      ufw:
+        rule: allow
+        port: "{{ app_port }}"
+        proto: tcp
+
+  handlers:
+    - name: 앱 재시작
+      shell: |
+        cd /opt/app
+        docker compose down
+        docker compose up -d
+```
+
+```bash
+# === Ansible 실행 명령어 ===
+
+# Playbook 실행
+ansible-playbook -i inventory.yml playbook.yml
+
+# 특정 태그만 실행
+ansible-playbook -i inventory.yml playbook.yml --tags "docker"
+
+# 드라이런 (실제 변경 없이 확인)
+ansible-playbook -i inventory.yml playbook.yml --check
+
+# 특정 호스트만 대상
+ansible-playbook -i inventory.yml playbook.yml --limit "web-1"
+```
+
+---
+
+### 6. Terraform vs Ansible 비교
+
+| 항목 | Terraform | Ansible |
+|------|-----------|---------|
+| **주 용도** | 인프라 프로비저닝 (생성/삭제) | 서버 구성 관리 (설정/배포) |
+| **접근 방식** | 선언적 | 명령형 + 선언적 |
+| **상태 관리** | State 파일로 관리 | Stateless (매번 확인) |
+| **에이전트** | 불필요 (API 직접 호출) | 불필요 (SSH 사용) |
+| **언어** | HCL | YAML |
+| **멱등성** | 기본 보장 (State 기반) | 모듈별 보장 |
+| **적합한 작업** | VPC, EC2, RDS, S3 등 생성 | 패키지 설치, 설정 파일 배포 |
+| **함께 사용** | Terraform으로 서버 생성 → Ansible로 구성 |
+
+```
+┌──────────────────────────────────────────────────────┐
+│              Terraform + Ansible 조합                  │
+│                                                      │
+│  Step 1: Terraform                                   │
+│  ├── VPC, 서브넷, 보안 그룹 생성                       │
+│  ├── EC2 인스턴스 2대 생성                             │
+│  ├── RDS 데이터베이스 생성                             │
+│  └── 출력: IP 주소, DNS 정보                          │
+│                                                      │
+│  Step 2: Ansible                                     │
+│  ├── Docker 설치                                     │
+│  ├── 애플리케이션 배포                                 │
+│  ├── Nginx 설정                                      │
+│  ├── SSL 인증서 설치                                  │
+│  └── 모니터링 에이전트 설치                            │
+│                                                      │
+│  Terraform = "서버를 만든다"                           │
+│  Ansible = "서버를 구성한다"                           │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7. GitOps
+
+GitOps는 **Git 리포지토리를 단일 진실의 원천(Single Source of Truth)**으로 삼아 인프라와 애플리케이션을 관리하는 운영 방식이다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              GitOps 원칙                                   │
+│                                                          │
+│  1. 선언적 (Declarative)                                  │
+│     모든 시스템 상태가 선언적으로 정의됨                    │
+│                                                          │
+│  2. 버전 관리 (Versioned & Immutable)                     │
+│     Git이 유일한 소스 of truth                             │
+│     모든 변경은 커밋 이력으로 추적                          │
+│                                                          │
+│  3. 자동 적용 (Pulled Automatically)                      │
+│     승인된 변경이 자동으로 시스템에 적용됨                  │
+│                                                          │
+│  4. 지속적 조정 (Continuously Reconciled)                  │
+│     실제 상태가 원하는 상태와 다르면 자동 복구              │
+│                                                          │
+│  기존 CI/CD와의 차이:                                     │
+│  CI/CD (Push): 파이프라인이 클러스터에 push               │
+│  GitOps (Pull): 클러스터가 Git에서 pull                   │
+└──────────────────────────────────────────────────────────┘
+```
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              Push 방식 vs Pull 방식                        │
+│                                                          │
+│  Push (전통 CI/CD)                                       │
+│  ──────────────────                                      │
+│  Developer → Git → CI Pipeline → kubectl apply → K8s     │
+│                                                          │
+│  문제: CI가 클러스터 접근 권한 필요                        │
+│  문제: 수동 kubectl 사용 시 Git과 불일치 발생              │
+│                                                          │
+│  ──────────────────────────────────────                   │
+│                                                          │
+│  Pull (GitOps)                                           │
+│  ──────────────                                          │
+│  Developer → Git → (ArgoCD가 감시) → 자동 동기화 → K8s    │
+│                                                          │
+│  장점: 클러스터 내부 에이전트가 pull                       │
+│  장점: Git과 실제 상태가 항상 일치                         │
+│  장점: 누군가 kubectl로 직접 변경하면 자동 롤백            │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 8. ArgoCD
+
+ArgoCD는 가장 널리 사용되는 **쿠버네티스 GitOps 도구**다. Git 리포지토리의 상태와 쿠버네티스 클러스터의 상태를 지속적으로 동기화한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              ArgoCD 동기화 흐름                            │
+│                                                          │
+│  ┌──────────┐                                            │
+│  │ Git Repo │ ← 개발자가 YAML 수정 & merge               │
+│  │ (k8s     │                                            │
+│  │ manifests)│                                           │
+│  └─────┬────┘                                            │
+│        │                                                 │
+│        │  감시 (Polling / Webhook)                        │
+│        ▼                                                 │
+│  ┌───────────────────────────────────┐                   │
+│  │          ArgoCD Server            │                   │
+│  │                                   │                   │
+│  │  1. Git에서 원하는 상태 읽기       │                   │
+│  │  2. 클러스터 현재 상태 확인        │                   │
+│  │  3. 차이(Diff) 감지              │                   │
+│  │  4. 자동/수동 동기화              │                   │
+│  └──────────┬────────────────────────┘                   │
+│             │                                            │
+│             ▼                                            │
+│  ┌──────────────────────┐                                │
+│  │  Kubernetes Cluster  │                                │
+│  │                      │                                │
+│  │  원하는 상태 = 실제 상태                                │
+│  │  (Synced ✅)                                          │
+│  └──────────────────────┘                                │
+│                                                          │
+│  상태:                                                    │
+│  Synced     — Git과 클러스터가 일치                        │
+│  OutOfSync  — 차이 발생, 동기화 필요                       │
+│  Healthy    — 모든 리소스 정상                              │
+│  Degraded   — 일부 리소스 비정상                           │
+└──────────────────────────────────────────────────────────┘
+```
+
+```yaml
+# === ArgoCD Application 정의 ===
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/myorg/k8s-manifests.git
+    targetRevision: main
+    path: apps/my-app/overlays/production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+
+  syncPolicy:
+    automated:
+      prune: true      # Git에서 삭제된 리소스는 클러스터에서도 삭제
+      selfHeal: true   # 클러스터에서 수동 변경 시 자동 롤백
+    syncOptions:
+      - CreateNamespace=true
+```
+
+---
+
+### 9. GitOps 워크플로
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              GitOps 배포 워크플로                              │
+│                                                              │
+│  ┌─────────┐  코드 변경    ┌───────────┐  이미지 빌드         │
+│  │Developer│─────────────▶│ App Repo  │──────────────┐      │
+│  └─────────┘  (PR 생성)    │(소스 코드)│              │      │
+│                            └───────────┘              │      │
+│                                                       ▼      │
+│                                              ┌──────────┐   │
+│                                              │ CI       │   │
+│                                              │ Pipeline │   │
+│                                              │          │   │
+│                                              │ - test   │   │
+│                                              │ - build  │   │
+│                                              │ - push   │   │
+│                                              └────┬─────┘   │
+│                                                   │          │
+│              이미지 태그 업데이트                     │          │
+│  ┌───────────────────────────────────────────────┘          │
+│  │                                                           │
+│  ▼                                                           │
+│  ┌────────────┐  자동 감지    ┌──────────┐                   │
+│  │ Config Repo│◀────────────│  ArgoCD  │                    │
+│  │(K8s YAML)  │              │          │                    │
+│  │            │─────────────▶│  동기화  │                    │
+│  └────────────┘  PR → 리뷰   └────┬─────┘                   │
+│                  → merge          │                          │
+│                                   ▼                          │
+│                           ┌───────────┐                      │
+│                           │ K8s       │                      │
+│                           │ Cluster   │                      │
+│                           └───────────┘                      │
+│                                                              │
+│  리포지토리 분리:                                              │
+│  App Repo: 소스 코드 + Dockerfile                             │
+│  Config Repo: K8s manifests (Deployment, Service YAML)       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+```yaml
+# === Config Repo 예시: apps/my-app/deployment.yaml ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: my-app
+          image: registry.example.com/my-app:v1.2.3  # CI가 이 태그를 업데이트
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+```
+
+---
+
+### 10. 환경 분리 전략
+
+GitOps에서 dev, staging, production 환경을 어떻게 관리할 것인가?
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              환경 분리: 브랜치 vs 디렉토리                  │
+│                                                          │
+│  [방법 1] 브랜치 기반 (비권장)                             │
+│  ─────────────────────────                               │
+│  main    → production 환경                                │
+│  staging → staging 환경                                   │
+│  develop → dev 환경                                       │
+│                                                          │
+│  문제: 브랜치 간 merge 충돌, 환경 간 차이 추적 어려움       │
+│                                                          │
+│  ──────────────────────────────────────                   │
+│                                                          │
+│  [방법 2] 디렉토리 기반 + Kustomize (권장)                 │
+│  ────────────────────────────────────                    │
+│  config-repo/                                            │
+│  └── apps/my-app/                                        │
+│      ├── base/                  # 공통 설정               │
+│      │   ├── deployment.yaml                             │
+│      │   ├── service.yaml                                │
+│      │   └── kustomization.yaml                          │
+│      └── overlays/                                       │
+│          ├── dev/               # dev 오버라이드          │
+│          │   ├── kustomization.yaml                      │
+│          │   └── replicas-patch.yaml                     │
+│          ├── staging/           # staging 오버라이드      │
+│          │   ├── kustomization.yaml                      │
+│          │   └── replicas-patch.yaml                     │
+│          └── production/        # production 오버라이드   │
+│              ├── kustomization.yaml                      │
+│              └── replicas-patch.yaml                     │
+│                                                          │
+│  하나의 브랜치(main)에서 디렉토리로 환경을 구분            │
+│  base: 공통 → overlays: 환경별 차이점만 오버라이드         │
+└──────────────────────────────────────────────────────────┘
+```
+
+```yaml
+# === base/kustomization.yaml ===
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+
+# === overlays/dev/kustomization.yaml ===
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - ../../base
+patchesStrategicMerge:
+  - replicas-patch.yaml
+namePrefix: dev-
+namespace: dev
+
+# === overlays/dev/replicas-patch.yaml ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1  # dev는 1대
+
+# === overlays/production/replicas-patch.yaml ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 5  # production은 5대
+```
+
+#### 배포 승격 (Promotion) 흐름
+
+```
+┌──────────────────────────────────────────────────────┐
+│              배포 승격 흐름                             │
+│                                                      │
+│  1. CI에서 이미지 빌드: my-app:abc123                 │
+│                                                      │
+│  2. dev 환경 배포 (자동)                               │
+│     overlays/dev/의 이미지 태그 업데이트                │
+│     ArgoCD 자동 동기화                                │
+│                                                      │
+│  3. QA 테스트 통과                                    │
+│                                                      │
+│  4. staging 승격 (PR)                                 │
+│     overlays/staging/의 이미지 태그 업데이트            │
+│     PR 생성 → 리뷰 → merge                           │
+│     ArgoCD 자동 동기화                                │
+│                                                      │
+│  5. staging 검증 완료                                  │
+│                                                      │
+│  6. production 승격 (PR + 승인)                        │
+│     overlays/production/의 이미지 태그 업데이트         │
+│     PR 생성 → 팀 리뷰 → Tech Lead 승인 → merge        │
+│     ArgoCD 자동 동기화                                │
+│                                                      │
+│  모든 변경이 Git PR로 추적됨 → 감사 추적(Audit Trail)  │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| IaC | 인프라를 코드로 정의, 버전 관리, 재현 가능 |
+| 선언적 vs 명령형 | What(최종 상태) vs How(절차) — 대부분 선언적 선호 |
+| Terraform | HCL 기반 선언적 IaC, Provider/Resource/State 핵심 |
+| Terraform State | 코드 vs 실제 인프라 매핑, 원격 State(S3+DynamoDB) 권장 |
+| Ansible | YAML Playbook 기반 서버 구성 관리, Agentless |
+| Terraform + Ansible | 인프라 생성(Terraform) + 서버 구성(Ansible) 조합 |
+| GitOps | Git을 단일 진실의 원천으로 — 선언적, 자동 적용, 자동 복구 |
+| ArgoCD | K8s GitOps 도구, Git과 클러스터 상태 자동 동기화 |
+| 환경 분리 | 디렉토리 기반 + Kustomize 오버레이 (브랜치 분리 비권장) |
+| 핵심 가치 | 재현성, 추적성, 자동화 — "인프라도 코드처럼 관리하라" |

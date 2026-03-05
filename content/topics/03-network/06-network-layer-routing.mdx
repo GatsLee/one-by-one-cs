@@ -1,0 +1,632 @@
+---
+title: "네트워크 계층과 라우팅"
+topic: "03-network"
+order: 6
+---
+
+## 핵심 개념
+
+**네트워크 계층(Network Layer)**은 OSI 모델의 3계층으로,
+서로 다른 네트워크에 있는 호스트 간 **패킷 전달**을 담당한다.
+핵심 기능은 **포워딩(forwarding)**과 **라우팅(routing)**이다.
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    네트워크 계층                       │
+│                                                     │
+│  ┌─────────────┐         ┌─────────────┐            │
+│  │  포워딩      │         │  라우팅      │            │
+│  │ (Forwarding)│         │ (Routing)   │            │
+│  │             │         │             │            │
+│  │ 라우터 내부  │         │ 라우터 간    │            │
+│  │ 입력→출력    │         │ 경로 결정    │            │
+│  │ 포트 결정    │         │ 알고리즘     │            │
+│  │             │         │             │            │
+│  │ 데이터 평면  │         │ 제어 평면    │            │
+│  └─────────────┘         └─────────────┘            │
+└─────────────────────────────────────────────────────┘
+```
+
+| 구분 | 포워딩 | 라우팅 |
+|------|--------|--------|
+| **범위** | 라우터 내부 (로컬) | 네트워크 전체 (글로벌) |
+| **기능** | 패킷을 적절한 출력 포트로 전달 | 출발지→목적지 경로 결정 |
+| **속도** | 나노초 단위 (하드웨어) | 초 단위 (소프트웨어) |
+| **사용 정보** | 포워딩 테이블 | 라우팅 알고리즘 |
+
+---
+
+## IPv4
+
+### IPv4 헤더 구조
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|Version|  IHL  |    ToS/DSCP   |         Total Length          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         Identification        |Flags|    Fragment Offset      |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  TTL (Time    |   Protocol    |       Header Checksum         |
+|   to Live)    |               |                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                    Source IP Address                          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                  Destination IP Address                       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                    Options (가변 길이)                         |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+주요 필드 설명:
+
+| 필드 | 크기 | 설명 |
+|------|------|------|
+| **Version** | 4비트 | IP 버전 (IPv4 = 4) |
+| **IHL** | 4비트 | 헤더 길이 (32비트 워드 단위, 최소 5) |
+| **TTL** | 8비트 | 패킷 생존 시간 (라우터 통과 시 1 감소, 0이면 폐기) |
+| **Protocol** | 8비트 | 상위 프로토콜 (TCP=6, UDP=17, ICMP=1) |
+| **Source IP** | 32비트 | 출발지 IP 주소 |
+| **Destination IP** | 32비트 | 목적지 IP 주소 |
+
+### IPv4 주소 체계
+
+32비트 주소를 **점 표기법(dotted decimal)**으로 표현한다: `192.168.1.100`
+
+```
+IP 주소: 192.168.1.100
+이진수:  11000000.10101000.00000001.01100100
+         ├──네트워크 부분──┤├─호스트 부분─┤
+```
+
+### 클래스 기반 주소 (역사적)
+
+| 클래스 | 시작 비트 | 네트워크 비트 | 호스트 비트 | 범위 |
+|--------|-----------|-------------|------------|------|
+| A | 0 | 8 | 24 | 0.0.0.0 ~ 127.255.255.255 |
+| B | 10 | 16 | 16 | 128.0.0.0 ~ 191.255.255.255 |
+| C | 110 | 24 | 8 | 192.0.0.0 ~ 223.255.255.255 |
+| D | 1110 | 멀티캐스트 | - | 224.0.0.0 ~ 239.255.255.255 |
+| E | 1111 | 예약 | - | 240.0.0.0 ~ 255.255.255.255 |
+
+### CIDR (Classless Inter-Domain Routing)
+
+클래스 기반의 비효율을 해결하기 위해 **가변 길이 서브넷 마스크**를 사용한다.
+
+표기법: `192.168.1.0/24` (앞 24비트가 네트워크 부분)
+
+### 서브넷팅 계산 예제
+
+```python
+import ipaddress
+
+def subnet_info(cidr):
+    """서브넷 정보를 계산하는 함수"""
+    network = ipaddress.ip_network(cidr, strict=False)
+
+    print(f"네트워크 주소:  {network.network_address}")
+    print(f"서브넷 마스크:  {network.netmask}")
+    print(f"브로드캐스트:   {network.broadcast_address}")
+    print(f"호스트 범위:    {network.network_address + 1} ~ "
+          f"{network.broadcast_address - 1}")
+    print(f"사용 가능 호스트: {network.num_addresses - 2}개")
+    print(f"네트워크 비트:  {network.prefixlen}")
+    print(f"호스트 비트:    {32 - network.prefixlen}")
+    print()
+
+# 예제 1: /24 서브넷
+print("=== 192.168.1.0/24 ===")
+subnet_info("192.168.1.0/24")
+
+# 예제 2: /26 서브넷 (더 작은 서브넷)
+print("=== 10.0.0.0/26 ===")
+subnet_info("10.0.0.0/26")
+
+# 예제 3: 서브넷 분할
+# 192.168.1.0/24를 4개의 서브넷으로 분할
+print("=== 192.168.1.0/24를 4개 서브넷으로 분할 ===")
+network = ipaddress.ip_network("192.168.1.0/24")
+subnets = list(network.subnets(prefixlen_diff=2))  # /24 → /26
+for i, subnet in enumerate(subnets):
+    print(f"  서브넷 {i}: {subnet} "
+          f"({subnet.network_address + 1} ~ "
+          f"{subnet.broadcast_address - 1})")
+```
+
+### 사설 IP 주소 대역
+
+| 대역 | CIDR | 호스트 수 |
+|------|------|----------|
+| 10.0.0.0 ~ 10.255.255.255 | 10.0.0.0/8 | 약 1,677만 |
+| 172.16.0.0 ~ 172.31.255.255 | 172.16.0.0/12 | 약 104만 |
+| 192.168.0.0 ~ 192.168.255.255 | 192.168.0.0/16 | 약 6.5만 |
+
+---
+
+## NAT (Network Address Translation)
+
+사설 IP 주소를 공인 IP 주소로 **변환**하여 여러 장치가 하나의 공인 IP를 공유한다.
+
+```
+사설 네트워크                  NAT 라우터                  인터넷
+┌────────────┐              ┌──────────┐
+│ 10.0.0.2   │──┐           │          │         ┌──────────┐
+│ :3345      │  │  사설 IP   │ NAT 변환 │ 공인 IP │          │
+├────────────┤  ├──────────▶│          │────────▶│ 웹 서버  │
+│ 10.0.0.3   │──┘           │138.76.29.│         │93.184.216│
+│ :5001      │              │    7     │         │   .34    │
+└────────────┘              └──────────┘         └──────────┘
+
+NAT 변환 테이블:
+┌────────────────────┬────────────────────┐
+│ 사설 IP:포트        │ 공인 IP:포트        │
+├────────────────────┼────────────────────┤
+│ 10.0.0.2:3345      │ 138.76.29.7:5001   │
+│ 10.0.0.3:5001      │ 138.76.29.7:5002   │
+└────────────────────┴────────────────────┘
+```
+
+### NAT 동작 과정
+
+```python
+# NAT 동작 시뮬레이션
+class NATRouter:
+    def __init__(self, public_ip):
+        self.public_ip = public_ip
+        self.nat_table = {}      # (사설IP, 사설포트) → 공인포트
+        self.reverse_table = {}  # 공인포트 → (사설IP, 사설포트)
+        self.next_port = 40000   # 포트 번호 할당 시작
+
+    def outbound(self, private_ip, private_port, dest_ip, dest_port):
+        """내부 → 외부: 사설 주소를 공인 주소로 변환"""
+        key = (private_ip, private_port)
+        if key not in self.nat_table:
+            self.nat_table[key] = self.next_port
+            self.reverse_table[self.next_port] = key
+            self.next_port += 1
+
+        public_port = self.nat_table[key]
+        print(f"[OUT] {private_ip}:{private_port} → "
+              f"{self.public_ip}:{public_port} → "
+              f"{dest_ip}:{dest_port}")
+        return self.public_ip, public_port
+
+    def inbound(self, public_port, src_ip, src_port):
+        """외부 → 내부: 공인 주소를 사설 주소로 역변환"""
+        if public_port in self.reverse_table:
+            private_ip, private_port = self.reverse_table[public_port]
+            print(f"[IN]  {src_ip}:{src_port} → "
+                  f"{self.public_ip}:{public_port} → "
+                  f"{private_ip}:{private_port}")
+            return private_ip, private_port
+        print(f"[IN]  포트 {public_port}에 대한 매핑 없음 - 패킷 폐기")
+        return None
+
+# 사용 예
+nat = NATRouter("138.76.29.7")
+nat.outbound("10.0.0.2", 3345, "93.184.216.34", 80)
+nat.outbound("10.0.0.3", 5001, "93.184.216.34", 80)
+nat.inbound(40000, "93.184.216.34", 80)  # 10.0.0.2로 전달
+```
+
+### NAT의 장단점
+
+| 장점 | 단점 |
+|------|------|
+| IPv4 주소 절약 | 종단간(end-to-end) 원칙 위반 |
+| 내부 네트워크 보안 | P2P, VoIP 연결 어려움 |
+| 내부 구조 은닉 | 포트 번호를 주소 변환에 사용 (계층 위반) |
+
+---
+
+## IPv6
+
+IPv4 주소 고갈 문제를 해결하기 위해 설계된 차세대 프로토콜이다.
+
+### IPv4 vs IPv6 비교
+
+| 항목 | IPv4 | IPv6 |
+|------|------|------|
+| **주소 길이** | 32비트 | 128비트 |
+| **주소 수** | 약 43억 | 약 3.4 x 10^38 |
+| **헤더 크기** | 가변 (20~60바이트) | 고정 40바이트 |
+| **체크섬** | 있음 | 없음 (상위 계층에 위임) |
+| **단편화** | 라우터 가능 | 출발지만 가능 |
+| **브로드캐스트** | 지원 | 미지원 (멀티캐스트로 대체) |
+| **표기법** | 10진수 점 표기 | 16진수 콜론 표기 |
+
+### IPv6 주소 표기
+
+```
+전체 표기:  2001:0db8:0000:0000:0000:0000:0000:0001
+축약 표기:  2001:db8::1  (연속된 0 그룹을 ::로 축약)
+
+종류:
+  ::1/128          → 루프백 (IPv4의 127.0.0.1)
+  fe80::/10        → 링크 로컬 주소
+  2000::/3         → 글로벌 유니캐스트
+  ff00::/8         → 멀티캐스트
+```
+
+### IPv4에서 IPv6로의 전환
+
+```
+1. 듀얼 스택 (Dual Stack)
+   ┌──────────┐                    ┌──────────┐
+   │ IPv4+IPv6│───── IPv4/IPv6 ────│ IPv4+IPv6│
+   │  호스트   │                    │  호스트   │
+   └──────────┘                    └──────────┘
+   * 두 프로토콜을 동시에 지원
+
+2. 터널링 (Tunneling)
+   ┌──────┐    ┌──────────────────┐    ┌──────┐
+   │ IPv6 │───▶│ IPv4 네트워크     │───▶│ IPv6 │
+   │      │    │ ┌──────────────┐ │    │      │
+   │      │    │ │IPv6 패킷을    │ │    │      │
+   │      │    │ │IPv4로 캡슐화  │ │    │      │
+   │      │    │ └──────────────┘ │    │      │
+   └──────┘    └──────────────────┘    └──────┘
+   * IPv6 패킷을 IPv4 패킷 안에 넣어 전송
+```
+
+---
+
+## 라우팅 알고리즘
+
+### 거리 벡터 알고리즘 (Distance Vector, Bellman-Ford)
+
+각 라우터가 **이웃 라우터로부터 받은 정보**를 바탕으로 최단 경로를 계산한다.
+
+핵심 공식 (Bellman-Ford):
+`dx(y) = min{ c(x,v) + dv(y) }` (모든 이웃 v에 대해)
+
+```
+네트워크 토폴로지:
+    A ──2── B
+    |       |
+    7       1
+    |       |
+    C ──3── D
+
+거리 벡터 테이블 (A의 관점):
+┌──────┬──────┬──────┬──────┐
+│ 목적지│ via B│ via C│최단  │
+├──────┼──────┼──────┼──────┤
+│  A   │  -   │  -   │  0   │
+│  B   │  2   │ 7+?  │  2   │
+│  C   │ 2+?  │  7   │  7   │
+│  D   │ 2+1  │ 7+3  │  3   │
+└──────┴──────┴──────┴──────┘
+```
+
+```python
+# 거리 벡터 라우팅 시뮬레이션
+import copy
+
+class DistanceVectorRouter:
+    def __init__(self, name):
+        self.name = name
+        self.neighbors = {}     # 이웃 → 링크 비용
+        self.distance_table = {} # 목적지 → (비용, 다음 홉)
+
+    def add_neighbor(self, neighbor, cost):
+        self.neighbors[neighbor] = cost
+        self.distance_table[neighbor] = (cost, neighbor)
+
+    def receive_vector(self, from_router, vector):
+        """이웃으로부터 거리 벡터 수신 및 테이블 업데이트"""
+        updated = False
+        link_cost = self.neighbors[from_router]
+
+        for dest, cost in vector.items():
+            if dest == self.name:
+                continue
+            new_cost = link_cost + cost
+            current = self.distance_table.get(dest, (float('inf'), None))
+
+            if new_cost < current[0]:
+                self.distance_table[dest] = (new_cost, from_router)
+                updated = True
+                print(f"  [{self.name}] {dest}까지 경로 갱신: "
+                      f"비용 {current[0]} → {new_cost} "
+                      f"(경유: {from_router})")
+        return updated
+
+    def get_vector(self):
+        """자신의 거리 벡터 반환"""
+        vector = {self.name: 0}
+        for dest, (cost, _) in self.distance_table.items():
+            vector[dest] = cost
+        return vector
+
+    def print_table(self):
+        print(f"\n[라우터 {self.name}] 라우팅 테이블:")
+        print(f"  {'목적지':<8} {'비용':<6} {'다음 홉':<8}")
+        print(f"  {'-'*22}")
+        for dest, (cost, next_hop) in sorted(self.distance_table.items()):
+            print(f"  {dest:<8} {cost:<6} {next_hop:<8}")
+
+# 네트워크 구성
+routers = {name: DistanceVectorRouter(name) for name in ['A', 'B', 'C', 'D']}
+# 링크 추가
+links = [('A', 'B', 2), ('A', 'C', 7), ('B', 'D', 1), ('C', 'D', 3)]
+for r1, r2, cost in links:
+    routers[r1].add_neighbor(r2, cost)
+    routers[r2].add_neighbor(r1, cost)
+
+# 반복 수렴
+for iteration in range(3):
+    print(f"\n=== 반복 {iteration + 1} ===")
+    any_updated = False
+    for name, router in routers.items():
+        for neighbor in router.neighbors:
+            vector = routers[neighbor].get_vector()
+            if router.receive_vector(neighbor, vector):
+                any_updated = True
+    if not any_updated:
+        print("수렴 완료!")
+        break
+
+for router in routers.values():
+    router.print_table()
+```
+
+### 링크 상태 알고리즘 (Link State, Dijkstra)
+
+모든 라우터가 **전체 네트워크 토폴로지**를 파악한 후 Dijkstra 알고리즘으로
+최단 경로를 계산한다.
+
+```python
+import heapq
+
+def dijkstra(graph, source):
+    """
+    Dijkstra 최단 경로 알고리즘
+    graph: {노드: {이웃: 비용}} 형태의 인접 리스트
+    source: 시작 노드
+    """
+    dist = {node: float('inf') for node in graph}
+    prev = {node: None for node in graph}
+    dist[source] = 0
+    visited = set()
+    pq = [(0, source)]  # (비용, 노드) 우선순위 큐
+
+    print(f"출발지: {source}")
+    print(f"{'단계':<4} {'방문 노드':<8} {'확정 비용':<8} {'경유':<6}")
+    print("-" * 30)
+
+    step = 0
+    while pq:
+        cost, u = heapq.heappop(pq)
+        if u in visited:
+            continue
+        visited.add(u)
+        step += 1
+        print(f"{step:<4} {u:<8} {cost:<8} {prev[u] or '-':<6}")
+
+        for v, weight in graph[u].items():
+            if v not in visited:
+                new_dist = dist[u] + weight
+                if new_dist < dist[v]:
+                    dist[v] = new_dist
+                    prev[v] = u
+                    heapq.heappush(pq, (new_dist, v))
+
+    # 라우팅 테이블 구성
+    print(f"\n[라우터 {source}] 최단 경로 라우팅 테이블:")
+    for dest in sorted(graph.keys()):
+        if dest == source:
+            continue
+        # 경로 역추적
+        path = []
+        node = dest
+        while node:
+            path.append(node)
+            node = prev[node]
+        path.reverse()
+        print(f"  {dest}: 비용={dist[dest]}, 경로={' → '.join(path)}")
+
+    return dist, prev
+
+# 네트워크 토폴로지
+graph = {
+    'A': {'B': 2, 'C': 7},
+    'B': {'A': 2, 'D': 1},
+    'C': {'A': 7, 'D': 3},
+    'D': {'B': 1, 'C': 3}
+}
+
+dijkstra(graph, 'A')
+```
+
+### 거리 벡터 vs 링크 상태 비교
+
+| 항목 | 거리 벡터 | 링크 상태 |
+|------|-----------|-----------|
+| **정보 공유** | 이웃에게만 전체 테이블 | 모든 라우터에게 링크 정보 |
+| **알고리즘** | Bellman-Ford | Dijkstra |
+| **수렴 속도** | 느림 | 빠름 |
+| **메모리** | 적음 | 많음 (전체 토폴로지 저장) |
+| **카운트 투 인피니티** | 발생 가능 | 없음 |
+| **대표 프로토콜** | RIP | OSPF |
+
+---
+
+## 라우팅 프로토콜
+
+### RIP (Routing Information Protocol)
+
+- 거리 벡터 기반, 홉 수(hop count)를 메트릭으로 사용
+- 최대 15홉 (16 = 도달 불가)
+- 30초마다 라우팅 테이블 교환
+- 소규모 네트워크에 적합
+
+### OSPF (Open Shortest Path First)
+
+- 링크 상태 기반, 대역폭을 메트릭으로 사용
+- Dijkstra 알고리즘으로 최단 경로 계산
+- 영역(Area) 기반 계층적 라우팅
+- 대규모 네트워크에 적합
+
+```
+OSPF 영역 구조:
+┌─────────────────────────────────┐
+│          백본 영역 (Area 0)      │
+│    ┌──────┐     ┌──────┐       │
+│    │ ABR  │─────│ ABR  │       │
+│    └──┬───┘     └──┬───┘       │
+└───────┼────────────┼───────────┘
+        │            │
+   ┌────▼───┐   ┌───▼────┐
+   │ Area 1 │   │ Area 2 │
+   │        │   │        │
+   │ R1──R2 │   │ R3──R4 │
+   └────────┘   └────────┘
+
+ABR = Area Border Router (영역 경계 라우터)
+```
+
+### BGP (Border Gateway Protocol)
+
+- **AS(Autonomous System)** 간 라우팅 프로토콜
+- 인터넷의 핵심 라우팅 프로토콜 ("인터넷의 접착제")
+- 경로 벡터(Path Vector) 방식
+- 정책 기반 라우팅 (비용뿐 아니라 정치적/경제적 요소 고려)
+
+```
+AS 간 라우팅:
+┌──────────────┐    eBGP    ┌──────────────┐
+│   AS 100     │◀══════════▶│   AS 200     │
+│   (KT)       │            │  (Google)    │
+│  ┌──┐ ┌──┐  │            │  ┌──┐ ┌──┐  │
+│  │R1│─│R2│  │            │  │R3│─│R4│  │
+│  └──┘ └──┘  │            │  └──┘ └──┘  │
+│   iBGP      │            │   iBGP      │
+└──────────────┘            └──────────────┘
+
+eBGP = AS 간 BGP (외부)
+iBGP = AS 내부 BGP
+```
+
+### 라우팅 프로토콜 비교
+
+| 항목 | RIP | OSPF | BGP |
+|------|-----|------|-----|
+| **유형** | 내부(IGP) | 내부(IGP) | 외부(EGP) |
+| **알고리즘** | 거리 벡터 | 링크 상태 | 경로 벡터 |
+| **메트릭** | 홉 수 | 대역폭 기반 비용 | 정책, 경로 속성 |
+| **수렴** | 느림 | 빠름 | 보통 |
+| **규모** | 소규모 | 대규모 | 인터넷 전체 |
+| **전송** | UDP 520 | IP 직접 (프로토콜 89) | TCP 179 |
+
+---
+
+## AS (Autonomous System)와 계층적 라우팅
+
+인터넷은 수십만 개의 AS로 구성되며, 각 AS는 독립적인 라우팅 정책을 가진다.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    인터넷 전체 구조                       │
+│                                                         │
+│    ┌─────┐   BGP   ┌─────┐   BGP   ┌─────┐            │
+│    │AS100│◀════════▶│AS200│◀════════▶│AS300│            │
+│    │     │         │     │         │     │            │
+│    │OSPF │         │RIP  │         │OSPF │            │
+│    │내부 │         │내부 │         │내부 │            │
+│    └─────┘         └─────┘         └─────┘            │
+│                                                         │
+│  AS 내부: IGP (OSPF, RIP 등)으로 라우팅                  │
+│  AS 간:   EGP (BGP)로 라우팅                             │
+└─────────────────────────────────────────────────────────┘
+```
+
+- **IGP (Interior Gateway Protocol)**: AS 내부 라우팅 (RIP, OSPF)
+- **EGP (Exterior Gateway Protocol)**: AS 간 라우팅 (BGP)
+
+---
+
+## ICMP (Internet Control Message Protocol)
+
+네트워크 계층의 **오류 보고** 및 **진단** 프로토콜이다.
+IP 패킷 안에 캡슐화되어 전송된다.
+
+### 주요 ICMP 메시지 유형
+
+| 유형 | 코드 | 설명 |
+|------|------|------|
+| 0 | 0 | 에코 응답 (Echo Reply) |
+| 3 | 0~15 | 목적지 도달 불가 (Destination Unreachable) |
+| 8 | 0 | 에코 요청 (Echo Request) |
+| 11 | 0 | TTL 초과 (Time Exceeded) |
+
+### ping과 traceroute
+
+```
+ping 동작:
+호스트 A                                호스트 B
+   │                                       │
+   │── ICMP Echo Request (유형 8) ────────▶│
+   │                                       │
+   │◀── ICMP Echo Reply (유형 0) ──────────│
+   │                                       │
+   │  RTT (왕복 시간) 측정                  │
+
+traceroute 동작 (TTL을 1씩 증가시키며 경로 추적):
+호스트 A      라우터 1      라우터 2      호스트 B
+   │             │             │             │
+   │─ TTL=1 ───▶│             │             │
+   │◀ ICMP TTL  │             │             │
+   │  초과 (11) │             │             │
+   │             │             │             │
+   │─── TTL=2 ──────────────▶│             │
+   │◀──── ICMP TTL 초과 ─────│             │
+   │             │             │             │
+   │───── TTL=3 ─────────────────────────▶│
+   │◀───── ICMP 포트 도달불가 ─────────────│
+   │             │             │             │
+```
+
+```python
+# traceroute 개념 시뮬레이션
+def simulate_traceroute(source, destination, network_path):
+    """traceroute 시뮬레이션"""
+    print(f"traceroute to {destination} from {source}")
+    print(f"{'홉':<4} {'라우터':<16} {'RTT':<10}")
+    print("-" * 30)
+
+    for ttl, (router, rtt) in enumerate(network_path, 1):
+        if router == destination:
+            print(f"{ttl:<4} {router:<16} {rtt:.1f} ms  *** 도착 ***")
+            break
+        else:
+            print(f"{ttl:<4} {router:<16} {rtt:.1f} ms  "
+                  f"(TTL 초과 → ICMP 유형 11)")
+
+# 시뮬레이션 실행
+path = [
+    ("192.168.1.1", 1.2),     # 게이트웨이
+    ("10.0.0.1", 5.3),        # ISP 라우터 1
+    ("172.16.0.1", 12.7),     # ISP 라우터 2
+    ("93.184.216.34", 18.4),  # 목적지
+]
+simulate_traceroute("192.168.1.100", "93.184.216.34", path)
+```
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| **포워딩** | 라우터 내부에서 패킷을 적절한 출력 포트로 전달 (데이터 평면) |
+| **라우팅** | 출발지→목적지 최적 경로를 결정하는 네트워크 전체 프로세스 (제어 평면) |
+| **IPv4** | 32비트 주소, 점 표기법, 클래스/CIDR 기반 주소 체계 |
+| **서브넷팅** | 네트워크를 더 작은 서브넷으로 분할, CIDR 표기 (/24 등) |
+| **NAT** | 사설 IP → 공인 IP 변환, IPv4 주소 절약 |
+| **IPv6** | 128비트 주소, 헤더 간소화, 브로드캐스트 제거 |
+| **거리 벡터** | 이웃 정보 기반 Bellman-Ford, 수렴 느림 (RIP) |
+| **링크 상태** | 전체 토폴로지 기반 Dijkstra, 수렴 빠름 (OSPF) |
+| **BGP** | AS 간 경로 벡터 라우팅, 정책 기반, 인터넷 핵심 프로토콜 |
+| **ICMP** | 네트워크 오류 보고 및 진단 (ping, traceroute) |

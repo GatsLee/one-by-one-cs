@@ -1,0 +1,458 @@
+---
+title: "메모리 관리"
+topic: "02-os"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 메모리 계층 구조
+
+컴퓨터의 메모리는 **속도, 용량, 비용**에 따라 계층적으로 구성된다.
+
+```
+          ┌─────────┐
+          │레지스터   │  ← 가장 빠름, 가장 비쌈, 가장 작음
+          │(수 바이트) │     ~0.3ns, CPU 내부
+          ├─────────┤
+          │ L1 캐시   │     ~1ns, 수십 KB
+          ├─────────┤
+          │ L2 캐시   │     ~3-10ns, 수백 KB ~ 수 MB
+          ├─────────┤
+          │ L3 캐시   │     ~10-20ns, 수 MB ~ 수십 MB
+          ├──────────┤
+          │   RAM    │     ~50-100ns, 수 GB ~ 수십 GB
+          │ (주기억)  │
+          ├──────────┤
+          │  SSD     │     ~100us, 수백 GB ~ TB
+          ├──────────┤
+          │  HDD     │     ~10ms, 수 TB
+          │ (보조기억) │     가장 느림, 가장 쌈, 가장 큼
+          └──────────┘
+```
+
+> **비유**: 레지스터 = 내 손에 든 메모장 (즉시 사용), 캐시 = 책상 위의 서류 (빠르게 접근), RAM = 서랍 (잠깐 찾음), SSD/HDD = 창고 (멀리 가서 찾음)
+
+**핵심 원리 — 지역성 (Locality)**:
+- **시간 지역성**: 최근 접근한 데이터는 곧 다시 접근할 가능성이 높다
+- **공간 지역성**: 접근한 주소 근처의 데이터에 곧 접근할 가능성이 높다
+
+### 주소 바인딩
+
+프로그램의 논리 주소를 물리 주소로 변환하는 과정.
+
+| 바인딩 시점 | 설명 | 특징 |
+|------------|------|------|
+| 컴파일 시간 | 물리 주소가 컴파일 시 결정 | 위치 변경 불가 |
+| 적재 시간 | 메모리 로드 시 결정 | 위치 변경 시 재로드 필요 |
+| **실행 시간** | 실행 중 동적으로 변환 | MMU 사용, 현대 OS 표준 |
+
+### 연속 할당 (Contiguous Allocation)
+
+프로세스를 메모리의 **연속된 공간**에 배치하는 방식.
+
+```
+메모리:
+┌────────────────┐
+│     OS          │  (0 ~ 200KB)
+├────────────────┤
+│   프로세스 A     │  (200 ~ 500KB, 300KB)
+├────────────────┤
+│   (빈 공간)     │  (500 ~ 600KB, 100KB)
+├────────────────┤
+│   프로세스 B     │  (600 ~ 900KB, 300KB)
+├────────────────┤
+│   (빈 공간)     │  (900 ~ 1200KB, 300KB)
+├────────────────┤
+│   프로세스 C     │  (1200 ~ 1400KB, 200KB)
+├────────────────┤
+│   (빈 공간)     │  (1400 ~ 1600KB, 200KB)
+└────────────────┘
+```
+
+**빈 공간(Hole)에 프로세스를 배치하는 전략:**
+
+| 전략 | 설명 | 장단점 |
+|------|------|--------|
+| **First Fit** | 첫 번째로 맞는 빈 공간에 배치 | 빠름, 합리적 |
+| **Best Fit** | 가장 딱 맞는(가장 작은) 빈 공간에 배치 | 공간 효율, 느림, 작은 조각 발생 |
+| **Worst Fit** | 가장 큰 빈 공간에 배치 | 큰 조각 유지, 비효율 |
+
+### 단편화 (Fragmentation)
+
+| 유형 | 설명 | 발생 상황 |
+|------|------|----------|
+| **외부 단편화** | 빈 공간의 총합은 충분하지만 연속되지 않아 할당 불가 | 연속 할당에서 프로세스 생성/소멸 반복 시 |
+| **내부 단편화** | 할당된 공간 중 사용하지 않는 부분이 낭비됨 | 고정 크기 할당(페이징)에서 발생 |
+
+```
+외부 단편화 예시:
+┌──────┬──────┬──────┬──────┬──────┐
+│ 사용  │ 50KB │ 사용  │ 80KB │ 사용  │
+│      │ 빈   │      │ 빈   │      │
+└──────┴──────┴──────┴──────┴──────┘
+총 빈 공간 = 130KB, 하지만 120KB 프로세스를 넣을 연속 공간이 없음!
+
+내부 단편화 예시:
+페이지 크기 = 4KB, 프로세스 = 5KB
+→ 2페이지(8KB) 할당 → 3KB 낭비 (내부 단편화)
+```
+
+### 페이징 (Paging)
+
+물리 메모리를 **고정 크기 프레임(Frame)**으로, 논리 메모리를 같은 크기의 **페이지(Page)**로 나누어 관리.
+
+```
+논리 주소 공간 (프로세스)        물리 메모리
+┌─────────┐                ┌─────────┐
+│ 페이지 0 │ ────────────→ │ 프레임 5 │
+├─────────┤                ├─────────┤
+│ 페이지 1 │ ──────┐       │ 프레임 1 │ (다른 프로세스)
+├─────────┤       │       ├─────────┤
+│ 페이지 2 │ ──┐   │       │ 프레임 2 │ ← 페이지 2
+├─────────┤    │   │       ├─────────┤
+│ 페이지 3 │ ┐  │   │       │ 프레임 3 │ (다른 프로세스)
+└─────────┘ │  │   │       ├─────────┤
+            │  │   └────→  │ 프레임 4 │ ← 페이지 1
+            │  │           ├─────────┤
+            │  └────────→  │ 프레임 5 │ ← 페이지 0
+            │              ├─────────┤
+            └───────────→  │ 프레임 6 │ ← 페이지 3
+                           └─────────┘
+```
+
+**페이지 테이블**: 각 프로세스의 페이지가 어떤 프레임에 매핑되는지 기록.
+
+```
+페이지 테이블 (프로세스 A):
+┌──────────┬──────────┐
+│ 페이지 번호│ 프레임 번호│
+├──────────┼──────────┤
+│    0     │    5     │
+│    1     │    4     │
+│    2     │    2     │
+│    3     │    6     │
+└──────────┴──────────┘
+```
+
+**논리 주소 → 물리 주소 변환:**
+
+```
+논리 주소 = 페이지 번호 + 페이지 오프셋
+
+예: 페이지 크기 = 4KB (2^12)
+논리 주소 = 8196 (0x2004)
+→ 페이지 번호 = 8196 / 4096 = 2
+→ 오프셋 = 8196 % 4096 = 4
+
+페이지 테이블에서 페이지 2 → 프레임 2
+물리 주소 = 2 × 4096 + 4 = 8196
+
+※ 페이지 번호는 논리 주소의 상위 비트,
+   오프셋은 하위 비트로 추출
+```
+
+**페이징의 장점:**
+- 외부 단편화 없음 (고정 크기로 관리)
+- 프로세스를 비연속적으로 배치 가능
+
+**페이징의 단점:**
+- 내부 단편화 발생 (마지막 페이지)
+- 페이지 테이블 오버헤드
+- 메모리 접근 2번 필요 (페이지 테이블 + 실제 데이터)
+
+### TLB (Translation Lookaside Buffer)
+
+페이지 테이블 참조의 성능 문제를 해결하기 위한 **캐시**. 자주 사용되는 페이지-프레임 매핑을 저장.
+
+```
+논리 주소 → [TLB 확인]
+              ├── 히트(Hit): 프레임 번호 바로 사용 → 물리 주소
+              └── 미스(Miss): 페이지 테이블 참조 → 프레임 번호 획득 → TLB 갱신
+```
+
+| TLB | 페이지 테이블 |
+|-----|-------------|
+| 하드웨어 캐시 | 메모리에 저장 |
+| 매우 빠름 (~1ns) | 느림 (~100ns) |
+| 크기 작음 (64~1024 항목) | 크기 큼 (전체 매핑) |
+| 적중률 99%+ 목표 | 항상 정확 |
+
+**유효 메모리 접근 시간 계산:**
+```
+EAT = TLB 히트율 × (TLB 접근 + 메모리 접근)
+    + TLB 미스율 × (TLB 접근 + 페이지 테이블 접근 + 메모리 접근)
+
+예: TLB 히트율 = 98%, TLB 접근 = 10ns, 메모리 접근 = 100ns
+EAT = 0.98 × (10 + 100) + 0.02 × (10 + 100 + 100)
+    = 0.98 × 110 + 0.02 × 210
+    = 107.8 + 4.2 = 112ns
+
+TLB 없이: 200ns (페이지 테이블 + 데이터 = 두 번 메모리 접근)
+TLB 있으면: 112ns → 44% 빨라짐
+```
+
+### 세그먼테이션 (Segmentation)
+
+프로그램을 **논리적 단위(세그먼트)**로 나누는 방식. 코드, 데이터, 스택 등 의미있는 단위.
+
+```
+논리 주소 = (세그먼트 번호, 오프셋)
+
+세그먼트 테이블:
+┌──────────┬───────┬───────┐
+│ 세그먼트   │ 기준   │ 한계   │
+├──────────┼───────┼───────┤
+│ 0 (코드)  │ 1000  │ 400   │
+│ 1 (데이터) │ 3000  │ 200   │
+│ 2 (스택)  │ 5000  │ 300   │
+└──────────┴───────┴───────┘
+
+논리 주소 (1, 50) → 기준 3000 + 오프셋 50 = 물리 주소 3050
+단, 오프셋 50 < 한계 200 이므로 유효
+오프셋 >= 한계이면 → 세그먼테이션 폴트!
+```
+
+| 비교 | 페이징 | 세그먼테이션 |
+|------|--------|------------|
+| 크기 | 고정 | 가변 |
+| 외부 단편화 | 없음 | 있음 |
+| 내부 단편화 | 있음 | 없음 |
+| 논리적 의미 | 없음 | 있음 (코드, 데이터 등) |
+| 현대 OS | 주로 사용 | 페이징과 결합 사용 |
+
+### 가상 메모리와 페이지 폴트
+
+실제 물리 메모리보다 큰 프로그램을 실행할 수 있게 하는 기법. 현재 필요한 페이지만 메모리에 올림 (요구 페이징, Demand Paging).
+
+**페이지 폴트**: 접근하려는 페이지가 메모리에 없을 때 발생.
+
+```
+페이지 접근 → 페이지 테이블 확인
+              ├── Valid (메모리에 있음): 정상 접근
+              └── Invalid (메모리에 없음): 페이지 폴트!
+                   1. 트랩 발생 → OS에 제어 넘김
+                   2. 디스크에서 해당 페이지를 찾음
+                   3. 빈 프레임에 적재
+                   4. 페이지 테이블 갱신
+                   5. 중단된 명령어 재실행
+```
+
+## 코드 예시
+
+### 페이지 테이블 시뮬레이션
+
+```python
+class PageTable:
+    """간단한 페이지 테이블 시뮬레이션"""
+
+    def __init__(self, page_size, num_pages):
+        self.page_size = page_size             # 페이지 크기 (바이트)
+        self.num_pages = num_pages             # 페이지 수
+        self.table = {}                        # {페이지번호: 프레임번호}
+
+    def map_page(self, page_num, frame_num):
+        """페이지를 프레임에 매핑"""
+        if page_num >= self.num_pages:
+            raise ValueError(f"유효하지 않은 페이지 번호: {page_num}")
+        self.table[page_num] = frame_num
+        print(f"  매핑: 페이지 {page_num} → 프레임 {frame_num}")
+
+    def translate(self, logical_address):
+        """논리 주소 → 물리 주소 변환"""
+        page_num = logical_address // self.page_size     # 페이지 번호
+        offset = logical_address % self.page_size        # 오프셋
+
+        if page_num not in self.table:
+            print(f"  *** 페이지 폴트! 페이지 {page_num}이 메모리에 없음 ***")
+            return None
+
+        frame_num = self.table[page_num]
+        physical_address = frame_num * self.page_size + offset
+
+        print(f"  논리 주소 {logical_address}"
+              f" → 페이지 {page_num}, 오프셋 {offset}"
+              f" → 프레임 {frame_num}"
+              f" → 물리 주소 {physical_address}")
+        return physical_address
+
+    def display(self):
+        print("\n페이지 테이블:")
+        print(f"{'페이지':>6} {'프레임':>6}")
+        print("-" * 15)
+        for page in sorted(self.table):
+            print(f"{page:>6} {self.table[page]:>6}")
+
+
+# === 사용 예시 ===
+print("=== 페이지 테이블 시뮬레이션 ===")
+print(f"페이지 크기: 4096 바이트 (4KB)\n")
+
+pt = PageTable(page_size=4096, num_pages=4)
+pt.map_page(0, 5)
+pt.map_page(1, 4)
+pt.map_page(2, 2)
+pt.map_page(3, 6)
+pt.display()
+
+print("\n=== 주소 변환 ===")
+pt.translate(0)        # 페이지 0, 오프셋 0 → 프레임 5 → 20480
+pt.translate(4096)     # 페이지 1, 오프셋 0 → 프레임 4 → 16384
+pt.translate(8196)     # 페이지 2, 오프셋 4 → 프레임 2 → 8196
+pt.translate(16384)    # 페이지 4 → 페이지 폴트!
+```
+
+### TLB 시뮬레이션
+
+```python
+from collections import OrderedDict
+
+class TLB:
+    """TLB (Translation Lookaside Buffer) 시뮬레이션 — LRU 방식"""
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.cache = OrderedDict()     # LRU 캐시
+        self.hits = 0
+        self.misses = 0
+
+    def lookup(self, page_num):
+        """TLB에서 프레임 번호 조회"""
+        if page_num in self.cache:
+            self.hits += 1
+            # LRU: 최근 사용으로 이동
+            self.cache.move_to_end(page_num)
+            return self.cache[page_num]
+        else:
+            self.misses += 1
+            return None
+
+    def insert(self, page_num, frame_num):
+        """TLB에 매핑 추가 (LRU 교체)"""
+        if page_num in self.cache:
+            self.cache.move_to_end(page_num)
+        else:
+            if len(self.cache) >= self.capacity:
+                evicted = self.cache.popitem(last=False)  # LRU 제거
+                print(f"    TLB에서 페이지 {evicted[0]} 제거 (LRU)")
+        self.cache[page_num] = frame_num
+
+    def hit_rate(self):
+        total = self.hits + self.misses
+        return self.hits / total if total > 0 else 0
+
+    def stats(self):
+        print(f"\nTLB 통계:")
+        print(f"  히트: {self.hits}, 미스: {self.misses}")
+        print(f"  히트율: {self.hit_rate():.1%}")
+
+
+# === TLB + 페이지 테이블 통합 시뮬레이션 ===
+def memory_access(tlb, page_table, logical_address):
+    """메모리 접근 시뮬레이션 (TLB → 페이지 테이블)"""
+    page_num = logical_address // page_table.page_size
+
+    # 1. TLB 확인
+    frame = tlb.lookup(page_num)
+    if frame is not None:
+        print(f"  주소 {logical_address}: TLB 히트! 프레임 {frame}")
+    else:
+        # 2. TLB 미스 → 페이지 테이블 참조
+        if page_num in page_table.table:
+            frame = page_table.table[page_num]
+            tlb.insert(page_num, frame)
+            print(f"  주소 {logical_address}: TLB 미스 → 페이지 테이블 참조 → 프레임 {frame}")
+        else:
+            print(f"  주소 {logical_address}: 페이지 폴트!")
+
+
+# === 테스트 ===
+print("\n=== TLB 시뮬레이션 (용량 2) ===")
+pt = PageTable(4096, 4)
+pt.map_page(0, 5)
+pt.map_page(1, 4)
+pt.map_page(2, 2)
+pt.map_page(3, 6)
+
+tlb = TLB(capacity=2)
+
+# 연속 접근 시뮬레이션
+accesses = [0, 100, 4096, 8192, 50, 4200, 12288]
+for addr in accesses:
+    memory_access(tlb, pt, addr)
+
+tlb.stats()
+```
+
+### 메모리 할당 전략 시뮬레이션
+
+```python
+def simulate_allocation(memory_size, blocks, request, strategy="first_fit"):
+    """
+    메모리 할당 전략 시뮬레이션.
+    blocks: [(시작, 크기), ...] — 빈 공간 리스트
+    request: 요청 크기
+    strategy: "first_fit", "best_fit", "worst_fit"
+    """
+    print(f"\n=== {strategy.upper()} ===")
+    print(f"요청 크기: {request}KB")
+    print(f"빈 공간: {blocks}")
+
+    selected = None
+
+    if strategy == "first_fit":
+        # 첫 번째로 맞는 공간
+        for i, (start, size) in enumerate(blocks):
+            if size >= request:
+                selected = (i, start, size)
+                break
+
+    elif strategy == "best_fit":
+        # 가장 딱 맞는 (가장 작은 충분한) 공간
+        best = None
+        for i, (start, size) in enumerate(blocks):
+            if size >= request:
+                if best is None or size < best[2]:
+                    best = (i, start, size)
+        selected = best
+
+    elif strategy == "worst_fit":
+        # 가장 큰 공간
+        worst = None
+        for i, (start, size) in enumerate(blocks):
+            if size >= request:
+                if worst is None or size > worst[2]:
+                    worst = (i, start, size)
+        selected = worst
+
+    if selected:
+        idx, start, size = selected
+        remaining = size - request
+        print(f"→ 블록 {idx} 선택 (시작={start}, 크기={size})")
+        print(f"  할당: {start}~{start + request}")
+        if remaining > 0:
+            print(f"  남은 조각: {start + request}~{start + size} ({remaining}KB)")
+    else:
+        print("→ 할당 실패! 충분한 공간 없음")
+
+
+# === 예시 ===
+blocks = [(0, 100), (200, 50), (400, 200), (700, 80)]
+for strategy in ["first_fit", "best_fit", "worst_fit"]:
+    simulate_allocation(1000, blocks.copy(), 60, strategy)
+```
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 메모리 계층 | 레지스터 → L1/L2/L3 캐시 → RAM → SSD/HDD |
+| 지역성 원리 | 시간 지역성 (최근 사용한 것 재사용) + 공간 지역성 (인접 데이터 접근) |
+| 연속 할당 | 프로세스를 연속 공간에 배치, 외부 단편화 발생 |
+| 페이징 | 고정 크기(페이지/프레임), 외부 단편화 없음, 내부 단편화 약간 |
+| 페이지 테이블 | 페이지→프레임 매핑 정보 저장 |
+| TLB | 페이지 테이블의 캐시, 주소 변환 속도 향상 |
+| 세그먼테이션 | 논리적 단위로 분할, 가변 크기 |
+| 외부 단편화 | 빈 공간 총합은 충분하지만 연속되지 않아 할당 불가 |
+| 내부 단편화 | 할당된 블록 내 사용하지 않는 공간 낭비 |

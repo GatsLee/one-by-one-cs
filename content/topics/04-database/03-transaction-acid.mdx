@@ -1,0 +1,550 @@
+---
+title: "트랜잭션과 ACID"
+topic: "04-database"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 트랜잭션(Transaction)이란?
+
+트랜잭션은 **데이터베이스 작업의 논리적 단위**로, 하나 이상의 SQL 문을 묶어 **전부 성공하거나 전부 실패**하게 만드는 것.
+
+> **비유**: 은행 계좌 이체. "A 계좌에서 10만 원 출금 + B 계좌에 10만 원 입금"은 반드시 함께 성공하거나 함께 실패해야 한다. 출금만 되고 입금이 안 되면 돈이 사라진다!
+
+```sql
+-- 계좌 이체 트랜잭션
+BEGIN TRANSACTION;                          -- 트랜잭션 시작
+
+UPDATE accounts SET balance = balance - 100000
+WHERE account_id = 'A';                     -- A에서 출금
+
+UPDATE accounts SET balance = balance + 100000
+WHERE account_id = 'B';                     -- B에 입금
+
+COMMIT;                                     -- 모두 성공 → 확정
+-- 또는
+ROLLBACK;                                   -- 하나라도 실패 → 모두 취소
+```
+
+### COMMIT과 ROLLBACK
+
+| 명령 | 설명 |
+|------|------|
+| **BEGIN / START TRANSACTION** | 트랜잭션 시작 |
+| **COMMIT** | 트랜잭션의 모든 변경을 **영구 반영** |
+| **ROLLBACK** | 트랜잭션의 모든 변경을 **취소하고 이전 상태로 복구** |
+| **SAVEPOINT** | 트랜잭션 중간에 복구 지점 설정 |
+
+```sql
+BEGIN;
+INSERT INTO orders VALUES (1, '상품A', 10000);
+SAVEPOINT sp1;                              -- 복구 지점 설정
+
+INSERT INTO orders VALUES (2, '상품B', 20000);
+-- 문제 발생!
+ROLLBACK TO sp1;                            -- sp1 이후만 취소 (상품A는 유지)
+
+COMMIT;                                     -- 상품A만 확정
+```
+
+### ACID 속성
+
+트랜잭션이 안전하게 수행되기 위한 4가지 성질.
+
+#### Atomicity (원자성) — "전부 아니면 전무"
+
+트랜잭션 내의 모든 연산은 **모두 수행되거나, 하나도 수행되지 않아야** 한다.
+
+```
+계좌 이체:
+1. A 계좌에서 -10만 원 ✓
+2. B 계좌에 +10만 원 ✗ (시스템 장애!)
+
+원자성 보장: 1번도 취소 → A 계좌 원래대로 복구
+원자성 미보장: A에서만 돈이 빠져나감 → 데이터 불일치!
+```
+
+**구현 방법**: Undo 로그 — 변경 전 데이터를 로그에 기록하여 ROLLBACK 시 복원.
+
+#### Consistency (일관성) — "규칙 유지"
+
+트랜잭션 전후로 데이터베이스의 **무결성 제약 조건이 유지**되어야 한다.
+
+```
+제약 조건: 잔액 >= 0
+
+이체 전: A=10만, B=5만 (합계 15만)
+이체 후: A=0, B=15만 (합계 15만) ✓ 일관성 유지
+
+만약: A=-5만, B=15만 → 잔액 음수 ✗ 제약 위반 → ROLLBACK
+```
+
+**DB가 보장하는 일관성**: NOT NULL, UNIQUE, FK 제약 등
+**애플리케이션이 보장하는 일관성**: 비즈니스 로직 (잔액 >= 0 등)
+
+#### Isolation (격리성) — "독립 실행"
+
+동시에 실행되는 트랜잭션들이 **서로 간섭하지 않아야** 한다. 각 트랜잭션은 다른 트랜잭션이 없는 것처럼 동작.
+
+```
+트랜잭션 T1: A에서 B로 이체
+트랜잭션 T2: A의 잔액 조회
+
+격리성 보장: T2는 T1이 완료되기 전/후의 일관된 상태만 봄
+격리성 미보장: T2가 A에서 출금된 상태(중간 상태)를 볼 수 있음
+```
+
+#### Durability (지속성) — "영구 저장"
+
+COMMIT된 트랜잭션의 결과는 **시스템 장애가 발생해도 영구적으로 보존**된다.
+
+```
+COMMIT 이후 전원이 꺼져도:
+→ 재시작 시 COMMIT된 데이터는 그대로 존재
+→ Redo 로그로 복구
+```
+
+**구현 방법**: Write-Ahead Logging (WAL) — 변경 사항을 데이터 파일에 쓰기 전에 로그에 먼저 기록.
+
+### ACID 요약
+
+```
+┌──────────────────────────────────────────┐
+│                 ACID                      │
+├──────────┬──────────┬─────────┬──────────┤
+│ Atomicity│Consistency│Isolation│Durability│
+│ 원자성    │ 일관성    │ 격리성   │ 지속성   │
+│ 전부/전무 │ 규칙 유지  │ 독립 실행│ 영구 보존│
+│ Undo 로그│ 제약 조건  │ 격리 수준│ Redo 로그│
+└──────────┴──────────┴─────────┴──────────┘
+```
+
+### 격리 수준 (Isolation Level)
+
+격리성의 정도를 조절하는 설정. 격리 수준이 높을수록 안전하지만 성능이 떨어진다.
+
+#### 동시성 문제 — 격리 수준에 따라 허용/방지
+
+**1. Dirty Read (더티 리드)**
+
+다른 트랜잭션이 **COMMIT하지 않은 데이터**를 읽는 것.
+
+```
+T1: UPDATE accounts SET balance = 0 WHERE id = 'A';  -- 아직 COMMIT 안 함
+T2: SELECT balance FROM accounts WHERE id = 'A';      -- balance = 0 읽음
+T1: ROLLBACK;                                          -- 변경 취소!
+T2: 0이라는 잘못된 값을 사용하게 됨 → Dirty Read!
+```
+
+**2. Non-Repeatable Read (비반복 읽기)**
+
+같은 트랜잭션 내에서 같은 데이터를 **두 번 읽었는데 값이 다른** 현상.
+
+```
+T1: SELECT balance FROM accounts WHERE id = 'A';  -- balance = 100
+T2: UPDATE accounts SET balance = 200 WHERE id = 'A'; COMMIT;
+T1: SELECT balance FROM accounts WHERE id = 'A';  -- balance = 200 (다름!)
+→ 같은 쿼리인데 결과가 달라짐!
+```
+
+**3. Phantom Read (팬텀 리드)**
+
+같은 조건으로 조회했는데 **행의 수가 달라지는** 현상.
+
+```
+T1: SELECT COUNT(*) FROM orders WHERE status = '대기';  -- 결과: 5
+T2: INSERT INTO orders VALUES (..., '대기'); COMMIT;
+T1: SELECT COUNT(*) FROM orders WHERE status = '대기';  -- 결과: 6 (유령 행!)
+→ 없던 행이 나타남!
+```
+
+#### 4가지 격리 수준
+
+```
+낮음 ──────────────────────────────────────── 높음
+(성능 좋음, 안전성 낮음)          (성능 낮음, 안전성 높음)
+
+Read         Read          Repeatable     Serializable
+Uncommitted  Committed     Read
+```
+
+| 격리 수준 | Dirty Read | Non-Repeatable | Phantom Read | 설명 |
+|----------|-----------|---------------|-------------|------|
+| **Read Uncommitted** | O (발생) | O | O | 가장 낮음, 커밋 안 된 데이터도 읽음 |
+| **Read Committed** | X (방지) | O | O | 커밋된 데이터만 읽음 (Oracle 기본) |
+| **Repeatable Read** | X | X (방지) | O | 트랜잭션 중 같은 데이터 항상 같은 값 (MySQL 기본) |
+| **Serializable** | X | X | X (방지) | 완전 직렬화, 가장 안전하지만 가장 느림 |
+
+### 격리 수준별 상세 설명
+
+#### Read Uncommitted
+
+다른 트랜잭션이 COMMIT하지 않은 변경도 볼 수 있다. 거의 사용하지 않는다.
+
+#### Read Committed
+
+COMMIT된 데이터만 읽는다. 가장 많이 사용되는 수준 중 하나.
+
+```
+T1: SELECT balance FROM A;  -- 100
+T2: UPDATE A SET balance = 200; (아직 COMMIT 안 함)
+T1: SELECT balance FROM A;  -- 여전히 100 (T2가 COMMIT 안 했으므로)
+T2: COMMIT;
+T1: SELECT balance FROM A;  -- 200 (이제 보임 → Non-Repeatable Read!)
+```
+
+#### Repeatable Read
+
+트랜잭션 시작 시점의 **스냅샷**을 사용하여 같은 데이터를 항상 같은 값으로 읽는다.
+
+```
+T1: BEGIN; SELECT balance FROM A;  -- 100 (스냅샷 시점)
+T2: UPDATE A SET balance = 200; COMMIT;
+T1: SELECT balance FROM A;  -- 여전히 100! (스냅샷 기준)
+T1: COMMIT;  -- 이후 조회하면 200
+```
+
+MySQL InnoDB의 기본 격리 수준.
+
+#### Serializable
+
+트랜잭션을 완전히 직렬적으로 실행하는 것처럼 동작. 읽기에도 락을 걸어 Phantom Read까지 방지.
+
+```
+T1: SELECT * FROM orders WHERE status = '대기';  -- 해당 범위에 락
+T2: INSERT INTO orders (..., '대기');             -- 락 때문에 대기!
+T1: COMMIT;
+T2: → 이제 삽입 가능
+```
+
+### 락(Lock)과 동시성 제어
+
+| 락 유형 | 설명 |
+|---------|------|
+| **공유 락 (S-Lock, Shared)** | 읽기 락. 여러 트랜잭션이 동시에 읽을 수 있음 |
+| **배타 락 (X-Lock, Exclusive)** | 쓰기 락. 한 트랜잭션만 접근 가능 |
+
+```
+호환성 행렬:
+         S-Lock    X-Lock
+S-Lock    ✓ 허용    ✗ 대기
+X-Lock    ✗ 대기    ✗ 대기
+```
+
+### MVCC (Multi-Version Concurrency Control)
+
+락 대신 **여러 버전의 데이터를 유지**하여 동시성을 높이는 기법. PostgreSQL, MySQL InnoDB 등이 사용.
+
+```
+데이터 A의 버전들:
+시점 100: A = 100  (T1 스냅샷 기준)
+시점 200: A = 200  (T2가 변경)
+
+T1 (시점 100에 시작): A를 읽으면 → 100 (자신의 스냅샷 버전)
+T2 (시점 200에 변경): A = 200으로 변경
+
+→ T1은 읽기에 락이 필요 없음! 자신의 버전을 읽으면 됨
+→ 읽기와 쓰기가 서로 블로킹하지 않음
+```
+
+## 코드 예시
+
+### 트랜잭션 기본 사용 (Python + SQLite)
+
+```python
+import sqlite3
+
+def transaction_example():
+    """트랜잭션 기본 예제: 계좌 이체"""
+    conn = sqlite3.connect(':memory:')
+    cursor = conn.cursor()
+
+    # 테이블 생성 및 초기 데이터
+    cursor.execute('''
+        CREATE TABLE accounts (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            balance INTEGER CHECK(balance >= 0)
+        )
+    ''')
+    cursor.execute("INSERT INTO accounts VALUES ('A', '김철수', 100000)")
+    cursor.execute("INSERT INTO accounts VALUES ('B', '박영희', 50000)")
+    conn.commit()
+
+    def show_balances():
+        cursor.execute("SELECT * FROM accounts")
+        for row in cursor.fetchall():
+            print(f"  {row[0]} ({row[1]}): {row[2]:,}원")
+
+    print("=== 이체 전 ===")
+    show_balances()
+
+    # === 정상 이체 (COMMIT) ===
+    print("\n=== 정상 이체: A → B, 30,000원 ===")
+    try:
+        cursor.execute(
+            "UPDATE accounts SET balance = balance - 30000 WHERE id = 'A'"
+        )
+        cursor.execute(
+            "UPDATE accounts SET balance = balance + 30000 WHERE id = 'B'"
+        )
+        conn.commit()                      # 모두 성공 → 확정
+        print("COMMIT 성공!")
+    except Exception as e:
+        conn.rollback()                    # 실패 → 취소
+        print(f"ROLLBACK: {e}")
+
+    show_balances()
+
+    # === 실패 이체 (ROLLBACK) ===
+    print("\n=== 실패 이체: A → B, 200,000원 (잔액 부족) ===")
+    try:
+        cursor.execute(
+            "UPDATE accounts SET balance = balance - 200000 WHERE id = 'A'"
+        )
+        # CHECK 제약 위반 → IntegrityError
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        print(f"ROLLBACK: {e}")
+        print("잔액 부족으로 이체 취소!")
+
+    print("\n=== 이체 후 (변경 없음) ===")
+    show_balances()
+
+    conn.close()
+
+
+transaction_example()
+```
+
+### 격리 수준 시뮬레이션
+
+```python
+import sqlite3
+import threading
+import time
+
+def isolation_demo():
+    """격리 수준에 따른 동시성 문제 시뮬레이션"""
+
+    # SQLite는 WAL 모드에서 동시 읽기 가능
+    conn1 = sqlite3.connect('test_isolation.db', isolation_level=None)
+    conn2 = sqlite3.connect('test_isolation.db', isolation_level=None)
+
+    conn1.execute("DROP TABLE IF EXISTS data")
+    conn1.execute("CREATE TABLE data (id INT PRIMARY KEY, value INT)")
+    conn1.execute("INSERT INTO data VALUES (1, 100)")
+
+    print("=== Dirty Read 시뮬레이션 ===")
+
+    # T1: 값을 변경하고 COMMIT 안 함
+    def transaction_1():
+        conn1.execute("BEGIN")
+        conn1.execute("UPDATE data SET value = 999 WHERE id = 1")
+        print("[T1] value를 999로 변경 (아직 COMMIT 안 함)")
+        time.sleep(2)  # 잠시 대기
+        conn1.execute("ROLLBACK")
+        print("[T1] ROLLBACK! 변경 취소")
+
+    # T2: 값을 읽기
+    def transaction_2():
+        time.sleep(0.5)
+        conn2.execute("BEGIN")
+        cursor = conn2.execute("SELECT value FROM data WHERE id = 1")
+        value = cursor.fetchone()[0]
+        print(f"[T2] 읽은 값: {value}")
+        if value == 999:
+            print("[T2] ⚠ Dirty Read 발생! (COMMIT 안 된 데이터를 읽음)")
+        else:
+            print("[T2] ✓ Dirty Read 방지 (COMMIT된 데이터만 읽음)")
+        conn2.execute("COMMIT")
+
+    t1 = threading.Thread(target=transaction_1)
+    t2 = threading.Thread(target=transaction_2)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # 최종 값 확인
+    cursor = conn1.execute("SELECT value FROM data WHERE id = 1")
+    print(f"\n최종 값: {cursor.fetchone()[0]} (ROLLBACK 되었으므로 100)")
+
+    conn1.close()
+    conn2.close()
+
+    import os
+    os.remove('test_isolation.db')
+
+
+# isolation_demo()  # 파일 DB 필요하므로 주의
+```
+
+### SAVEPOINT 활용
+
+```python
+import sqlite3
+
+def savepoint_example():
+    """SAVEPOINT를 사용한 부분 롤백"""
+    conn = sqlite3.connect(':memory:')
+    cursor = conn.cursor()
+
+    cursor.execute("CREATE TABLE log (id INT, message TEXT)")
+    conn.commit()
+
+    print("=== SAVEPOINT 예제 ===\n")
+
+    # 트랜잭션 시작
+    cursor.execute("BEGIN")
+
+    # 첫 번째 작업
+    cursor.execute("INSERT INTO log VALUES (1, '작업 1 완료')")
+    print("작업 1 삽입")
+
+    # SAVEPOINT 설정
+    cursor.execute("SAVEPOINT sp1")
+    print("SAVEPOINT sp1 설정\n")
+
+    # 두 번째 작업
+    cursor.execute("INSERT INTO log VALUES (2, '작업 2 완료')")
+    print("작업 2 삽입")
+
+    # 세 번째 작업 (문제 발생 가정)
+    cursor.execute("INSERT INTO log VALUES (3, '작업 3 - 문제 발생')")
+    print("작업 3 삽입 (문제 발생!)")
+
+    # 작업 2, 3 취소 (SAVEPOINT로 롤백)
+    cursor.execute("ROLLBACK TO sp1")
+    print("\nSAVEPOINT sp1로 롤백 (작업 2, 3 취소)\n")
+
+    # 대체 작업
+    cursor.execute("INSERT INTO log VALUES (4, '대체 작업 완료')")
+    print("대체 작업 삽입")
+
+    # 커밋
+    conn.commit()
+    print("\nCOMMIT!\n")
+
+    # 결과 확인
+    cursor.execute("SELECT * FROM log")
+    print("최종 데이터:")
+    for row in cursor.fetchall():
+        print(f"  {row}")
+    # 작업 1과 대체 작업만 남음
+
+    conn.close()
+
+
+savepoint_example()
+```
+
+### 동시성 문제 재현 및 해결
+
+```python
+import sqlite3
+import threading
+import time
+
+def concurrency_problem():
+    """Lost Update 문제 재현 및 해결"""
+
+    def setup_db(db_path):
+        conn = sqlite3.connect(db_path)
+        conn.execute("DROP TABLE IF EXISTS counter")
+        conn.execute("CREATE TABLE counter (id INT PRIMARY KEY, value INT)")
+        conn.execute("INSERT INTO counter VALUES (1, 0)")
+        conn.commit()
+        conn.close()
+
+    db_path = ':memory:'
+
+    # 메모리 DB 대신 파일 DB 사용 (멀티스레드 동시접근)
+    db_path = 'test_concurrency.db'
+    setup_db(db_path)
+
+    def increment_unsafe(thread_id, count):
+        """안전하지 않은 증가 (Lost Update 가능)"""
+        conn = sqlite3.connect(db_path)
+        for _ in range(count):
+            # 읽기 → 증가 → 쓰기 (원자적이지 않음)
+            cursor = conn.execute("SELECT value FROM counter WHERE id = 1")
+            value = cursor.fetchone()[0]
+            conn.execute(f"UPDATE counter SET value = {value + 1} WHERE id = 1")
+            conn.commit()
+        conn.close()
+
+    def increment_safe(thread_id, count):
+        """안전한 증가 (원자적 UPDATE)"""
+        conn = sqlite3.connect(db_path)
+        for _ in range(count):
+            # 원자적 UPDATE (읽기+쓰기를 한 문장으로)
+            conn.execute("UPDATE counter SET value = value + 1 WHERE id = 1")
+            conn.commit()
+        conn.close()
+
+    # === 안전한 방식 테스트 ===
+    print("=== 원자적 UPDATE (안전) ===")
+    setup_db(db_path)
+    threads = [
+        threading.Thread(target=increment_safe, args=(i, 100))
+        for i in range(5)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    conn = sqlite3.connect(db_path)
+    result = conn.execute("SELECT value FROM counter WHERE id = 1").fetchone()[0]
+    print(f"기대값: 500, 실제값: {result}")
+    conn.close()
+
+    import os
+    os.remove(db_path)
+
+
+concurrency_problem()
+```
+
+### 격리 수준 설정 (MySQL 예시)
+
+```sql
+-- 현재 격리 수준 확인
+SELECT @@transaction_isolation;
+
+-- 세션 수준 설정
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+-- 글로벌 설정
+SET GLOBAL TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+-- 트랜잭션 내에서 격리 수준 확인
+START TRANSACTION;
+SELECT @@transaction_isolation;
+-- ... 작업 ...
+COMMIT;
+```
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| 트랜잭션 | 데이터베이스 작업의 논리적 단위 (전부 성공 또는 전부 실패) |
+| COMMIT | 트랜잭션 변경 사항을 영구 반영 |
+| ROLLBACK | 트랜잭션 변경 사항을 모두 취소 |
+| Atomicity | 원자성 — 전부 아니면 전무 |
+| Consistency | 일관성 — 무결성 제약 조건 유지 |
+| Isolation | 격리성 — 동시 트랜잭션 간 간섭 방지 |
+| Durability | 지속성 — COMMIT 후 영구 보존 |
+| Dirty Read | COMMIT 안 된 데이터를 읽는 현상 |
+| Non-Repeatable Read | 같은 쿼리의 결과가 다른 현상 |
+| Phantom Read | 없던 행이 나타나는 현상 |
+| Read Committed | Dirty Read 방지 (Oracle 기본) |
+| Repeatable Read | Non-Repeatable Read 방지 (MySQL 기본) |
+| Serializable | 모든 동시성 문제 방지, 성능 최저 |

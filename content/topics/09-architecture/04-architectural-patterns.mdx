@@ -1,0 +1,778 @@
+---
+title: "아키텍처 패턴"
+topic: "09-architecture"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. UI 아키텍처 패턴
+
+UI 아키텍처 패턴은 **프레젠테이션 로직과 비즈니스 로직을 분리**하여 유지보수성과 테스트 용이성을 확보하는 설계 방법이다. 대표적으로 MVC, MVP, MVVM이 있다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              UI 아키텍처 패턴 진화                          │
+│                                                          │
+│  MVC (1979)                                              │
+│    │  Controller가 모든 흐름 제어                          │
+│    │  View가 Model을 직접 참조 가능                        │
+│    ▼                                                     │
+│  MVP (1990s)                                             │
+│    │  Presenter가 View와 Model 사이를 중재                 │
+│    │  View는 수동적(Passive View)                          │
+│    ▼                                                     │
+│  MVVM (2005)                                             │
+│       ViewModel이 데이터 바인딩으로 View와 연결             │
+│       선언적 UI 프레임워크에 최적화                         │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. MVC — Model-View-Controller
+
+> **사용자 입력(Controller), 데이터(Model), 화면(View)을 분리한다.**
+
+```
+┌─────────────────────────────────────────────────────┐
+│              MVC 흐름                                │
+│                                                     │
+│           사용자 입력                                 │
+│               │                                     │
+│               ▼                                     │
+│         ┌────────────┐                              │
+│         │ Controller │  ← 입력 해석, Model 업데이트   │
+│         └─────┬──────┘                              │
+│               │                                     │
+│          ┌────▼────┐                                │
+│          │  Model  │  ← 데이터 + 비즈니스 로직       │
+│          └────┬────┘                                │
+│               │ 상태 변경 통보                        │
+│               ▼                                     │
+│          ┌─────────┐                                │
+│          │  View   │  ← Model 데이터를 화면에 표시   │
+│          └─────────┘                                │
+│               │                                     │
+│               ▼                                     │
+│           화면 출력                                   │
+└─────────────────────────────────────────────────────┘
+```
+
+```python
+# === Django 스타일 MVC (MTV) ===
+# Django에서는 MVC를 MTV로 부른다:
+#   Model → Model
+#   Template → View (화면)
+#   View → Controller (로직)
+
+# --- models.py (Model) ---
+class Article:
+    """데이터와 비즈니스 로직을 담당"""
+
+    def __init__(self, title: str, content: str, author: str):
+        self.title = title
+        self.content = content
+        self.author = author
+        self.views = 0
+
+    def increment_views(self) -> None:
+        self.views += 1
+
+    def summary(self) -> str:
+        return self.content[:100] + "..." if len(self.content) > 100 else self.content
+
+
+# --- views.py (Controller 역할) ---
+class ArticleController:
+    """사용자 요청을 처리하고 Model과 View를 연결"""
+
+    def __init__(self, repository: "ArticleRepository"):
+        self.repo = repository
+
+    def show_article(self, article_id: int) -> dict:
+        article = self.repo.find_by_id(article_id)
+        if not article:
+            return {"status": 404, "error": "기사를 찾을 수 없습니다"}
+
+        article.increment_views()
+        # View(Template)에 전달할 컨텍스트 반환
+        return {
+            "status": 200,
+            "context": {
+                "title": article.title,
+                "content": article.content,
+                "author": article.author,
+                "views": article.views,
+            }
+        }
+
+    def list_articles(self) -> dict:
+        articles = self.repo.find_all()
+        return {
+            "status": 200,
+            "context": {
+                "articles": [
+                    {"title": a.title, "summary": a.summary()}
+                    for a in articles
+                ]
+            }
+        }
+
+
+# --- repository (데이터 접근) ---
+class ArticleRepository:
+    def __init__(self):
+        self._articles: dict[int, Article] = {}
+        self._next_id = 1
+
+    def save(self, article: Article) -> int:
+        aid = self._next_id
+        self._articles[aid] = article
+        self._next_id += 1
+        return aid
+
+    def find_by_id(self, article_id: int) -> Article | None:
+        return self._articles.get(article_id)
+
+    def find_all(self) -> list[Article]:
+        return list(self._articles.values())
+```
+
+---
+
+### 3. MVP — Model-View-Presenter
+
+> **Presenter가 View와 Model 사이를 완전히 중재한다. View는 수동적이다.**
+
+```
+┌─────────────────────────────────────────────────────┐
+│              MVP 흐름                                │
+│                                                     │
+│  ┌────────┐     ┌───────────┐     ┌───────┐        │
+│  │  View  │◀───▶│ Presenter │◀───▶│ Model │        │
+│  │(수동적)│     │ (중재자)  │     │       │        │
+│  └────────┘     └───────────┘     └───────┘        │
+│                                                     │
+│  1. View가 사용자 입력을 Presenter에 전달             │
+│  2. Presenter가 Model에서 데이터 조회/수정            │
+│  3. Presenter가 View를 직접 업데이트                  │
+│                                                     │
+│  View는 인터페이스로 추상화 → 테스트 시 Mock 교체     │
+└─────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === View 인터페이스 ===
+class LoginView(ABC):
+    @abstractmethod
+    def show_error(self, message: str) -> None:
+        pass
+
+    @abstractmethod
+    def show_success(self, username: str) -> None:
+        pass
+
+    @abstractmethod
+    def show_loading(self, is_loading: bool) -> None:
+        pass
+
+
+# === Model ===
+class AuthService:
+    _users = {"admin": "1234", "user": "pass"}
+
+    def authenticate(self, username: str, password: str) -> bool:
+        return self._users.get(username) == password
+
+
+# === Presenter ===
+class LoginPresenter:
+    def __init__(self, view: LoginView, auth: AuthService):
+        self._view = view
+        self._auth = auth
+
+    def on_login(self, username: str, password: str) -> None:
+        self._view.show_loading(True)
+
+        if not username or not password:
+            self._view.show_error("아이디와 비밀번호를 입력하세요")
+            self._view.show_loading(False)
+            return
+
+        if self._auth.authenticate(username, password):
+            self._view.show_success(username)
+        else:
+            self._view.show_error("로그인 실패: 잘못된 인증 정보")
+
+        self._view.show_loading(False)
+
+
+# === 테스트용 Mock View ===
+class MockLoginView(LoginView):
+    def __init__(self):
+        self.errors: list[str] = []
+        self.success_user: str | None = None
+        self.loading = False
+
+    def show_error(self, message: str) -> None:
+        self.errors.append(message)
+
+    def show_success(self, username: str) -> None:
+        self.success_user = username
+
+    def show_loading(self, is_loading: bool) -> None:
+        self.loading = is_loading
+
+
+# === 테스트 ===
+view = MockLoginView()
+presenter = LoginPresenter(view, AuthService())
+
+presenter.on_login("admin", "1234")
+assert view.success_user == "admin"  # View가 수동적이므로 테스트 쉬움
+
+presenter.on_login("admin", "wrong")
+assert "로그인 실패" in view.errors[-1]
+```
+
+**핵심**: View가 인터페이스로 추상화되어 있으므로, 실제 UI 없이도 Presenter를 완전히 테스트할 수 있다.
+
+---
+
+### 4. MVVM — Model-View-ViewModel
+
+> **ViewModel이 데이터 바인딩을 통해 View와 자동으로 동기화된다.**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              MVVM 흐름                                    │
+│                                                          │
+│  ┌────────┐   데이터 바인딩   ┌───────────┐   ┌───────┐ │
+│  │  View  │◀═══════════════▶│ ViewModel │◀─▶│ Model │  │
+│  │(선언적)│   양방향 동기화   │(상태+로직)│   │       │  │
+│  └────────┘                  └───────────┘   └───────┘  │
+│                                                          │
+│  View는 ViewModel의 상태를 선언적으로 바인딩               │
+│  ViewModel 상태 변경 → View 자동 업데이트                  │
+│  View 입력 → ViewModel 자동 반영                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+```typescript
+// === React에서의 MVVM 패턴 ===
+// React의 상태 관리가 ViewModel 역할을 한다
+
+// --- Model (도메인 로직) ---
+interface Todo {
+  id: number;
+  text: string;
+  completed: boolean;
+}
+
+class TodoService {
+  private todos: Todo[] = [];
+  private nextId = 1;
+
+  addTodo(text: string): Todo {
+    const todo: Todo = { id: this.nextId++, text, completed: false };
+    this.todos.push(todo);
+    return todo;
+  }
+
+  toggleTodo(id: number): Todo | undefined {
+    const todo = this.todos.find(t => t.id === id);
+    if (todo) todo.completed = !todo.completed;
+    return todo;
+  }
+
+  getAll(): Todo[] {
+    return [...this.todos];
+  }
+}
+
+// --- ViewModel (React Hook으로 구현) ---
+// useTodoViewModel.ts
+import { useState, useCallback } from 'react';
+
+function useTodoViewModel() {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [input, setInput] = useState('');
+  const [service] = useState(() => new TodoService());
+
+  // 파생 상태 (computed)
+  const completedCount = todos.filter(t => t.completed).length;
+  const remainingCount = todos.length - completedCount;
+
+  const addTodo = useCallback(() => {
+    if (!input.trim()) return;
+    service.addTodo(input);
+    setTodos(service.getAll());
+    setInput('');
+  }, [input, service]);
+
+  const toggleTodo = useCallback((id: number) => {
+    service.toggleTodo(id);
+    setTodos(service.getAll());
+  }, [service]);
+
+  return { todos, input, setInput, addTodo, toggleTodo, completedCount, remainingCount };
+}
+
+// --- View (선언적 UI) ---
+// TodoView.tsx
+function TodoView() {
+  const vm = useTodoViewModel();  // ViewModel 연결
+
+  return (
+    <div>
+      <input value={vm.input} onChange={e => vm.setInput(e.target.value)} />
+      <button onClick={vm.addTodo}>추가</button>
+      <p>완료: {vm.completedCount} / 남은: {vm.remainingCount}</p>
+      <ul>
+        {vm.todos.map(todo => (
+          <li key={todo.id} onClick={() => vm.toggleTodo(todo.id)}>
+            {todo.completed ? '✅' : '⬜'} {todo.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+---
+
+### 5. MVC / MVP / MVVM 비교
+
+| 항목 | MVC | MVP | MVVM |
+|------|-----|-----|------|
+| **View↔Model 관계** | View가 Model 직접 참조 | Presenter가 중재 | 데이터 바인딩 |
+| **View 역할** | 능동적 (Model 관찰) | 수동적 (Presenter가 업데이트) | 선언적 (바인딩) |
+| **테스트 용이성** | 보통 | 높음 (View Mock) | 높음 (ViewModel 단위 테스트) |
+| **결합도** | View↔Model 높음 | View↔Presenter 중간 | View↔ViewModel 낮음 |
+| **대표 프레임워크** | Django, Rails, Spring MVC | Android (전통), Win Forms | React, Vue, SwiftUI |
+| **적합한 상황** | 서버 렌더링, 전통 웹앱 | 레거시 UI, 테스트 중시 | SPA, 반응형 UI |
+
+---
+
+### 6. 계층형 아키텍처 (Layered Architecture)
+
+> **시스템을 수평 계층으로 나누어 각 계층이 바로 아래 계층에만 의존한다.**
+
+가장 전통적이고 널리 사용되는 아키텍처 패턴이다.
+
+```
+┌──────────────────────────────────────────────────────┐
+│              계층형 아키텍처                            │
+│                                                      │
+│  ┌──────────────────────────────────┐                │
+│  │        Presentation Layer        │  ← UI, API     │
+│  │   (Controller, View, REST API)   │                │
+│  └──────────────┬───────────────────┘                │
+│                 │ 호출                                │
+│  ┌──────────────▼───────────────────┐                │
+│  │         Business Layer           │  ← 핵심 로직   │
+│  │   (Service, Domain Logic)        │                │
+│  └──────────────┬───────────────────┘                │
+│                 │ 호출                                │
+│  ┌──────────────▼───────────────────┐                │
+│  │        Persistence Layer         │  ← 데이터 접근 │
+│  │   (Repository, DAO, ORM)         │                │
+│  └──────────────┬───────────────────┘                │
+│                 │                                    │
+│  ┌──────────────▼───────────────────┐                │
+│  │         Database Layer           │  ← 저장소      │
+│  │   (PostgreSQL, MongoDB, Redis)   │                │
+│  └──────────────────────────────────┘                │
+│                                                      │
+│  규칙: 각 계층은 바로 아래 계층에만 의존한다             │
+│  Presentation → Business → Persistence → Database    │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+# === 계층형 아키텍처 예시 ===
+
+# --- Persistence Layer ---
+class UserRepository:
+    def __init__(self):
+        self._users: dict[int, dict] = {}
+
+    def find_by_id(self, user_id: int) -> dict | None:
+        return self._users.get(user_id)
+
+    def save(self, user: dict) -> int:
+        uid = len(self._users) + 1
+        self._users[uid] = {**user, "id": uid}
+        return uid
+
+
+# --- Business Layer ---
+class UserService:
+    def __init__(self, repo: UserRepository):
+        self._repo = repo
+
+    def register(self, name: str, email: str) -> int:
+        # 비즈니스 규칙 검증
+        if "@" not in email:
+            raise ValueError("유효하지 않은 이메일 형식입니다")
+        return self._repo.save({"name": name, "email": email})
+
+    def get_user(self, user_id: int) -> dict:
+        user = self._repo.find_by_id(user_id)
+        if not user:
+            raise ValueError("사용자를 찾을 수 없습니다")
+        return user
+
+
+# --- Presentation Layer ---
+class UserController:
+    def __init__(self, service: UserService):
+        self._service = service
+
+    def handle_register(self, request: dict) -> dict:
+        try:
+            uid = self._service.register(request["name"], request["email"])
+            return {"status": 201, "user_id": uid}
+        except ValueError as e:
+            return {"status": 400, "error": str(e)}
+```
+
+#### 계층형 아키텍처의 한계
+
+| 장점 | 단점 |
+|------|------|
+| 이해하기 쉬움, 널리 알려짐 | 계층이 많아지면 불필요한 패스스루 코드 |
+| 관심사 분리 명확 | 모든 요청이 모든 계층을 관통 |
+| 각 계층 독립 변경 가능 | 수평 확장이 어려움 |
+| 테스트 가능 (계층별 Mock) | 도메인 로직이 얇아지는 경향 (빈약한 도메인) |
+
+---
+
+### 7. 이벤트 기반 아키텍처
+
+> **컴포넌트 간 직접 호출 대신 이벤트를 통해 비동기적으로 통신한다.**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              이벤트 기반 아키텍처                           │
+│                                                          │
+│  ┌──────────┐   이벤트 발행   ┌──────────────┐           │
+│  │ Producer │──────────────▶│ Event Bus /  │           │
+│  │ (주문)   │               │ Message Queue│           │
+│  └──────────┘               └──────┬───────┘           │
+│                                    │ 이벤트 전달         │
+│                        ┌───────────┼───────────┐        │
+│                        │           │           │        │
+│                   ┌────▼───┐  ┌───▼────┐ ┌───▼────┐   │
+│                   │결제    │  │재고    │ │알림    │    │
+│                   │서비스  │  │서비스  │ │서비스  │    │
+│                   └────────┘  └────────┘ └────────┘    │
+│                                                          │
+│  느슨한 결합: 생산자는 소비자를 모른다                      │
+│  확장 용이: 새 소비자 추가가 기존 코드에 영향 없음           │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 이벤트 소싱 (Event Sourcing)
+
+```
+┌───────────────────────────────────────────────────────┐
+│              이벤트 소싱                                │
+│                                                       │
+│  전통적 방식:  현재 상태만 저장                          │
+│    계좌 잔액: 50,000원                                 │
+│                                                       │
+│  이벤트 소싱:  모든 변경을 이벤트로 저장                  │
+│    이벤트 로그:                                        │
+│    [1] AccountCreated  { balance: 0 }                  │
+│    [2] MoneyDeposited  { amount: 100000 }              │
+│    [3] MoneyWithdrawn  { amount: 30000 }               │
+│    [4] MoneyWithdrawn  { amount: 20000 }               │
+│    → 재생(Replay)하면 현재 상태 복원: 50,000원           │
+│                                                       │
+│  장점: 완전한 이력, 시간 여행(Time Travel) 가능          │
+│  단점: 저장 공간 증가, 복잡성 증가                       │
+└───────────────────────────────────────────────────────┘
+```
+
+#### CQRS (Command Query Responsibility Segregation)
+
+```
+┌────────────────────────────────────────────────────────┐
+│              CQRS 패턴                                  │
+│                                                        │
+│           ┌─────────────┐                              │
+│           │   Client    │                              │
+│           └──────┬──────┘                              │
+│            ┌─────┴─────┐                               │
+│            │           │                               │
+│       ┌────▼───┐  ┌───▼────┐                          │
+│       │Command │  │ Query  │                           │
+│       │(쓰기)  │  │(읽기)  │                           │
+│       └────┬───┘  └───┬────┘                           │
+│            │          │                                │
+│       ┌────▼───┐  ┌───▼────┐                          │
+│       │ Write  │  │ Read   │  ← 읽기/쓰기 DB 분리      │
+│       │  DB    │─▶│  DB    │  (이벤트로 동기화)         │
+│       └────────┘  └────────┘                           │
+│                                                        │
+│  쓰기: 정규화된 DB (정합성 중시)                         │
+│  읽기: 비정규화된 DB (성능 중시)                         │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 8. 헥사고날 아키텍처 (Ports & Adapters)
+
+> **핵심 비즈니스 로직을 외부 의존성으로부터 완전히 격리한다.**
+
+알리스테어 콕번(Alistair Cockburn)이 제안한 패턴으로, 도메인 로직이 프레임워크, DB, 외부 서비스에 의존하지 않도록 설계한다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              헥사고날 아키텍처                              │
+│                                                          │
+│               [REST API]   [CLI]   [gRPC]                │
+│                  │          │        │                    │
+│                  ▼          ▼        ▼                    │
+│             ┌────────── Inbound Ports ──────────┐        │
+│             │  (입력 인터페이스: UseCase)         │        │
+│             │                                   │        │
+│             │    ┌──────────────────────┐        │        │
+│             │    │   Domain Core       │        │        │
+│             │    │                     │        │        │
+│             │    │  Entity, Value Obj  │        │        │
+│             │    │  Domain Service     │        │        │
+│             │    │  Business Rules     │        │        │
+│             │    └──────────────────────┘        │        │
+│             │                                   │        │
+│             └────────── Outbound Ports ─────────┘        │
+│                  │           │          │                 │
+│                  ▼           ▼          ▼                 │
+│             [PostgreSQL] [Redis]  [External API]         │
+│              Adapter      Adapter    Adapter             │
+│                                                          │
+│  Port = 인터페이스 (추상)                                  │
+│  Adapter = 구현체 (구체)                                   │
+│  Domain Core는 Port에만 의존 → 외부 교체 자유               │
+└──────────────────────────────────────────────────────────┘
+```
+
+```python
+from abc import ABC, abstractmethod
+
+
+# === Outbound Port (인터페이스) ===
+class OrderRepository(ABC):
+    @abstractmethod
+    def save(self, order: dict) -> str:
+        pass
+
+    @abstractmethod
+    def find_by_id(self, order_id: str) -> dict | None:
+        pass
+
+
+# === Domain Core (비즈니스 로직) ===
+class OrderService:
+    """핵심 도메인 — 외부 의존성 없음, Port에만 의존"""
+
+    def __init__(self, repo: OrderRepository):
+        self._repo = repo  # 인터페이스에 의존
+
+    def place_order(self, items: list[dict]) -> str:
+        total = sum(item["price"] * item["qty"] for item in items)
+        if total <= 0:
+            raise ValueError("주문 금액은 0보다 커야 합니다")
+
+        order = {"items": items, "total": total, "status": "placed"}
+        return self._repo.save(order)
+
+
+# === Outbound Adapter (구현) ===
+class PostgresOrderRepository(OrderRepository):
+    """PostgreSQL 어댑터"""
+    def save(self, order: dict) -> str:
+        print(f"[PostgreSQL] 주문 저장: {order}")
+        return "order-001"
+
+    def find_by_id(self, order_id: str) -> dict | None:
+        return {"id": order_id, "status": "placed"}
+
+
+class InMemoryOrderRepository(OrderRepository):
+    """테스트용 인메모리 어댑터"""
+    def __init__(self):
+        self._store: dict[str, dict] = {}
+        self._counter = 0
+
+    def save(self, order: dict) -> str:
+        self._counter += 1
+        oid = f"order-{self._counter:03d}"
+        self._store[oid] = {**order, "id": oid}
+        return oid
+
+    def find_by_id(self, order_id: str) -> dict | None:
+        return self._store.get(order_id)
+
+
+# === 프로덕션 vs 테스트: 어댑터만 교체 ===
+prod_service = OrderService(PostgresOrderRepository())
+test_service = OrderService(InMemoryOrderRepository())
+```
+
+---
+
+### 9. DDD 기초 (Domain-Driven Design)
+
+> **소프트웨어의 핵심은 도메인이다. 도메인 전문가와 개발자가 같은 언어를 쓴다.**
+
+에릭 에반스(Eric Evans)가 2003년에 제시한 설계 철학이다.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              DDD 핵심 개념                                 │
+│                                                          │
+│  ┌─────────────────────────────────────────────┐         │
+│  │           Bounded Context                    │         │
+│  │  "주문" 컨텍스트          "배송" 컨텍스트       │         │
+│  │  ┌──────────────┐       ┌──────────────┐    │         │
+│  │  │ Order        │       │ Shipment     │    │         │
+│  │  │ - items      │       │ - trackingNo │    │         │
+│  │  │ - total      │       │ - address    │    │         │
+│  │  │ - customer   │       │ - status     │    │         │
+│  │  └──────────────┘       └──────────────┘    │         │
+│  │                                             │         │
+│  │  같은 "고객"이라도 컨텍스트마다 의미가 다르다    │         │
+│  │  주문: 구매자 정보    배송: 수령인 정보          │         │
+│  └─────────────────────────────────────────────┘         │
+│                                                          │
+│  유비쿼터스 언어: 개발자와 도메인 전문가가 같은 용어 사용    │
+│  "Order", "주문 취소", "재고 확인" 등                      │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### DDD 빌딩 블록
+
+| 개념 | 설명 | 예시 |
+|------|------|------|
+| **Entity** | 고유 식별자(ID)를 가지는 객체 | User(id=1), Order(id="ORD-001") |
+| **Value Object** | 속성 값으로 동등성 판단, 불변 | Money(1000, "KRW"), Address |
+| **Aggregate** | 관련 Entity/VO의 일관성 경계 | Order + OrderItem들의 묶음 |
+| **Aggregate Root** | Aggregate의 진입점, 외부는 Root만 접근 | Order가 Root, OrderItem은 내부 |
+| **Domain Service** | Entity에 속하지 않는 도메인 로직 | 가격 계산, 재고 확인 |
+| **Repository** | Aggregate의 영속성 관리 | OrderRepository |
+| **Domain Event** | 도메인에서 발생한 사건 | OrderPlaced, PaymentCompleted |
+
+```python
+from dataclasses import dataclass
+from typing import Optional
+
+
+# === Value Object (불변, 값으로 비교) ===
+@dataclass(frozen=True)
+class Money:
+    amount: int
+    currency: str = "KRW"
+
+    def add(self, other: "Money") -> "Money":
+        if self.currency != other.currency:
+            raise ValueError("통화가 다릅니다")
+        return Money(self.amount + other.amount, self.currency)
+
+    def multiply(self, factor: int) -> "Money":
+        return Money(self.amount * factor, self.currency)
+
+
+# === Entity (ID로 식별) ===
+@dataclass
+class OrderItem:
+    product_name: str
+    price: Money
+    quantity: int
+
+    def subtotal(self) -> Money:
+        return self.price.multiply(self.quantity)
+
+
+# === Aggregate Root ===
+class Order:
+    """주문 애그리게이트 루트: 내부 일관성을 보장한다"""
+
+    def __init__(self, order_id: str, customer_id: str):
+        self.order_id = order_id
+        self.customer_id = customer_id
+        self._items: list[OrderItem] = []
+        self.status: str = "draft"
+        self._events: list[dict] = []  # 도메인 이벤트
+
+    def add_item(self, name: str, price: Money, qty: int) -> None:
+        if self.status != "draft":
+            raise ValueError("확정된 주문에는 항목을 추가할 수 없습니다")
+        self._items.append(OrderItem(name, price, qty))
+
+    def total(self) -> Money:
+        result = Money(0)
+        for item in self._items:
+            result = result.add(item.subtotal())
+        return result
+
+    def place(self) -> None:
+        """주문 확정 — 비즈니스 규칙 검증"""
+        if not self._items:
+            raise ValueError("빈 주문은 확정할 수 없습니다")
+        self.status = "placed"
+        # 도메인 이벤트 발행
+        self._events.append({
+            "type": "OrderPlaced",
+            "order_id": self.order_id,
+            "total": self.total().amount
+        })
+
+
+# === 사용 ===
+order = Order("ORD-001", "CUST-42")
+order.add_item("키보드", Money(89000), 1)
+order.add_item("마우스", Money(45000), 2)
+print(order.total())  # Money(amount=179000, currency='KRW')
+order.place()
+```
+
+---
+
+### 10. 아키텍처 패턴 선택 가이드
+
+| 상황 | 추천 패턴 | 이유 |
+|------|----------|------|
+| 소규모 CRUD 앱 | **계층형** | 단순, 빠른 개발 |
+| 복잡한 비즈니스 도메인 | **DDD + 헥사고날** | 도메인 로직 보호 |
+| 실시간 데이터 처리 | **이벤트 기반** | 비동기, 느슨한 결합 |
+| SPA / 반응형 UI | **MVVM** | 데이터 바인딩 최적화 |
+| 레거시 시스템 리팩토링 | **헥사고날** | 외부 의존성 점진적 격리 |
+| 높은 감사 요구사항 | **이벤트 소싱 + CQRS** | 완전한 변경 이력 |
+| 읽기/쓰기 비율 차이가 큰 시스템 | **CQRS** | 읽기/쓰기 최적화 분리 |
+| 서버 렌더링 웹앱 | **MVC** | 검증된 구조, 프레임워크 지원 |
+
+---
+
+## 정리
+
+| 항목 | 내용 |
+|------|------|
+| MVC | View-Controller-Model 분리, 서버 렌더링에 적합 |
+| MVP | Presenter가 View/Model 중재, 테스트 용이 |
+| MVVM | 데이터 바인딩으로 View-ViewModel 동기화 |
+| 계층형 아키텍처 | 수평 계층 분리, 가장 전통적 |
+| 이벤트 기반 | 비동기 통신, 느슨한 결합, 확장 용이 |
+| 이벤트 소싱 | 모든 변경을 이벤트로 저장, 이력 추적 |
+| CQRS | 읽기/쓰기 모델 분리, 성능 최적화 |
+| 헥사고날 | Ports & Adapters, 도메인 로직 격리 |
+| DDD | 도메인 중심 설계, 유비쿼터스 언어 |
+| 핵심 원칙 | 아키텍처는 요구사항에 맞게 선택 — 은탄환은 없다 |
