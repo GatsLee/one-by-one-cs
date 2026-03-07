@@ -42,3 +42,18 @@ model StudySession {
   durationSec    Int      @default(0)
   timestamp      DateTime @default(now())
 }
+
+model ContentChunk {
+  id        Int      @id @default(autoincrement())
+  filePath  String
+  topic     String
+  title     String
+  chunkIdx  Int
+  chunkText String
+  embedding String
+  summary   String?
+  tags      String?
+  createdAt DateTime @default(now())
+
+  @@unique([filePath, chunkIdx])
+}

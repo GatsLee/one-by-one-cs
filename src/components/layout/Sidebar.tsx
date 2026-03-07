@@ -7,6 +7,8 @@ import {
   BookOpen,
   HelpCircle,
   BarChart3,
+  Search,
+  Settings,
   Menu,
   X,
   ChevronsLeft,
@@ -18,7 +20,9 @@ const NAV_ITEMS = [
   { href: "/", label: "홈", icon: Home },
   { href: "/study", label: "학습", icon: BookOpen },
   { href: "/quiz", label: "퀴즈", icon: HelpCircle },
+  { href: "/search", label: "AI 검색", icon: Search },
   { href: "/dashboard", label: "대시보드", icon: BarChart3 },
+  { href: "/settings", label: "설정", icon: Settings },
 ];
 
 const STORAGE_KEY = "sidebar-collapsed";
