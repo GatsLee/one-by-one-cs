@@ -194,21 +194,27 @@ ConnectionError: Max retries exceeded with url: /users
 
 <details>
 <summary>정답 보기</summary>
+
 ConnectionError — 서버에 연결할 수 없다. 원인: 서버가 꺼져 있거나, URL이 잘못되었거나, 네트워크가 불안정. 해결: URL 확인, 네트워크 상태 확인, try/except로 재시도 로직 추가.
+
 </details>
 
 ### Q2. JavaScript에서 `TypeError: Cannot read properties of null (reading 'map')`이 발생했다. 무엇이 문제인가?
 
 <details>
 <summary>정답 보기</summary>
+
 null 값에 대해 .map()을 호출하려 했다. 배열이어야 할 변수가 null이다. API 응답이 비어 있거나 초기 상태가 null인 경우 자주 발생. 해결: `data?.map()` 옵셔널 체이닝 또는 `data && data.map()` 가드 사용.
+
 </details>
 
 ### Q3. HTTP 500 에러와 400 에러의 차이점은?
 
 <details>
 <summary>정답 보기</summary>
+
 400은 클라이언트 잘못(요청 데이터 문제), 500은 서버 잘못(서버 코드 에러). 400이면 내가 보낸 데이터를 확인, 500이면 서버 로그를 확인해야 한다.
+
 </details>
 
 

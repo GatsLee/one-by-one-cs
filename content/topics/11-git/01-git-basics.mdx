@@ -191,21 +191,27 @@ git remote -v
 
 <details>
 <summary>정답 보기</summary>
+
 Working Directory는 실제 파일을 편집하는 공간, Staging Area는 다음 커밋에 포함할 변경을 선택하는 공간(git add), Repository는 커밋된 이력이 영구 저장되는 공간(git commit).
+
 </details>
 
 ### Q2. .gitignore에 넣어야 하는 파일의 종류 3가지는?
 
 <details>
 <summary>정답 보기</summary>
+
 (1) 환경 변수/비밀 정보(.env, credentials), (2) 의존성 폴더(node_modules/, __pycache__/), (3) 빌드 결과물(dist/, build/). 추가로 OS 시스템 파일(.DS_Store), IDE 설정(.vscode/, .idea/)도 포함.
+
 </details>
 
 ### Q3. `git add .`와 `git add 파일명`의 차이점과 주의점은?
 
 <details>
 <summary>정답 보기</summary>
+
 `git add .`은 현재 디렉토리의 모든 변경을 staging에 올린다. `git add 파일명`은 특정 파일만 올린다. `git add .`을 사용할 때는 .gitignore 설정을 확인하여 .env나 불필요한 파일이 포함되지 않도록 주의해야 한다.
+
 </details>
 
 

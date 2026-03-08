@@ -238,14 +238,18 @@ for (let i = 1; i <= items.length; i++) {
 
 <details>
 <summary>정답 보기</summary>
+
 Off-by-one 에러 2개. (1) i가 1부터 시작해서 첫 요소(items[0])를 건너뜀. (2) i <= items.length에서 i=5일 때 items[5]는 undefined. 수정: `for (let i = 0; i < items.length; i++)`
+
 </details>
 
 ### Q2. React에서 `TypeError: Cannot read properties of undefined (reading 'map')`이 자주 발생하는 이유는?
 
 <details>
 <summary>정답 보기</summary>
+
 초기 state가 undefined/null인데 render에서 바로 .map()을 호출하기 때문. API 데이터를 가져오기 전에 렌더링이 먼저 실행된다. 해결: 초기값을 빈 배열([])로 설정하거나, `data?.map()` 옵셔널 체이닝 사용.
+
 </details>
 
 ### Q3. 다음 Python 코드에서 왜 두 번째 호출에 이전 값이 남아 있나?
@@ -258,7 +262,9 @@ def append_to(element, to=[]):
 
 <details>
 <summary>정답 보기</summary>
+
 Python의 가변 기본 인자(mutable default argument) 문제. 기본값 `[]`가 함수 정의 시 한 번만 생성되고 모든 호출에서 공유된다. 수정: `def append_to(element, to=None): if to is None: to = []`
+
 </details>
 
 

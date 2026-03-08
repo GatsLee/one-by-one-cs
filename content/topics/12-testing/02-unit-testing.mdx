@@ -276,21 +276,27 @@ E       AssertionError: assert 'ab' == 'ab'       ← 예상과 실제 비교
 
 <details>
 <summary>정답 보기</summary>
+
 (1) 느려진다(네트워크/디스크 I/O), (2) 외부 서비스 장애로 테스트가 실패할 수 있다(불안정), (3) 테스트 대상이 아닌 외부 시스템을 테스트하게 된다. Mock으로 대체하여 독립적이고 빠른 테스트를 유지한다.
+
 </details>
 
 ### Q2. pytest에서 에러가 발생하는지 테스트하는 방법은?
 
 <details>
 <summary>정답 보기</summary>
+
 `with pytest.raises(에러타입):` 블록 안에서 에러를 발생시키는 코드를 실행. 해당 에러가 발생하면 테스트 통과, 발생하지 않으면 테스트 실패.
+
 </details>
 
 ### Q3. Fixture의 역할과 장점은?
 
 <details>
 <summary>정답 보기</summary>
+
 여러 테스트에서 공통으로 필요한 데이터나 상태를 준비하는 코드. 중복을 줄이고, 테스트 데이터를 일관되게 관리하며, 테스트의 Arrange(준비) 단계를 깔끔하게 분리한다.
+
 </details>
 
 
