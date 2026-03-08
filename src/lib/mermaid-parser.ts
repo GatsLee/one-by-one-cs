@@ -74,12 +74,6 @@ function parseNodeDecl(token: string): ParsedNode | null {
   return null;
 }
 
-// Edge patterns: -->, ---,  -.-> , ==>, <-->
-const EDGE_RE =
-  /^(\S+?)\s+(-->|---|-\.->|==>|<-->|~~~)\s*(?:\|(.+?)\|\s*)?(\S+.*)$/;
-const EDGE_LABEL_RE =
-  /^(\S+?)\s+(-->|---|-\.->|==>|<-->|~~~)\s*\|(.+?)\|\s*(\S+.*)$/;
-
 function edgeType(
   arrow: string,
 ): ParsedEdge["type"] {
@@ -87,6 +81,7 @@ function edgeType(
     case "-->": return "arrow";
     case "---": return "line";
     case "-.->": return "dotted";
+    case "-.-": return "dotted";
     case "==>": return "thick";
     case "<-->": return "bidirectional";
     case "~~~": return "line";
@@ -107,15 +102,45 @@ function parseStyleDirective(
   return { nodeId: m[1], styles };
 }
 
+// Edge patterns: -->, ---, -.-> , -.- , ==>, <-->, ~~~
+// Also handles: A -- "label" --> B  and  A -- 5 --- B  (Mermaid inline label syntax)
+const EDGE_ARROWS = "-->|---|-\\.->|-\\.-|==>|<-->|~~~";
+
+// Pattern 1: pipe-label syntax  A -->|label| B  or  A -.-|label| B
+const EDGE_PIPE_LABEL_RE = new RegExp(
+  `^(\\S+?)\\s+(${EDGE_ARROWS})\\s*\\|(.+?)\\|\\s*(\\S+.*)$`,
+);
+
+// Pattern 2: inline quoted label  A -- "label" --> B
+const EDGE_INLINE_LABEL_RE = new RegExp(
+  `^(\\S+?)\\s+--\\s+"([^"]+)"\\s+(-->|---|-\\.->|-\\.-|==>)\\s*(\\S+.*)$`,
+);
+
+// Pattern 3: inline bare label  A -- 5 --- B  (numeric or single-word)
+const EDGE_INLINE_BARE_LABEL_RE = new RegExp(
+  `^(\\S+?)\\s+--\\s+(\\S+)\\s+(-->|---|-\\.->|-\\.-|==>)\\s*(\\S+.*)$`,
+);
+
+// Pattern 4: no label  A --> B
+const EDGE_NO_LABEL_RE = new RegExp(
+  `^(\\S+?)\\s+(${EDGE_ARROWS})\\s*(\\S+.*)$`,
+);
+
 export function parseMermaidFlowchart(chart: string): ParseResult {
   const decoded = decodeEntities(chart);
-  const lines = decoded.split("\n").map((l) => l.trim());
+  const rawLines = decoded.split("\n").map((l) => l.trim());
 
-  // Determine direction
-  const firstLine = lines[0] || "";
-  const dirMatch = firstLine.match(/^graph\s+(TD|TB|LR|RL|BT)/i);
-  const direction: "TD" | "LR" =
-    dirMatch && (dirMatch[1] === "LR" || dirMatch[1] === "RL") ? "LR" : "TD";
+  // Skip leading empty lines and find the graph direction line
+  let startIdx = 0;
+  let direction: "TD" | "LR" = "TD";
+  for (let i = 0; i < rawLines.length; i++) {
+    const dirMatch = rawLines[i].match(/^graph\s+(TD|TB|LR|RL|BT)/i);
+    if (dirMatch) {
+      direction = (dirMatch[1] === "LR" || dirMatch[1] === "RL") ? "LR" : "TD";
+      startIdx = i + 1;
+      break;
+    }
+  }
 
   const nodeMap = new Map<string, ParsedNode>();
   const edges: ParsedEdge[] = [];
@@ -139,7 +164,6 @@ export function parseMermaidFlowchart(chart: string): ParseResult {
   function registerNode(n: ParsedNode) {
     const existing = nodeMap.get(n.id);
     if (existing) {
-      // Update label/shape if we got a richer declaration
       if (n.label !== n.id) existing.label = n.label;
       if (n.shape !== "rectangle") existing.shape = n.shape;
     } else {
@@ -148,14 +172,35 @@ export function parseMermaidFlowchart(chart: string): ParseResult {
     }
   }
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
+  function addEdge(srcRaw: string, tgtRaw: string, arrow: string, label?: string) {
+    const srcNode = parseNodeDecl(srcRaw);
+    const tgtNode = parseNodeDecl(tgtRaw);
+    const srcId = srcNode?.id || srcRaw.trim();
+    const tgtId = tgtNode?.id || tgtRaw.trim();
+    if (srcNode) registerNode(srcNode);
+    else ensureNode(srcId);
+    if (tgtNode) registerNode(tgtNode);
+    else ensureNode(tgtId);
+    edges.push({
+      id: `e${edgeCounter++}`,
+      source: srcId,
+      target: tgtId,
+      label: label ? decodeEntities(label) : undefined,
+      type: edgeType(arrow),
+    });
+  }
+
+  for (let i = startIdx; i < rawLines.length; i++) {
+    const line = rawLines[i];
     if (!line || line.startsWith("%%")) continue;
 
+    // Skip graph direction (duplicate or inside subgraph)
+    if (/^graph\s+(TD|TB|LR|RL|BT)/i.test(line)) continue;
+
+    // Skip direction directive inside subgraphs
+    if (/^direction\s+(TD|TB|LR|RL|BT)/i.test(line)) continue;
+
     // Subgraph
-    const sgMatch = line.match(
-      /^subgraph\s+(\w+)\s*\["?(.+?)"?\]$|^subgraph\s+(\w+)\s*\[(.+?)\]$|^subgraph\s+(\w+)$/,
-    );
     if (line.startsWith("subgraph ")) {
       const rawSg = line.replace(/^subgraph\s+/, "");
       let sgId: string;
@@ -165,7 +210,6 @@ export function parseMermaidFlowchart(chart: string): ParseResult {
         sgId = bracketMatch[1];
         sgLabel = decodeEntities(bracketMatch[2]);
       } else {
-        // subgraph name  or  subgraph "name"
         sgId = rawSg.replace(/["'\[\]]/g, "").trim().replace(/\s+/g, "_");
         sgLabel = rawSg.replace(/["'\[\]]/g, "").trim();
       }
@@ -188,45 +232,33 @@ export function parseMermaidFlowchart(chart: string): ParseResult {
     // classDef / class — skip
     if (line.startsWith("classDef ") || line.startsWith("class ")) continue;
 
-    // Try to parse as edge (with optional label)
-    const edgeMatch =
-      line.match(EDGE_LABEL_RE) || line.match(EDGE_RE);
-    if (edgeMatch) {
-      const [, srcRaw, arrow, labelOrTarget, targetRaw] = edgeMatch;
-      let label: string | undefined;
-      let actualTarget: string;
-      if (targetRaw) {
-        // EDGE_LABEL_RE matched: group3 = label, group4 = target
-        if (edgeMatch === line.match(EDGE_LABEL_RE)) {
-          label = labelOrTarget;
-          actualTarget = targetRaw;
-        } else {
-          label = labelOrTarget;
-          actualTarget = targetRaw;
-        }
-      } else {
-        actualTarget = labelOrTarget || "";
-      }
+    // Try edge patterns in order of specificity
 
-      // Parse source and target nodes (they may have shape declarations)
-      const srcNode = parseNodeDecl(srcRaw);
-      const tgtNode = parseNodeDecl(actualTarget);
+    // 1. Pipe-label:  A -->|label| B  or  A -.-|label| B
+    const pipeMatch = line.match(EDGE_PIPE_LABEL_RE);
+    if (pipeMatch) {
+      addEdge(pipeMatch[1], pipeMatch[4], pipeMatch[2], pipeMatch[3]);
+      continue;
+    }
 
-      const srcId = srcNode?.id || srcRaw.trim();
-      const tgtId = tgtNode?.id || actualTarget.trim();
+    // 2. Inline quoted label:  A -- "label" --> B
+    const inlineQuotedMatch = line.match(EDGE_INLINE_LABEL_RE);
+    if (inlineQuotedMatch) {
+      addEdge(inlineQuotedMatch[1], inlineQuotedMatch[4], inlineQuotedMatch[3], inlineQuotedMatch[2]);
+      continue;
+    }
 
-      if (srcNode) registerNode(srcNode);
-      else ensureNode(srcId);
-      if (tgtNode) registerNode(tgtNode);
-      else ensureNode(tgtId);
+    // 3. Inline bare label:  A -- 5 --- B
+    const inlineBareMatch = line.match(EDGE_INLINE_BARE_LABEL_RE);
+    if (inlineBareMatch) {
+      addEdge(inlineBareMatch[1], inlineBareMatch[4], inlineBareMatch[3], inlineBareMatch[2]);
+      continue;
+    }
 
-      edges.push({
-        id: `e${edgeCounter++}`,
-        source: srcId,
-        target: tgtId,
-        label: label ? decodeEntities(label) : undefined,
-        type: edgeType(arrow),
-      });
+    // 4. No label:  A --> B
+    const noLabelMatch = line.match(EDGE_NO_LABEL_RE);
+    if (noLabelMatch) {
+      addEdge(noLabelMatch[1], noLabelMatch[3], noLabelMatch[2]);
       continue;
     }
 
