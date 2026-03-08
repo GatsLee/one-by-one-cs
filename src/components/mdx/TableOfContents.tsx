@@ -74,12 +74,18 @@ export default function TableOfContents({ headings }: TableOfContentsProps) {
               <button
                 key={h.id}
                 onClick={() => scrollTo(h.id)}
-                className={`block w-full text-left text-sm py-1.5 transition-colors rounded-sm ${
-                  h.level === 3 ? "pl-5" : "pl-2"
+                className={`block w-full text-left py-1.5 transition-colors rounded-sm ${
+                  h.level === 2
+                    ? "pl-2 text-[13px] font-semibold"
+                    : "pl-5 text-xs"
                 } ${
                   activeId === h.id
-                    ? "text-book-blue font-semibold border-l-2 border-book-blue"
-                    : "text-ink-light hover:text-ink border-l-2 border-transparent"
+                    ? h.level === 2
+                      ? "text-book-blue font-bold border-l-2 border-book-blue"
+                      : "text-book-blue/80 font-semibold border-l-2 border-book-blue/60"
+                    : h.level === 2
+                      ? "text-ink/70 hover:text-ink border-l-2 border-transparent"
+                      : "text-ink/45 hover:text-ink/70 border-l-2 border-transparent"
                 }`}
               >
                 {h.text}

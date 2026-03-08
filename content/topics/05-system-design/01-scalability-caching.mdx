@@ -16,12 +16,19 @@ order: 01
 <Mermaid chart="
 graph LR
   subgraph ScaleUp[&quot;수직 확장 (Scale Up)&quot;]
-    A1[&quot;서버 1\n4GB RAM\n2 CPU&quot;] -->|업그레이드| A2[&quot;서버 1\n64GB RAM\n32 CPU&quot;]
+    A1[&quot;서버 1
+4GB RAM
+2 CPU&quot;] -->|업그레이드| A2[&quot;서버 1
+64GB RAM
+32 CPU&quot;]
   end
   subgraph ScaleOut[&quot;수평 확장 (Scale Out)&quot;]
-    LB[로드밸런서] --> S1[&quot;서버 1\n4GB&quot;]
-    LB --> S2[&quot;서버 2\n4GB&quot;]
-    LB --> S3[&quot;서버 3\n4GB&quot;]
+    LB[로드밸런서] --> S1[&quot;서버 1
+4GB&quot;]
+    LB --> S2[&quot;서버 2
+4GB&quot;]
+    LB --> S3[&quot;서버 3
+4GB&quot;]
   end
 " />
 
@@ -65,20 +72,19 @@ graph LR
 
 가장 일반적인 전략. 애플리케이션이 캐시를 직접 관리한다.
 
-<Mermaid chart="
-sequenceDiagram
-    participant App as 앱 서버
-    participant Cache as 캐시 (Redis)
-    participant DB as DB
-    App->>Cache: 1. 데이터 조회
-    alt Cache Hit
-        Cache-->>App: 캐시 데이터 반환
-    else Cache Miss
-        Cache-->>App: Miss
-        App->>DB: DB 조회
-        DB-->>App: 결과 반환
-        App->>Cache: 캐시에 저장
-    end
+<Mermaid chart="graph TD
+  Req[&quot;앱 서버: 데이터 요청&quot;] --> Check{&quot;캐시 조회
+(Redis)&quot;}
+  Check -->|Cache Hit| Return[&quot;캐시 데이터 반환&quot;]
+  Check -->|Cache Miss| DB[&quot;DB 조회&quot;]
+  DB --> Store[&quot;결과를 캐시에 저장&quot;]
+  Store --> Return
+
+  style Req fill:#99ccff,stroke:#333
+  style Check fill:#ffcc99,stroke:#333
+  style Return fill:#99ff99,stroke:#333
+  style DB fill:#ff9999,stroke:#333
+  style Store fill:#ffe6cc,stroke:#333
 " />
 
 - **장점**: 필요한 데이터만 캐싱, 캐시 장애 시에도 DB로 동작 가능
@@ -88,15 +94,15 @@ sequenceDiagram
 
 쓰기 시 캐시와 DB에 동시에 저장한다.
 
-<Mermaid chart="
-sequenceDiagram
-    participant App as 앱
-    participant Cache as 캐시
-    participant DB as DB
-    App->>Cache: 1. 쓰기
-    Cache->>DB: 2. 쓰기 (동기)
-    DB-->>Cache: 동기 완료
-    Cache-->>App: 3. 완료 응답
+<Mermaid chart="graph TD
+  App[&quot;앱: 쓰기 요청&quot;] --> Cache[&quot;1. 캐시에 쓰기&quot;]
+  Cache --> DB[&quot;2. DB에 쓰기 (동기)&quot;]
+  DB --> Done[&quot;3. 완료 응답 → 앱&quot;]
+
+  style App fill:#99ccff,stroke:#333
+  style Cache fill:#ffcc99,stroke:#333
+  style DB fill:#ff9999,stroke:#333
+  style Done fill:#99ff99,stroke:#333
 " />
 
 - **장점**: 캐시와 DB가 항상 일관성 유지
@@ -106,14 +112,15 @@ sequenceDiagram
 
 쓰기 시 캐시에만 저장하고, DB에는 나중에 비동기적으로 반영한다.
 
-<Mermaid chart="
-sequenceDiagram
-    participant App as 앱
-    participant Cache as 캐시
-    participant DB as DB
-    App->>Cache: 1. 쓰기
-    Cache-->>App: 즉시 완료
-    Cache-)DB: 2. 비동기 배치 쓰기 (나중에)
+<Mermaid chart="graph TD
+  App[&quot;앱: 쓰기 요청&quot;] --> Cache[&quot;1. 캐시에 쓰기&quot;]
+  Cache --> Done[&quot;즉시 완료 응답 → 앱&quot;]
+  Cache -.->|비동기 배치| DB[&quot;2. DB에 나중에 쓰기&quot;]
+
+  style App fill:#99ccff,stroke:#333
+  style Cache fill:#ffcc99,stroke:#333
+  style Done fill:#99ff99,stroke:#333
+  style DB fill:#ff9999,stroke:#333,stroke-dasharray: 5 5
 " />
 
 - **장점**: 쓰기 성능 최고, DB 부하 감소

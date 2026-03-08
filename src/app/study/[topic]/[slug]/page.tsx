@@ -21,13 +21,15 @@ export default async function LessonPage({
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link
-        href={`/study/${topic}`}
-        className="inline-flex items-center gap-1 text-sm text-ink-light hover:text-book-blue mb-4 transition-colors"
-      >
-        <ArrowLeft size={14} />
-        {topicLabel}
-      </Link>
+      <div className="sticky top-0 z-30 bg-paper/90 backdrop-blur-sm py-2 -mx-2 px-2 mb-2">
+        <Link
+          href={`/study/${topic}`}
+          className="inline-flex items-center gap-1 text-sm text-ink-light hover:text-book-blue transition-colors"
+        >
+          <ArrowLeft size={14} />
+          {topicLabel}
+        </Link>
+      </div>
 
       <h1 className="text-3xl font-serif font-bold text-ink mb-8 tracking-tight">{doc.title}</h1>
 

@@ -22,11 +22,17 @@ order: 01
 프로세스는 메모리에서 4개의 영역을 할당받는다.
 
 <Mermaid chart="graph TD
-  Stack[&quot;스택(Stack)\n지역 변수, 함수 호출 정보\n↓ 아래로 성장&quot;]
+  Stack[&quot;스택(Stack)
+지역 변수, 함수 호출 정보
+↓ 아래로 성장&quot;]
   Free[&quot;빈 공간&quot;]
-  Heap[&quot;힙(Heap)\n동적 할당 메모리 (malloc, new)\n↑ 위로 성장&quot;]
-  Data[&quot;데이터(Data)\n전역 변수, 정적 변수&quot;]
-  Code[&quot;코드(Code/Text)\n실행할 기계어 명령어 (읽기 전용)&quot;]
+  Heap[&quot;힙(Heap)
+동적 할당 메모리 (malloc, new)
+↑ 위로 성장&quot;]
+  Data[&quot;데이터(Data)
+전역 변수, 정적 변수&quot;]
+  Code[&quot;코드(Code/Text)
+실행할 기계어 명령어 (읽기 전용)&quot;]
 
   Stack --> Free --> Heap --> Data --> Code
 
@@ -48,14 +54,21 @@ order: 01
 
 프로세스는 생성부터 종료까지 여러 상태를 거친다.
 
-<Mermaid chart="stateDiagram-v2
-  [*] --> New: 생성
-  New --> Ready: 메모리 할당, PCB 생성
-  Ready --> Running: CPU 할당 (디스패치)
-  Running --> Ready: 타임아웃 / 인터럽트
-  Running --> Waiting: I/O 요청 / 이벤트 대기
-  Waiting --> Ready: I/O 완료
-  Running --> [*]: 종료 (Terminated)
+<Mermaid chart="graph TD
+  Start(( )) -->|생성| New([New])
+  New -->|메모리 할당, PCB 생성| Ready([Ready])
+  Ready -->|CPU 할당 - 디스패치| Running([Running])
+  Running -->|타임아웃 / 인터럽트| Ready
+  Running -->|I/O 요청 / 이벤트 대기| Waiting([Waiting])
+  Waiting -->|I/O 완료| Ready
+  Running -->|종료| Terminated([Terminated])
+
+  style Start fill:#333,stroke:#333
+  style New fill:#a8d8ea,stroke:#333
+  style Ready fill:#99ff99,stroke:#333
+  style Running fill:#ff9999,stroke:#333
+  style Waiting fill:#ffcc99,stroke:#333
+  style Terminated fill:#ccc,stroke:#333
 " />
 
 | 상태 | 설명 |
@@ -76,43 +89,34 @@ order: 01
 
 운영체제가 각 프로세스를 관리하기 위한 **정보 블록**. 프로세스 1개당 PCB 1개.
 
-<Mermaid chart="graph TD
-  PCB[&quot;PCB (프로세스 제어 블록)&quot;]
-  PID[&quot;프로세스 ID (PID)&quot;]
-  State[&quot;프로세스 상태 (Ready/Running..)&quot;]
-  PC[&quot;프로그램 카운터 (PC)\n다음 실행할 명령어 주소&quot;]
-  Reg[&quot;CPU 레지스터 값\n문맥 교환 시 저장/복원&quot;]
-  Sched[&quot;CPU 스케줄링 정보\n우선순위, 스케줄링 큐 포인터&quot;]
-  Mem[&quot;메모리 관리 정보\n페이지 테이블, 세그먼트 테이블&quot;]
-  IO[&quot;I/O 상태 정보\n열린 파일 목록&quot;]
-  Acct[&quot;계정 정보\nCPU 사용 시간 등&quot;]
-
-  PCB --> PID
-  PCB --> State
-  PCB --> PC
-  PCB --> Reg
-  PCB --> Sched
-  PCB --> Mem
-  PCB --> IO
-  PCB --> Acct
-
-  style PCB fill:#4a90d9,stroke:#333,color:#fff
-" />
+| PCB 필드 | 저장 내용 |
+|---------|----------|
+| **프로세스 ID (PID)** | 프로세스 고유 식별 번호 |
+| **프로세스 상태** | Ready, Running, Waiting 등 |
+| **프로그램 카운터 (PC)** | 다음 실행할 명령어 주소 |
+| **CPU 레지스터 값** | 문맥 교환 시 저장/복원 |
+| **CPU 스케줄링 정보** | 우선순위, 스케줄링 큐 포인터 |
+| **메모리 관리 정보** | 페이지 테이블, 세그먼트 테이블 |
+| **I/O 상태 정보** | 열린 파일 목록 |
+| **계정 정보** | CPU 사용 시간 등 |
 
 ### 컨텍스트 스위칭 (Context Switching)
 
 CPU가 현재 실행 중인 프로세스를 다른 프로세스로 교체하는 과정.
 
-<Mermaid chart="sequenceDiagram
-  participant A as 프로세스 A
-  participant OS as OS (커널)
-  participant B as 프로세스 B
+<Mermaid chart="graph TD
+  A[&quot;프로세스 A 실행 중&quot;] -->|인터럽트 / 시스템콜| Save[&quot;OS: A의 상태를 PCB_A에 저장
+(레지스터, PC, 스택 포인터 등)&quot;]
+  Save --> Sched[&quot;OS: 스케줄러가 B를 선택&quot;]
+  Sched --> Restore[&quot;OS: PCB_B에서 B의 상태 복원
+(레지스터, PC, 스택 포인터 등)&quot;]
+  Restore --> B[&quot;프로세스 B 실행 시작&quot;]
 
-  A->>OS: 인터럽트 / 시스템콜
-  Note over OS: A의 상태를 PCB_A에 저장<br/>(레지스터, PC, 스택 포인터 등)
-  Note over OS: 스케줄러: B를 선택
-  Note over OS: PCB_B에서 B의 상태 복원<br/>(레지스터, PC, 스택 포인터 등)
-  OS->>B: B 실행 시작
+  style A fill:#99ccff,stroke:#333
+  style Save fill:#ffcc99,stroke:#333
+  style Sched fill:#ffcc99,stroke:#333
+  style Restore fill:#ffcc99,stroke:#333
+  style B fill:#99ff99,stroke:#333
 " />
 
 **컨텍스트 스위칭 비용:**
@@ -142,9 +146,12 @@ CPU가 현재 실행 중인 프로세스를 다른 프로세스로 교체하는 
     M_Data[&quot;데이터 (공유)&quot;]
     M_Heap[&quot;힙 (공유)&quot;]
     subgraph Threads[&quot;스레드별 독립 영역&quot;]
-      T1[&quot;스레드1\n스택1 / 레지1 / PC1&quot;]
-      T2[&quot;스레드2\n스택2 / 레지2 / PC2&quot;]
-      T3[&quot;스레드3\n스택3 / 레지3 / PC3&quot;]
+      T1[&quot;스레드1
+스택1 / 레지1 / PC1&quot;]
+      T2[&quot;스레드2
+스택2 / 레지2 / PC2&quot;]
+      T3[&quot;스레드3
+스택3 / 레지3 / PC3&quot;]
     end
   end
 

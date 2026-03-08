@@ -413,7 +413,16 @@ Average Pooling: 각 영역의 평균값을 추출
 
 <Mermaid chart="
 graph LR
-  IMG[&quot;이미지\n28×28×1&quot;] --> CONV1[&quot;Conv\n26×26×32&quot;] --> POOL1[&quot;Pool\n13×13×32&quot;] --> CONV2[&quot;Conv\n11×11×64&quot;] --> POOL2[&quot;Pool\n5×5×64&quot;] --> FLAT[&quot;Flatten\n1600&quot;] --> FC1[&quot;FC\n256&quot;] --> FC2[&quot;FC\n10&quot;] --> SM[&quot;Softmax\n확률&quot;]
+  IMG[&quot;이미지
+28×28×1&quot;] --> CONV1[&quot;Conv
+26×26×32&quot;] --> POOL1[&quot;Pool
+13×13×32&quot;] --> CONV2[&quot;Conv
+11×11×64&quot;] --> POOL2[&quot;Pool
+5×5×64&quot;] --> FLAT[&quot;Flatten
+1600&quot;] --> FC1[&quot;FC
+256&quot;] --> FC2[&quot;FC
+10&quot;] --> SM[&quot;Softmax
+확률&quot;]
   style IMG fill:#e1f5fe
   style CONV1 fill:#fff3e0
   style CONV2 fill:#fff3e0
@@ -481,10 +490,14 @@ ResNet (2015, Microsoft):
 
 <Mermaid chart="
 graph LR
-  x0[&quot;x₀\n나는&quot;] --> h0[&quot;h₀&quot;]
-  x1[&quot;x₁\n학생&quot;] --> h1[&quot;h₁&quot;]
-  x2[&quot;x₂\n입니다&quot;] --> h2[&quot;h₂&quot;]
-  x3[&quot;x₃\n.&quot;] --> h3[&quot;h₃&quot;]
+  x0[&quot;x₀
+나는&quot;] --> h0[&quot;h₀&quot;]
+  x1[&quot;x₁
+학생&quot;] --> h1[&quot;h₁&quot;]
+  x2[&quot;x₂
+입니다&quot;] --> h2[&quot;h₂&quot;]
+  x3[&quot;x₃
+.&quot;] --> h3[&quot;h₃&quot;]
   h0 -->|&quot;W_hh&quot;| h1 -->|&quot;W_hh&quot;| h2 -->|&quot;W_hh&quot;| h3
   h0 --> y0[&quot;y₀&quot;]
   h1 --> y1[&quot;y₁&quot;]
@@ -527,14 +540,24 @@ LSTM은 **게이트 메커니즘으로 정보를 선택적으로 기억/삭제**
 
 <Mermaid chart="
 graph LR
-  Cprev[&quot;Cₜ₋₁\n이전 셀 상태&quot;] -->|&quot;×&quot;| FG[&quot;fₜ\n망각 게이트\nσ&quot;]
+  Cprev[&quot;Cₜ₋₁
+이전 셀 상태&quot;] -->|&quot;×&quot;| FG[&quot;fₜ
+망각 게이트
+σ&quot;]
   FG -->|&quot;망각 적용&quot;| ADD((&quot;+&quot;))
-  IG[&quot;iₜ\n입력 게이트\nσ&quot;] -->|&quot;×&quot;| Ctilde[&quot;C̃ₜ\ntanh&quot;]
+  IG[&quot;iₜ
+입력 게이트
+σ&quot;] -->|&quot;×&quot;| Ctilde[&quot;C̃ₜ
+tanh&quot;]
   Ctilde -->|&quot;새 정보&quot;| ADD
-  ADD --> Cnext[&quot;Cₜ\n새 셀 상태&quot;]
+  ADD --> Cnext[&quot;Cₜ
+새 셀 상태&quot;]
   Cnext -->|&quot;tanh&quot;| MUL((&quot;×&quot;))
-  OG[&quot;oₜ\n출력 게이트\nσ&quot;] --> MUL
-  MUL --> ht[&quot;hₜ\n출력&quot;]
+  OG[&quot;oₜ
+출력 게이트
+σ&quot;] --> MUL
+  MUL --> ht[&quot;hₜ
+출력&quot;]
   hprev[&quot;hₜ₋₁&quot;] --> FG & IG & OG & Ctilde
   xt[&quot;xₜ&quot;] --> FG & IG & OG & Ctilde
   style Cprev fill:#e1f5fe
@@ -591,7 +614,8 @@ graph LR
 graph TD
   subgraph FE[&quot;전략 1: 특성 추출 Feature Extraction&quot;]
     direction LR
-    FE_C1[&quot;Conv&quot;] --> FE_C2[&quot;Conv&quot;] --> FE_C3[&quot;Conv&quot;] --> FE_P[&quot;Pool&quot;] --> FE_FC[&quot;새 FC 층\n학습 함&quot;]
+    FE_C1[&quot;Conv&quot;] --> FE_C2[&quot;Conv&quot;] --> FE_C3[&quot;Conv&quot;] --> FE_P[&quot;Pool&quot;] --> FE_FC[&quot;새 FC 층
+학습 함&quot;]
     style FE_C1 fill:#b0bec5
     style FE_C2 fill:#b0bec5
     style FE_C3 fill:#b0bec5
@@ -600,7 +624,8 @@ graph TD
   end
   subgraph FT[&quot;전략 2: 미세 조정 Fine-tuning&quot;]
     direction LR
-    FT_C1[&quot;Conv&quot;] --> FT_C2[&quot;Conv&quot;] --> FT_C3[&quot;Conv&quot;] --> FT_P[&quot;Pool&quot;] --> FT_FC[&quot;새 FC 층\n높은 학습률&quot;]
+    FT_C1[&quot;Conv&quot;] --> FT_C2[&quot;Conv&quot;] --> FT_C3[&quot;Conv&quot;] --> FT_P[&quot;Pool&quot;] --> FT_FC[&quot;새 FC 층
+높은 학습률&quot;]
     style FT_C1 fill:#fff9c4
     style FT_C2 fill:#fff9c4
     style FT_C3 fill:#fff9c4

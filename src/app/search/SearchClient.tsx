@@ -39,7 +39,6 @@ function loadSavedModel(): string {
 
 function topicLabel(topic: string): string {
   const map: Record<string, string> = {
-    "01-data-structures": "자료구조",
     "02-os": "운영체제",
     "03-network": "네트워크",
     "04-database": "데이터베이스",
@@ -53,7 +52,6 @@ function topicLabel(topic: string): string {
 }
 
 const TOPIC_COLORS: Record<string, string> = {
-  "01-data-structures": "bg-blue-50 text-blue-700 border-blue-100",
   "02-os": "bg-purple-50 text-purple-700 border-purple-100",
   "03-network": "bg-emerald-50 text-emerald-700 border-emerald-100",
   "04-database": "bg-amber-50 text-amber-700 border-amber-100",

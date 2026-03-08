@@ -36,7 +36,6 @@ const PHASES: Phase[] = [
     text: "text-book-blue",
     glowColor: "rgba(58, 95, 166, 0.35)",
     topics: [
-      { id: "01-data-structures", label: "자료구조" },
       { id: "02-os", label: "운영체제" },
       { id: "03-network", label: "네트워크" },
       { id: "04-database", label: "데이터베이스" },
@@ -98,7 +97,7 @@ export default function LearningRoadmap() {
   return (
     <div className="relative">
       {/* Vertical track line */}
-      <div className="absolute left-[23px] top-8 bottom-8 w-0.5 bg-wood/40 rounded-full hidden md:block" />
+      <div className="absolute left-[19px] top-8 bottom-8 w-0.5 bg-wood/40 rounded-full hidden md:block" />
 
       <div className="flex flex-col gap-6">
         {PHASES.map((phase) => {
@@ -109,7 +108,7 @@ export default function LearningRoadmap() {
               {/* Timeline node */}
               <div className="hidden md:flex flex-col items-center mt-6 z-10">
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center border-4 border-paper transition-colors duration-300 ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center border-[3px] border-paper transition-colors duration-300 ${
                     isExpanded ? `${phase.bg} text-white` : "bg-white text-ink-light"
                   }`}
                 >

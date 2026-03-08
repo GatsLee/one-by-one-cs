@@ -1,5 +1,4 @@
 import type { QuizDataMap, DocQuizData, QuizQuestion, FlashcardData } from "./types";
-import { dataStructuresQuizzes } from "./01-data-structures";
 import { osQuizzes } from "./02-os";
 import { networkQuizzes } from "./03-network";
 import { databaseQuizzes } from "./04-database";
@@ -10,7 +9,6 @@ import { remainingQuizzes } from "./07-09-remaining";
 export type { QuizDataMap, DocQuizData, QuizQuestion, FlashcardData };
 
 export const allQuizData: QuizDataMap = {
-  ...dataStructuresQuizzes,
   ...osQuizzes,
   ...networkQuizzes,
   ...databaseQuizzes,

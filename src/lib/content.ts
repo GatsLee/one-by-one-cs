@@ -25,7 +25,6 @@ export function extractHeadings(source: string): TocHeading[] {
 const CONTENT_DIR = path.join(process.cwd(), "content", "topics");
 
 export const TOPIC_LABELS: Record<string, string> = {
-  "01-data-structures": "자료구조",
   "02-os": "운영체제",
   "03-network": "네트워크",
   "04-database": "데이터베이스",
@@ -40,7 +39,6 @@ export const TOPIC_LABELS: Record<string, string> = {
 };
 
 export const STUDY_ORDER = [
-  { topicDir: "01-data-structures", label: "자료구조", desc: "배열, 스택, 해시, 트리, 그래프, 정렬, DP, 탐욕, 문자열" },
   { topicDir: "02-os", label: "운영체제", desc: "프로세스, 스케줄링, 메모리, 동기화, 파일 시스템, I/O" },
   { topicDir: "03-network", label: "네트워크", desc: "HTTP, OSI, TCP/UDP, WebSocket, 보안, 라우팅, 링크 계층" },
   { topicDir: "04-database", label: "데이터베이스", desc: "SQL, 정규화, 트랜잭션, NoSQL, ER 모델링, 쿼리 최적화, 복구" },
@@ -59,7 +57,7 @@ export const TOPIC_GROUPS = [
     label: "CS 기초",
     desc: "컴퓨터 과학의 핵심 이론",
     color: "book-blue",
-    topics: ["01-data-structures", "02-os", "03-network", "04-database"],
+    topics: ["02-os", "03-network", "04-database"],
   },
   {
     label: "시스템 & 설계",

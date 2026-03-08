@@ -19,8 +19,11 @@ graph LR
     B1 -.-|B가 죽으면 A도 실패!| A1
   end
   subgraph Async[&quot;비동기 통신 — 메시지 큐&quot;]
-    A2[서비스A] -->|메시지\n즉시 반환| Q[큐\n버퍼]
-    Q -->|메시지\n자기 속도로 처리| B2[서비스B]
+    A2[서비스A] -->|메시지
+즉시 반환| Q[큐
+버퍼]
+    Q -->|메시지
+자기 속도로 처리| B2[서비스B]
   end
 " />
 
@@ -67,9 +70,12 @@ graph LR
 <Mermaid chart="
 graph LR
   Pub[Publisher] -->|msg| Topic[토픽 Topic]
-  Topic -->|msg| SubA[Subscriber A\n알림 서비스]
-  Topic -->|msg| SubB[Subscriber B\n로그 서비스]
-  Topic -->|msg| SubC[Subscriber C\n분석 서비스]
+  Topic -->|msg| SubA[Subscriber A
+알림 서비스]
+  Topic -->|msg| SubB[Subscriber B
+로그 서비스]
+  Topic -->|msg| SubC[Subscriber C
+분석 서비스]
 " />
 
 **사용 사례**: 이벤트 알림, 로그 수집, 실시간 데이터 스트리밍
@@ -94,15 +100,21 @@ graph LR
   P1[Producer] --> Kafka
   P2[Producer] --> Kafka
   P3[Producer] --> Kafka
-  subgraph Kafka[&quot;Kafka 클러스터\nBroker 1 | Broker 2 | Broker 3&quot;]
+  subgraph Kafka[&quot;Kafka 클러스터
+Broker 1 | Broker 2 | Broker 3&quot;]
     subgraph Orders[&quot;Topic: orders&quot;]
-      Part0[&quot;Partition 0\nm1, m2, m5&quot;]
-      Part1[&quot;Partition 1\nm3, m4, m6&quot;]
-      Part2[&quot;Partition 2\nm7, m8&quot;]
+      Part0[&quot;Partition 0
+m1, m2, m5&quot;]
+      Part1[&quot;Partition 1
+m3, m4, m6&quot;]
+      Part2[&quot;Partition 2
+m7, m8&quot;]
     end
   end
-  Kafka --> CGA[&quot;Consumer Group A\n주문 처리&quot;]
-  Kafka --> CGB[&quot;Consumer Group B\n분석&quot;]
+  Kafka --> CGA[&quot;Consumer Group A
+주문 처리&quot;]
+  Kafka --> CGB[&quot;Consumer Group B
+분석&quot;]
 " />
 
 #### Kafka 핵심 개념
@@ -196,13 +208,16 @@ graph TD
 
 <Mermaid chart="
 graph LR
-  subgraph UserSvc[&quot;사용자 서비스\nPython&quot;]
+  subgraph UserSvc[&quot;사용자 서비스
+Python&quot;]
     DB1[(DB1)]
   end
-  subgraph OrderSvc[&quot;주문 서비스\nJava&quot;]
+  subgraph OrderSvc[&quot;주문 서비스
+Java&quot;]
     DB2[(DB2)]
   end
-  subgraph PaySvc[&quot;결제 서비스\nGo&quot;]
+  subgraph PaySvc[&quot;결제 서비스
+Go&quot;]
     DB3[(DB3)]
   end
   UserSvc <--> OrderSvc <--> PaySvc
@@ -220,10 +235,14 @@ graph LR
 <Mermaid chart="
 graph TD
   subgraph ClientSide[&quot;클라이언트 사이드 디스커버리&quot;]
-    SR1[&quot;Service Registry\nConsul / etcd&quot;]
-    SA[&quot;주문 서비스 A\n:8001&quot;] -->|①등록| SR1
-    SB[&quot;주문 서비스 B\n:8002&quot;] -->|①등록| SR1
-    SC[&quot;주문 서비스 C\n:8003&quot;] -->|①등록| SR1
+    SR1[&quot;Service Registry
+Consul / etcd&quot;]
+    SA[&quot;주문 서비스 A
+:8001&quot;] -->|①등록| SR1
+    SB[&quot;주문 서비스 B
+:8002&quot;] -->|①등록| SR1
+    SC[&quot;주문 서비스 C
+:8003&quot;] -->|①등록| SR1
     Client1[클라이언트] -->|②조회| SR1
     Client1 -->|직접 호출| SA
   end
@@ -246,7 +265,11 @@ graph LR
 
 <Mermaid chart="
 graph LR
-  Client[&quot;클라이언트\n웹/앱&quot;] --> GW[&quot;API Gateway\n인증/인가 | 라우팅\n속도 제한 | 로깅\n응답 캐싱 | 응답 집계&quot;]
+  Client[&quot;클라이언트
+웹/앱&quot;] --> GW[&quot;API Gateway
+인증/인가 | 라우팅
+속도 제한 | 로깅
+응답 캐싱 | 응답 집계&quot;]
   GW --> UserSvc[사용자 서비스]
   GW --> OrderSvc[주문 서비스]
   GW --> Etc[...]
@@ -272,10 +295,17 @@ graph LR
 <Mermaid chart="
 graph LR
   subgraph Success[&quot;성공 시나리오&quot;]
-    S1[&quot;① 주문 생성\n주문DB&quot;] --> S2[&quot;② 재고 차감\n재고DB&quot;] --> S3[&quot;③ 결제 처리\n결제DB&quot;] --> S4[&quot;④ 배송 요청\n배송DB&quot;]
+    S1[&quot;① 주문 생성
+주문DB&quot;] --> S2[&quot;② 재고 차감
+재고DB&quot;] --> S3[&quot;③ 결제 처리
+결제DB&quot;] --> S4[&quot;④ 배송 요청
+배송DB&quot;]
   end
   subgraph Failure[&quot;결제 실패 시나리오&quot;]
-    F1[&quot;① 주문 생성\n주문DB&quot;] --> F2[&quot;② 재고 차감\n재고DB&quot;] --> F3[&quot;③ 결제 실패!\n결제DB&quot;] -->|X| Stop((중단))
+    F1[&quot;① 주문 생성
+주문DB&quot;] --> F2[&quot;② 재고 차감
+재고DB&quot;] --> F3[&quot;③ 결제 실패!
+결제DB&quot;] -->|X| Stop((중단))
     F3 -.->|보상| F2R[&quot;④ 재고 복구&quot;]
     F2R -.->|보상| F1R[&quot;⑤ 주문 취소&quot;]
   end
@@ -287,15 +317,11 @@ graph LR
 
 각 서비스가 이벤트를 발행하고, 다음 서비스가 이를 구독하여 처리한다. 중앙 관리자가 없다.
 
-<Mermaid chart="
-sequenceDiagram
-    participant Order as 주문 서비스
-    participant Stock as 재고 서비스
-    participant Pay as 결제 서비스
-    Order->>Stock: 주문생성 이벤트
-    Stock->>Pay: 재고차감 이벤트
-    Pay-->>Order: 결제완료 이벤트
-    Note over Order: 주문 확정
+<Mermaid chart="graph LR
+  Order[주문 서비스] -->|주문생성 이벤트| Stock[재고 서비스]
+  Stock -->|재고차감 이벤트| Pay[결제 서비스]
+  Pay -.->|결제완료 이벤트| Order
+  Order -.->|주문 확정| Done((완료))
 " />
 
 장점: 단순, 느슨한 결합

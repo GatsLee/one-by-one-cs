@@ -284,21 +284,19 @@ Cassandra 스키마 예시:
 
 #### 푸시 알림 (Push Notification)
 
+<Mermaid chart="graph LR
+  chat[Chat 서버]
+  chat --> notify[&quot;알림 서비스
+조건 확인:
+- 수신자 오프라인?
+- 음소거 아님?
+- 방해금지 아님?&quot;]
+  notify --> fcm[&quot;FCM / APNs
+Firebase / Apple Push&quot;]
+  fcm --> device[&quot;사용자 디바이스
+스마트폰&quot;]" />
+
 ```
-푸시 알림 흐름:
-
-  ┌──────────┐   ┌──────────────┐   ┌───────────────┐
-  │ Chat 서버 │──→│ 알림 서비스    │──→│ FCM / APNs    │
-  └──────────┘   │              │   │ (Firebase/    │
-                 │ 조건 확인:    │   │  Apple Push)  │
-                 │ - 수신자 오프라인?│   └───────┬───────┘
-                 │ - 음소거 아님?  │           │
-                 │ - 방해금지 아님?│           ▼
-                 └──────────────┘   ┌───────────────┐
-                                    │ 사용자 디바이스  │
-                                    │ (스마트폰)      │
-                                    └───────────────┘
-
 알림 판단 로직:
   1. 수신자가 WebSocket 연결 중인가?
      → YES: 푸시 알림 불필요 (실시간 전달 완료)
@@ -358,69 +356,35 @@ Cassandra 스키마 예시:
 
 ### 7. 전체 아키텍처 다이어그램
 
+<Mermaid chart="graph TD
+  d1[디바이스 1] --> gw
+  d2[디바이스 2] --> gw
+  d3[디바이스 3] --> gw
+  gw[&quot;API Gateway / LB
+인증, Rate Limiting&quot;]
+  gw --> http[&quot;HTTP API 서버
+인증, 그룹관리, 프로필&quot;]
+  gw --> ws1[&quot;WebSocket 서버 1
+실시간 메시지&quot;]
+  gw --> ws2[&quot;WebSocket 서버 2
+실시간 메시지&quot;]
+  ws1 --> routing[&quot;Message Routing Service
+Redis Pub/Sub 또는 ZooKeeper
+user_id → websocket_server_id&quot;]
+  ws2 --> routing
+  routing --> msgdb[&quot;Message DB
+Cassandra
+메시지 영구 저장&quot;]
+  routing --> presence[&quot;Presence Service
+Redis
+온라인 상태, Heartbeat&quot;]
+  routing --> push[&quot;Push Notification
+FCM, APNs&quot;]
+  routing --> media[&quot;Media Service
+S3/CDN
+이미지/파일&quot;]" />
+
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                    채팅 시스템 전체 아키텍처                         │
-└──────────────────────────────────────────────────────────────────┘
-
-  ┌────────┐  ┌────────┐  ┌────────┐
-  │디바이스1 │  │디바이스2 │  │디바이스3 │
-  └───┬────┘  └───┬────┘  └───┬────┘
-      │           │           │
-      └─────────┬─┴───────────┘
-                │
-          ┌─────▼──────┐
-          │ API Gateway │ (인증, Rate Limiting)
-          │ / LB        │
-          └──────┬─────┘
-                 │
-     ┌───────────┼──────────────────────┐
-     │           │                      │
-     ▼           ▼                      ▼
-┌─────────┐ ┌──────────┐         ┌──────────┐
-│HTTP API  │ │WebSocket │         │WebSocket │
-│서버      │ │서버 1     │         │서버 2     │
-│(인증,    │ │(실시간    │         │(실시간    │
-│ 그룹관리, │ │ 메시지)   │         │ 메시지)   │
-│ 프로필)  │ └────┬─────┘         └────┬─────┘
-└─────────┘      │                    │
-                 │                    │
-     ┌───────────┴────────────────────┘
-     │
-     ▼
-┌────────────────────────────────────────────┐
-│           Message Routing Service           │
-│                                            │
-│  "user_A는 WebSocket 서버 2에 연결 중"       │
-│  → 메시지를 WebSocket 서버 2로 라우팅         │
-│                                            │
-│  라우팅 정보: Redis Pub/Sub 또는 ZooKeeper    │
-│  user_id → websocket_server_id 매핑          │
-└──────────┬─────────────────────────────────┘
-           │
-     ┌─────┴─────────────────────────┐
-     │                               │
-     ▼                               ▼
-┌──────────────┐            ┌──────────────┐
-│ Message DB    │            │ Presence     │
-│ (Cassandra)   │            │ Service      │
-│               │            │ (Redis)      │
-│ 메시지 영구   │            │              │
-│ 저장          │            │ 온라인 상태   │
-│               │            │ Heartbeat    │
-└──────────────┘            └──────────────┘
-           │
-     ┌─────┴─────────────────────────┐
-     │                               │
-     ▼                               ▼
-┌──────────────┐            ┌──────────────┐
-│ Push         │            │ Media        │
-│ Notification │            │ Service      │
-│ Service      │            │              │
-│              │            │ S3/CDN       │
-│ FCM, APNs   │            │ 이미지/파일   │
-└──────────────┘            └──────────────┘
-
 메시지 전송 흐름 (A → B):
   ① A가 WebSocket으로 메시지 전송 (WS서버1에 연결)
   ② WS서버1이 메시지를 Message Routing Service에 전달

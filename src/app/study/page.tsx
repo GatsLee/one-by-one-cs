@@ -21,6 +21,17 @@ export default function StudyPage() {
   const allTopics = getAllTopics();
   const topicMap = new Map(allTopics.map((t) => [t.dirName, t]));
 
+  // Build global sequential order for all topics across groups
+  let globalIdx = 0;
+  const topicOrder = new Map<string, number>();
+  for (const group of TOPIC_GROUPS) {
+    for (const dir of group.topics) {
+      if (topicMap.has(dir)) {
+        topicOrder.set(dir, ++globalIdx);
+      }
+    }
+  }
+
   return (
     <PageTransition>
       <div className="max-w-4xl mx-auto">
@@ -62,7 +73,7 @@ export default function StudyPage() {
                             <div
                               className={`flex items-center justify-center w-9 h-9 rounded-sm ${GROUP_COLORS[group.color]} text-white text-xs font-mono font-bold shadow-sm`}
                             >
-                              {topic.docCount}
+                              {String(topicOrder.get(topic.dirName) ?? 0).padStart(2, "0")}
                             </div>
                             <div className="flex-1 min-w-0">
                               <h3 className="font-semibold text-ink group-hover:text-book-blue transition-colors text-[15px]">
@@ -72,7 +83,7 @@ export default function StudyPage() {
                             </div>
                             <div className="flex items-center gap-1.5 text-xs text-ink-light shrink-0">
                               <BookOpen size={13} />
-                              {topic.docCount}
+                              {topic.docCount}문서
                               <ChevronRight
                                 size={15}
                                 className="text-ink-light/50 group-hover:text-book-blue transition-colors"

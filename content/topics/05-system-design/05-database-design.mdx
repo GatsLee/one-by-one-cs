@@ -15,23 +15,31 @@ order: 05
 
 정규화란 **데이터 중복을 최소화**하도록 테이블을 분리하는 설계 방식이다. 데이터 일관성을 보장하지만, 읽기 시 JOIN이 많아진다.
 
-```
+<Mermaid chart="graph LR
+  users[&quot;users
+id PK
+name
+email
+created_at&quot;]
+  posts[&quot;posts
+id PK
+user_id FK
+title
+content
+created_at&quot;]
+  comments[&quot;comments
+id PK
+post_id FK
+user_id FK
+body
+created_at&quot;]
+  users -->|1:N| posts
+  users -->|1:N| comments
+  posts -->|1:N| comments" />
+
 정규화된 설계 (3NF):
-
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│    users          │     │    posts          │     │    comments      │
-├──────────────────┤     ├──────────────────┤     ├──────────────────┤
-│ id (PK)          │←─┐  │ id (PK)          │←─┐  │ id (PK)          │
-│ name             │  │  │ user_id (FK) ────│──┘  │ post_id (FK) ────│──┘
-│ email            │  │  │ title            │     │ user_id (FK) ────│──┐
-│ created_at       │  │  │ content          │     │ body             │  │
-└──────────────────┘  │  │ created_at       │     │ created_at       │  │
-                      │  └──────────────────┘     └──────────────────┘  │
-                      └─────────────────────────────────────────────────┘
-
 - 장점: 데이터 중복 없음, 수정 시 한 곳만 변경
 - 단점: 읽기 시 여러 테이블 JOIN 필요 → 대규모에서 느림
-```
 
 #### 비정규화 (Denormalization)
 
@@ -70,23 +78,23 @@ order: 05
 
 샤딩이란 **하나의 대규모 데이터베이스를 여러 개의 작은 조각(샤드)으로 분할**하여 서로 다른 서버에 저장하는 기법이다. 단일 서버의 용량/성능 한계를 극복한다.
 
-```
-샤딩 전:
-┌──────────────────────────────────────┐
-│           단일 DB 서버                 │
-│   1억 건의 사용자 데이터               │
-│   읽기/쓰기 모두 한 서버에 집중         │
-│   CPU/RAM/디스크 한계 도달             │
-└──────────────────────────────────────┘
-
-샤딩 후:
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│   샤드 1     │  │   샤드 2     │  │   샤드 3     │  │   샤드 4     │
-│  user_id    │  │  user_id    │  │  user_id    │  │  user_id    │
-│  1 ~ 25M    │  │  25M ~ 50M  │  │  50M ~ 75M  │  │  75M ~ 100M │
-│  서버 A      │  │  서버 B      │  │  서버 C      │  │  서버 D      │
-└─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
-```
+<Mermaid chart="graph TD
+  before[&quot;단일 DB 서버
+1억 건의 사용자 데이터
+읽기/쓰기 모두 한 서버에 집중
+CPU/RAM/디스크 한계 도달&quot;]
+  before -->|샤딩| s1[&quot;샤드 1
+user_id 1~25M
+서버 A&quot;]
+  before -->|샤딩| s2[&quot;샤드 2
+user_id 25M~50M
+서버 B&quot;]
+  before -->|샤딩| s3[&quot;샤드 3
+user_id 50M~75M
+서버 C&quot;]
+  before -->|샤딩| s4[&quot;샤드 4
+user_id 75M~100M
+서버 D&quot;]" />
 
 #### (1) 범위 기반 샤딩 (Range-Based Sharding)
 
@@ -137,24 +145,15 @@ order: 05
 
 **별도의 매핑 테이블(디렉토리)**이 각 레코드가 어느 샤드에 있는지 관리한다.
 
-```
-디렉토리 기반 샤딩:
-
-  ┌────────────────────────┐
-  │    Lookup Service       │
-  │ (디렉토리 / 매핑 테이블)  │
-  │                        │
-  │  user_id → shard_id    │
-  │  ──────────────────    │
-  │  user_1   → 샤드 A     │
-  │  user_2   → 샤드 C     │
-  │  user_3   → 샤드 B     │
-  └──────────┬─────────────┘
-             │ 라우팅
-    ┌────────┼────────┐
-    ▼        ▼        ▼
-  샤드 A   샤드 B   샤드 C
-```
+<Mermaid chart="graph TD
+  lookup[&quot;Lookup Service
+디렉토리 / 매핑 테이블
+user_1 → 샤드 A
+user_2 → 샤드 C
+user_3 → 샤드 B&quot;]
+  lookup -->|라우팅| shardA[샤드 A]
+  lookup -->|라우팅| shardB[샤드 B]
+  lookup -->|라우팅| shardC[샤드 C]" />
 
 - **장점**: 유연함 (아무 기준으로나 분배 가능), 샤드 추가/이동 용이
 - **단점**: 디렉토리가 SPOF, 모든 쿼리가 디렉토리를 경유 → 병목 가능
@@ -165,25 +164,22 @@ order: 05
 
 #### 읽기 복제 (Read Replica)
 
-```
-기본 읽기/쓰기 분리:
-
-  ┌──────────┐
-  │ 애플리케이션 │
-  └─────┬────┘
-        │
-    ┌───┴───┐
-    ▼       ▼
-  쓰기    읽기
-    │       │
-    ▼       ▼
-┌────────┐  ┌────────────────────────────────┐
-│ Master │→→│ Replica 1 │ Replica 2 │ Replica 3│
-│ (쓰기) │  │  (읽기)   │   (읽기)   │  (읽기)  │
-└────────┘  └────────────────────────────────┘
-     │              ↑ 비동기 복제
-     └──────────────┘
-```
+<Mermaid chart="graph TD
+  app[애플리케이션]
+  app -->|쓰기| master[&quot;Master
+쓰기 전용&quot;]
+  app -->|읽기| replicas
+  master -->|비동기 복제| r1[Replica 1
+읽기]
+  master -->|비동기 복제| r2[Replica 2
+읽기]
+  master -->|비동기 복제| r3[Replica 3
+읽기]
+  subgraph replicas[Replicas]
+    r1
+    r2
+    r3
+  end" />
 
 - Master: 모든 쓰기(INSERT, UPDATE, DELETE) 처리
 - Replica: 읽기(SELECT)만 처리, Master로부터 비동기 복제
@@ -193,29 +189,20 @@ order: 05
 
 CQRS는 **명령(Command, 쓰기)과 조회(Query, 읽기)의 모델을 완전히 분리**하는 패턴이다.
 
-```
-CQRS 아키텍처:
-
-  ┌───────────────────────────────────────────────┐
-  │                  API Gateway                   │
-  └──────────┬──────────────────┬─────────────────┘
-             │ 쓰기 요청          │ 읽기 요청
-             ▼                  ▼
-  ┌───────────────┐   ┌───────────────┐
-  │ Command 서비스  │   │ Query 서비스   │
-  │ (쓰기 모델)     │   │ (읽기 모델)    │
-  └───────┬───────┘   └───────┬───────┘
-          │                   │
-          ▼                   ▼
-  ┌───────────────┐   ┌───────────────┐
-  │ 쓰기 DB        │   │ 읽기 DB        │
-  │ (정규화, RDB)   │   │ (비정규화, NoSQL)│
-  │ PostgreSQL     │   │ Elasticsearch  │
-  └───────┬───────┘   └───────────────┘
-          │                   ↑
-          └── 이벤트 발행 ────→ │
-              (Kafka 등)       │ 이벤트 소비 → 읽기 모델 갱신
-```
+<Mermaid chart="graph TD
+  gw[API Gateway]
+  gw -->|쓰기 요청| cmd[&quot;Command 서비스
+쓰기 모델&quot;]
+  gw -->|읽기 요청| qry[&quot;Query 서비스
+읽기 모델&quot;]
+  cmd --> wdb[&quot;쓰기 DB
+PostgreSQL
+정규화, RDB&quot;]
+  qry --> rdb[&quot;읽기 DB
+Elasticsearch
+비정규화, NoSQL&quot;]
+  wdb -->|이벤트 발행
+Kafka 등| rdb" />
 
 - **장점**: 읽기/쓰기 각각에 최적화된 데이터 모델 사용 가능, 독립적 확장
 - **단점**: 최종 일관성(Eventual Consistency), 구현 복잡도 증가
@@ -334,29 +321,32 @@ LSM 트리 동작 원리:
 
 복제란 **동일한 데이터를 여러 서버에 복사**하여 가용성과 읽기 성능을 높이는 기법이다.
 
-```
-복제 방식:
+**1) 단일 리더 (Single-Leader)**
 
-1) 단일 리더 (Single-Leader)
-   ┌────────┐
-   │ Leader  │──→ Follower 1
-   │ (쓰기)  │──→ Follower 2
-   └────────┘──→ Follower 3
+<Mermaid chart="graph LR
+  leader[&quot;Leader
+쓰기&quot;]
+  leader --> f1[Follower 1]
+  leader --> f2[Follower 2]
+  leader --> f3[Follower 3]" />
 
-2) 다중 리더 (Multi-Leader)
-   ┌────────┐ ←──→ ┌────────┐
-   │Leader A │     │Leader B │
-   └────┬───┘     └────┬───┘
-        │              │
-   Follower A      Follower B
-   (각 리더가 독립적으로 쓰기 수용 → 충돌 해결 필요)
+**2) 다중 리더 (Multi-Leader)**
 
-3) 리더 없음 (Leaderless) — Dynamo 방식
-   ┌────────┐  ┌────────┐  ┌────────┐
-   │ Node A  │  │ Node B  │  │ Node C  │
-   └────────┘  └────────┘  └────────┘
-   W=2, R=2 (정족수: W+R > N이면 최신 데이터 보장)
-```
+<Mermaid chart="graph TD
+  la[Leader A] <-->|동기화| lb[Leader B]
+  la --> fa[Follower A]
+  lb --> fb[Follower B]" />
+
+각 리더가 독립적으로 쓰기 수용 → 충돌 해결 필요
+
+**3) 리더 없음 (Leaderless) — Dynamo 방식**
+
+<Mermaid chart="graph LR
+  na[Node A] <--> nb[Node B]
+  nb <--> nc[Node C]
+  na <--> nc" />
+
+W=2, R=2 (정족수: W+R > N이면 최신 데이터 보장)
 
 ### 6. 실전 사례
 

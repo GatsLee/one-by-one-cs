@@ -42,60 +42,37 @@ order: 05
 
 이것이 클린 아키텍처의 **단 하나의 규칙**이다. 안쪽 계층은 바깥 계층의 존재를 모른다.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              의존성 규칙                                   │
-│                                                          │
-│                    의존 방향 →                             │
-│                                                          │
-│  Frameworks    Interface     Use Cases    Entities        │
-│  & Drivers     Adapters                                  │
-│  ┌──────┐     ┌──────┐     ┌──────┐     ┌──────┐        │
-│  │      │────▶│      │────▶│      │────▶│      │        │
-│  │ Web  │     │Ctrl  │     │ 주문 │     │ 도메인│        │
-│  │ DB   │     │Gate  │     │ 생성 │     │ 엔티티│        │
-│  │ 외부 │     │Pres  │     │ UC   │     │      │        │
-│  └──────┘     └──────┘     └──────┘     └──────┘        │
-│  (바깥)                                 (안쪽)           │
-│                                                          │
-│  바깥 → 안쪽: 의존 가능                                   │
-│  안쪽 → 바깥: 절대 불가 (인터페이스로 역전)                │
-└──────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="graph LR
+  FD[&quot;Frameworks &amp; Drivers
+(Web, DB, 외부)&quot;] -->|의존| IA[&quot;Interface Adapters
+(Controller, Gateway, Presenter)&quot;]
+  IA -->|의존| UC[&quot;Use Cases
+(주문 생성 UC)&quot;]
+  UC -->|의존| EN[&quot;Entities
+(도메인 엔티티)&quot;]
+  style FD fill:#f9f,stroke:#333
+  style EN fill:#bfb,stroke:#333" />
+
+> 바깥 → 안쪽: 의존 가능 / 안쪽 → 바깥: 절대 불가 (인터페이스로 역전)
 
 ---
 
 ### 3. 4개 계층 동심원
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                                                              │
-│     ┌────────────────────────────────────────────────┐       │
-│     │  Frameworks & Drivers (가장 바깥)               │       │
-│     │  Web Framework, DB Driver, External API        │       │
-│     │                                                │       │
-│     │   ┌────────────────────────────────────────┐   │       │
-│     │   │  Interface Adapters                    │   │       │
-│     │   │  Controllers, Gateways, Presenters     │   │       │
-│     │   │                                        │   │       │
-│     │   │   ┌────────────────────────────────┐   │   │       │
-│     │   │   │  Use Cases (Application)       │   │   │       │
-│     │   │   │  비즈니스 규칙의 실행 흐름       │   │   │       │
-│     │   │   │                                │   │   │       │
-│     │   │   │   ┌────────────────────────┐   │   │   │       │
-│     │   │   │   │  Entities (Domain)     │   │   │   │       │
-│     │   │   │   │  핵심 비즈니스 규칙      │   │   │   │       │
-│     │   │   │   │  가장 안정적인 계층      │   │   │   │       │
-│     │   │   │   └────────────────────────┘   │   │   │       │
-│     │   │   │                                │   │   │       │
-│     │   │   └────────────────────────────────┘   │   │       │
-│     │   │                                        │   │       │
-│     │   └────────────────────────────────────────┘   │       │
-│     │                                                │       │
-│     └────────────────────────────────────────────────┘       │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="graph TD
+  FD[&quot;Frameworks &amp; Drivers (가장 바깥)
+Web Framework, DB Driver, External API&quot;]
+  IA[&quot;Interface Adapters
+Controllers, Gateways, Presenters&quot;]
+  UC[&quot;Use Cases (Application)
+비즈니스 규칙의 실행 흐름&quot;]
+  EN[&quot;Entities (Domain)
+핵심 비즈니스 규칙 — 가장 안정적인 계층&quot;]
+  FD --> IA --> UC --> EN
+  style FD fill:#fdd,stroke:#c33
+  style IA fill:#fed,stroke:#da3
+  style UC fill:#dfe,stroke:#3a3
+  style EN fill:#def,stroke:#38c" />
 
 #### 각 계층의 역할
 

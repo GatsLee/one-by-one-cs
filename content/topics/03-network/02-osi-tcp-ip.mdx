@@ -21,17 +21,15 @@ order: 02
 
 ISO(국제 표준화 기구)에서 정의한 통신 표준 모델. **이론적 참조 모델**.
 
-<Mermaid chart="
-graph TD
-    L7[&quot;7. 응용 계층 (Application)\nHTTP, FTP, SMTP, DNS\n← 사용자와 직접 상호작용&quot;]
-    L6[&quot;6. 표현 계층 (Presentation)\n암호화, 압축, 인코딩 (SSL/TLS, JPEG)\n← 데이터 형식 변환&quot;]
-    L5[&quot;5. 세션 계층 (Session)\n세션 설정/유지/종료 (NetBIOS, RPC)\n← 연결 관리&quot;]
-    L4[&quot;4. 전송 계층 (Transport)\nTCP, UDP / 포트 번호\n← 종단 간 통신&quot;]
-    L3[&quot;3. 네트워크 계층 (Network)\nIP, ICMP, ARP / IP 주소\n← 라우팅, 경로 결정&quot;]
-    L2[&quot;2. 데이터 링크 계층 (Data Link)\n이더넷, Wi-Fi / MAC 주소\n← 인접 노드 간 전송&quot;]
-    L1[&quot;1. 물리 계층 (Physical)\n전기 신호, 광 신호, 케이블, 허브\n← 비트 전송&quot;]
-    L7 --> L6 --> L5 --> L4 --> L3 --> L2 --> L1
-" />
+| 계층 | 이름 | 프로토콜/기술 | 역할 |
+|------|------|-------------|------|
+| 7 | 응용 (Application) | HTTP, FTP, SMTP, DNS | 사용자와 직접 상호작용 |
+| 6 | 표현 (Presentation) | SSL/TLS, JPEG, 인코딩 | 데이터 형식 변환, 암호화, 압축 |
+| 5 | 세션 (Session) | NetBIOS, RPC | 세션 설정/유지/종료 |
+| 4 | 전송 (Transport) | TCP, UDP / 포트 번호 | 종단 간 통신 |
+| 3 | 네트워크 (Network) | IP, ICMP, ARP / IP 주소 | 라우팅, 경로 결정 |
+| 2 | 데이터 링크 (Data Link) | 이더넷, Wi-Fi / MAC 주소 | 인접 노드 간 전송 |
+| 1 | 물리 (Physical) | 전기/광 신호, 케이블, 허브 | 비트 전송 |
 
 ### 각 계층 상세 설명
 
@@ -69,7 +67,11 @@ graph TD
 
 <Mermaid chart="
 graph LR
-    A[&quot;프로세스 A\n(브라우저)\n포트 12345&quot;] -- &quot;TCP 연결 (신뢰성)&quot; --> B[&quot;프로세스 B\n(웹서버)\n포트 80&quot;]
+    A[&quot;프로세스 A
+(브라우저)
+포트 12345&quot;] -- &quot;TCP 연결 (신뢰성)&quot; --> B[&quot;프로세스 B
+(웹서버)
+포트 80&quot;]
     subgraph 송신호스트[송신 호스트]
         A
     end
@@ -113,24 +115,15 @@ graph LR
 
 실제 인터넷에서 사용하는 모델. OSI 7계층보다 **실용적**.
 
-<Mermaid chart="
-graph LR
-    subgraph OSI[&quot;OSI 7계층&quot;]
-        direction TB
-        O7[&quot;7. 응용&quot;] --> O6[&quot;6. 표현&quot;] --> O5[&quot;5. 세션&quot;] --> O4[&quot;4. 전송&quot;] --> O3[&quot;3. 네트워크&quot;] --> O2[&quot;2. 데이터링크&quot;] --> O1[&quot;1. 물리&quot;]
-    end
-    subgraph TCPIP[&quot;TCP/IP 4계층&quot;]
-        direction TB
-        T4[&quot;4. 응용\nHTTP, DNS, FTP, SMTP&quot;] --> T3[&quot;3. 전송\nTCP, UDP&quot;] --> T2[&quot;2. 인터넷\nIP, ICMP, ARP&quot;] --> T1[&quot;1. 네트워크 인터페이스\n이더넷, Wi-Fi&quot;]
-    end
-    O7 -.-> T4
-    O6 -.-> T4
-    O5 -.-> T4
-    O4 -.-> T3
-    O3 -.-> T2
-    O2 -.-> T1
-    O1 -.-> T1
-" />
+| OSI 7계층 | TCP/IP 4계층 | 프로토콜 |
+|-----------|------------|---------|
+| 7. 응용 | **4. 응용** | HTTP, DNS, FTP, SMTP |
+| 6. 표현 | ↑ | SSL/TLS, JPEG |
+| 5. 세션 | ↑ | RPC, NetBIOS |
+| 4. 전송 | **3. 전송** | TCP, UDP |
+| 3. 네트워크 | **2. 인터넷** | IP, ICMP, ARP |
+| 2. 데이터 링크 | **1. 네트워크 인터페이스** | 이더넷, Wi-Fi |
+| 1. 물리 | ↑ | 전기/광 신호 |
 
 **TCP/IP 모델의 특징:**
 - OSI의 5, 6, 7계층을 **응용 계층** 하나로 통합
@@ -141,28 +134,18 @@ graph LR
 
 데이터가 각 계층을 지나면서 **헤더(Header)**가 추가(캡슐화)되고, 수신 측에서 역순으로 제거(역캡슐화)된다.
 
-<Mermaid chart="
-graph TD
-    subgraph 송신측[&quot;송신 측 — 캡슐화&quot;]
-        direction TB
-        E1[&quot;응용 계층: 데이터&quot;]
-        E2[&quot;전송 계층: TCP 헤더 | 데이터 (세그먼트)&quot;]
-        E3[&quot;네트워크 계층: IP 헤더 | TCP 헤더 | 데이터 (패킷)&quot;]
-        E4[&quot;데이터 링크: ETH 헤더 | IP | TCP | 데이터 | FCS (프레임)&quot;]
-        E5[&quot;물리 계층: 01001101001011... (비트)&quot;]
-        E1 --> E2 --> E3 --> E4 --> E5
-    end
-    subgraph 수신측[&quot;수신 측 — 역캡슐화&quot;]
-        direction BT
-        D5[&quot;물리 계층: 비트 수신&quot;]
-        D4[&quot;데이터 링크: ETH 헤더 제거&quot;]
-        D3[&quot;네트워크 계층: IP 헤더 제거&quot;]
-        D2[&quot;전송 계층: TCP 헤더 제거&quot;]
-        D1[&quot;응용 계층: 데이터 획득&quot;]
-        D5 --> D4 --> D3 --> D2 --> D1
-    end
-    E5 -- &quot;네트워크 전송&quot; --> D5
-" />
+**송신 측 — 캡슐화 (위에서 아래로):**
+
+| 계층 | 캡슐화 결과 |
+|------|-----------|
+| 응용 | `데이터` |
+| 전송 | `TCP 헤더` \| 데이터 → **세그먼트** |
+| 네트워크 | `IP 헤더` \| TCP 헤더 \| 데이터 → **패킷** |
+| 데이터 링크 | `ETH 헤더` \| IP \| TCP \| 데이터 \| `FCS` → **프레임** |
+| 물리 | `01001101001011...` → **비트 스트림** |
+
+**수신 측 — 역캡슐화 (아래에서 위로):**
+각 계층에서 해당 헤더를 제거하며 위로 올려보내, 최종적으로 응용 계층에서 원본 데이터를 획득한다.
 
 **각 계층의 PDU (Protocol Data Unit):**
 
@@ -175,15 +158,6 @@ graph TD
 | 물리 | **비트** | 0과 1의 전기/광 신호 |
 
 ### 실제 네트워크 장비와 계층
-
-<Mermaid chart="
-graph TD
-    L74[&quot;7-4 계층\n방화벽, 로드밸런서, L4/L7 스위치&quot;]
-    L3[&quot;3 계층\n라우터 (IP 주소 기반 경로 결정)&quot;]
-    L2[&quot;2 계층\n스위치 (MAC 주소 기반 프레임 전달)&quot;]
-    L1[&quot;1 계층\n허브, 리피터 (신호 증폭/재생)&quot;]
-    L74 --> L3 --> L2 --> L1
-" />
 
 | 장비 | 계층 | 역할 |
 |------|------|------|
