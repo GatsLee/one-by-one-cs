@@ -9,7 +9,6 @@ import {
   Server,
   BrainCircuit,
   Terminal,
-  ArrowRight,
 } from "lucide-react";
 
 interface Phase {
@@ -21,6 +20,7 @@ interface Phase {
   lightBg: string;
   border: string;
   text: string;
+  glowColor: string;
   topics: { id: string; label: string }[];
 }
 
@@ -34,6 +34,7 @@ const PHASES: Phase[] = [
     lightBg: "bg-book-blue/10",
     border: "border-book-blue/25",
     text: "text-book-blue",
+    glowColor: "rgba(58, 95, 166, 0.35)",
     topics: [
       { id: "01-data-structures", label: "자료구조" },
       { id: "02-os", label: "운영체제" },
@@ -50,6 +51,7 @@ const PHASES: Phase[] = [
     lightBg: "bg-book-charcoal/10",
     border: "border-book-charcoal/25",
     text: "text-book-charcoal",
+    glowColor: "rgba(51, 51, 51, 0.3)",
     topics: [
       { id: "05-system-design", label: "시스템 설계" },
       { id: "09-architecture", label: "SW 아키텍처" },
@@ -64,6 +66,7 @@ const PHASES: Phase[] = [
     lightBg: "bg-book-red/10",
     border: "border-book-red/25",
     text: "text-book-red",
+    glowColor: "rgba(166, 58, 58, 0.35)",
     topics: [
       { id: "06-ai", label: "AI/ML" },
       { id: "08-ai-agent", label: "AI 에이전트" },
@@ -78,6 +81,7 @@ const PHASES: Phase[] = [
     lightBg: "bg-book-green/10",
     border: "border-book-green/25",
     text: "text-book-green",
+    glowColor: "rgba(58, 143, 90, 0.35)",
     topics: [
       { id: "07-infra", label: "인프라" },
       { id: "10-debugging", label: "디버깅" },
@@ -158,20 +162,19 @@ export default function LearningRoadmap() {
                         <p className="text-xs font-semibold text-ink-light uppercase tracking-wider mb-3 ml-1">
                           세부 학습 주제
                         </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${phase.topics.length}, 1fr)` }}>
                           {phase.topics.map((topic) => (
                             <button
                               key={topic.id}
                               onClick={() => router.push(`/study/${topic.id}`)}
-                              className={`group/topic flex items-center justify-between p-4 rounded-xl border ${phase.border} bg-white hover:shadow-sm transition-all duration-200 text-left`}
+                              className={`flex items-center justify-center px-4 py-3 rounded-xl border ${phase.border} bg-white transition-shadow duration-200`}
+                              style={{ "--glow": phase.glowColor } as React.CSSProperties}
+                              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 12px var(--glow), 0 0 4px var(--glow)`; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
                             >
-                              <span className="font-medium text-ink group-hover/topic:text-ink">
+                              <span className="font-medium text-ink">
                                 {topic.label}
                               </span>
-                              <ArrowRight
-                                size={16}
-                                className={`opacity-0 -translate-x-2 group-hover/topic:opacity-100 group-hover/topic:translate-x-0 transition-all duration-300 ${phase.text}`}
-                              />
                             </button>
                           ))}
                         </div>

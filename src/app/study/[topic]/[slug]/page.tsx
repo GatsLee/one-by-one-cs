@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { getDocContent, TOPIC_LABELS } from "@/lib/content";
+import { getDocContent, TOPIC_LABELS, extractHeadings } from "@/lib/content";
 import { serializeMDX } from "@/lib/mdx";
 import MDXContent from "@/components/mdx/MDXContent";
+import TableOfContents from "@/components/mdx/TableOfContents";
 
 export default async function LessonPage({
   params,
@@ -16,6 +17,7 @@ export default async function LessonPage({
 
   const mdxSource = await serializeMDX(doc.source);
   const topicLabel = TOPIC_LABELS[topic] || topic;
+  const headings = extractHeadings(doc.source);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -32,6 +34,8 @@ export default async function LessonPage({
       <article className="prose prose-slate max-w-none prose-headings:font-serif prose-headings:text-ink prose-headings:tracking-tight prose-p:text-ink/80 prose-a:text-book-blue prose-a:no-underline hover:prose-a:underline prose-strong:text-ink prose-code:text-book-navy prose-code:bg-paper-dark prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:border prose-code:border-ink/10 prose-code:before:content-none prose-code:after:content-none prose-li:text-ink/80 prose-blockquote:border-l-wood-dark prose-blockquote:text-ink-light prose-hr:border-ink/10">
         <MDXContent source={mdxSource} />
       </article>
+
+      <TableOfContents headings={headings} />
     </div>
   );
 }

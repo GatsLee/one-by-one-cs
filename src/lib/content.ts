@@ -1,6 +1,26 @@
 import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
+import GithubSlugger from "github-slugger";
+
+export interface TocHeading {
+  id: string;
+  text: string;
+  level: 2 | 3;
+}
+
+export function extractHeadings(source: string): TocHeading[] {
+  const slugger = new GithubSlugger();
+  const headings: TocHeading[] = [];
+  const regex = /^(#{2,3})\s+(.+)$/gm;
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    const level = match[1].length as 2 | 3;
+    const text = match[2].trim();
+    headings.push({ id: slugger.slug(text), text, level });
+  }
+  return headings;
+}
 
 const CONTENT_DIR = path.join(process.cwd(), "content", "topics");
 

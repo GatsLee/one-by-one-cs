@@ -4,7 +4,7 @@ import type { MDXComponents } from "mdx/types";
 import CodeBlock from "./CodeBlock";
 import dynamic from "next/dynamic";
 
-const Mermaid = dynamic(() => import("./Mermaid"), { ssr: false });
+const Mermaid = dynamic(() => import("./MermaidOrFlow"), { ssr: false });
 const TreeVisualizer = dynamic(() => import("../viz/TreeVisualizer"), { ssr: false });
 const GraphVisualizer = dynamic(() => import("../viz/GraphVisualizer"), { ssr: false });
 const LinkedListVisualizer = dynamic(() => import("../viz/LinkedListVisualizer"), { ssr: false });
