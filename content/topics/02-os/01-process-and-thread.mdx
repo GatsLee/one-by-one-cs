@@ -21,23 +21,21 @@ order: 01
 
 프로세스는 메모리에서 4개의 영역을 할당받는다.
 
-```
-높은 주소 ┌──────────────────┐
-         │      스택(Stack)   │ ← 지역 변수, 함수 호출 정보
-         │     ↓ (아래로 성장) │
-         ├──────────────────┤
-         │                    │
-         │    (빈 공간)       │
-         │                    │
-         ├──────────────────┤
-         │     ↑ (위로 성장)  │
-         │      힙(Heap)     │ ← 동적 할당 메모리 (malloc, new)
-         ├──────────────────┤
-         │    데이터(Data)    │ ← 전역 변수, 정적 변수
-         ├──────────────────┤
-         │    코드(Code/Text) │ ← 실행할 기계어 명령어 (읽기 전용)
-낮은 주소 └──────────────────┘
-```
+<Mermaid chart="graph TD
+  Stack[&quot;스택(Stack)\n지역 변수, 함수 호출 정보\n↓ 아래로 성장&quot;]
+  Free[&quot;빈 공간&quot;]
+  Heap[&quot;힙(Heap)\n동적 할당 메모리 (malloc, new)\n↑ 위로 성장&quot;]
+  Data[&quot;데이터(Data)\n전역 변수, 정적 변수&quot;]
+  Code[&quot;코드(Code/Text)\n실행할 기계어 명령어 (읽기 전용)&quot;]
+
+  Stack --> Free --> Heap --> Data --> Code
+
+  style Stack fill:#ff9999,stroke:#333
+  style Heap fill:#99ccff,stroke:#333
+  style Data fill:#99ff99,stroke:#333
+  style Code fill:#ffcc99,stroke:#333
+  style Free fill:#f5f5f5,stroke:#999,stroke-dasharray: 5 5
+" />
 
 | 영역 | 저장 내용 | 특징 |
 |------|----------|------|
@@ -50,26 +48,15 @@ order: 01
 
 프로세스는 생성부터 종료까지 여러 상태를 거친다.
 
-```
-                    ┌──────────┐
-          생성 ──→  │   New    │
-                    └────┬─────┘
-                         │ (메모리 할당, PCB 생성)
-                         ▼
-                    ┌──────────┐    CPU 할당    ┌──────────┐
-                    │  Ready   │ ──────────→  │ Running  │
-                    │  (준비)   │ ←────────── │  (실행)   │
-                    └──────────┘  타임아웃/     └────┬─────┘
-                         ▲        인터럽트          │
-                         │                         │
-              I/O 완료   │                         │ I/O 요청/
-                         │    ┌──────────┐         │ 이벤트 대기
-                         └─── │ Waiting  │ ←───────┘
-                              │  (대기)   │
-                              └──────────┘
-
-                    Running에서 → Terminated (종료)
-```
+<Mermaid chart="stateDiagram-v2
+  [*] --> New: 생성
+  New --> Ready: 메모리 할당, PCB 생성
+  Ready --> Running: CPU 할당 (디스패치)
+  Running --> Ready: 타임아웃 / 인터럽트
+  Running --> Waiting: I/O 요청 / 이벤트 대기
+  Waiting --> Ready: I/O 완료
+  Running --> [*]: 종료 (Terminated)
+" />
 
 | 상태 | 설명 |
 |------|------|
@@ -89,39 +76,44 @@ order: 01
 
 운영체제가 각 프로세스를 관리하기 위한 **정보 블록**. 프로세스 1개당 PCB 1개.
 
-```
-┌─────────────────────────────┐
-│        PCB (프로세스 제어 블록) │
-├─────────────────────────────┤
-│ 프로세스 ID (PID)              │
-│ 프로세스 상태 (Ready/Running..)│
-│ 프로그램 카운터 (PC)           │  ← 다음 실행할 명령어 주소
-│ CPU 레지스터 값               │  ← 문맥 교환 시 저장/복원
-│ CPU 스케줄링 정보              │  ← 우선순위, 스케줄링 큐 포인터
-│ 메모리 관리 정보               │  ← 페이지 테이블, 세그먼트 테이블
-│ I/O 상태 정보                 │  ← 열린 파일 목록
-│ 계정 정보                     │  ← CPU 사용 시간 등
-└─────────────────────────────┘
-```
+<Mermaid chart="graph TD
+  PCB[&quot;PCB (프로세스 제어 블록)&quot;]
+  PID[&quot;프로세스 ID (PID)&quot;]
+  State[&quot;프로세스 상태 (Ready/Running..)&quot;]
+  PC[&quot;프로그램 카운터 (PC)\n다음 실행할 명령어 주소&quot;]
+  Reg[&quot;CPU 레지스터 값\n문맥 교환 시 저장/복원&quot;]
+  Sched[&quot;CPU 스케줄링 정보\n우선순위, 스케줄링 큐 포인터&quot;]
+  Mem[&quot;메모리 관리 정보\n페이지 테이블, 세그먼트 테이블&quot;]
+  IO[&quot;I/O 상태 정보\n열린 파일 목록&quot;]
+  Acct[&quot;계정 정보\nCPU 사용 시간 등&quot;]
+
+  PCB --> PID
+  PCB --> State
+  PCB --> PC
+  PCB --> Reg
+  PCB --> Sched
+  PCB --> Mem
+  PCB --> IO
+  PCB --> Acct
+
+  style PCB fill:#4a90d9,stroke:#333,color:#fff
+" />
 
 ### 컨텍스트 스위칭 (Context Switching)
 
 CPU가 현재 실행 중인 프로세스를 다른 프로세스로 교체하는 과정.
 
-```
-프로세스 A        OS (커널)        프로세스 B
-  실행 중 ──→  인터럽트/시스템콜
-              │
-              │  A의 상태를 PCB_A에 저장
-              │  (레지스터, PC, 스택 포인터 등)
-              │
-              │  스케줄러: B를 선택
-              │
-              │  PCB_B에서 B의 상태 복원
-              │  (레지스터, PC, 스택 포인터 등)
-              │
-              └──→ B 실행 시작
-```
+<Mermaid chart="sequenceDiagram
+  participant A as 프로세스 A
+  participant OS as OS (커널)
+  participant B as 프로세스 B
+
+  A->>OS: 인터럽트 / 시스템콜
+  Note over OS: A의 상태를 PCB_A에 저장<br/>(레지스터, PC, 스택 포인터 등)
+  Note over OS: 스케줄러: B를 선택
+  Note over OS: PCB_B에서 B의 상태 복원<br/>(레지스터, PC, 스택 포인터 등)
+  OS->>B: B 실행 시작
+" />
 
 **컨텍스트 스위칭 비용:**
 - 레지스터 저장/복원
@@ -135,20 +127,31 @@ CPU가 현재 실행 중인 프로세스를 다른 프로세스로 교체하는 
 
 스레드는 **프로세스 내의 실행 단위**. 하나의 프로세스 안에 여러 스레드가 존재할 수 있다.
 
-```
-[단일 스레드 프로세스]         [멀티 스레드 프로세스]
+<Mermaid chart="graph LR
+  subgraph Single[&quot;단일 스레드 프로세스&quot;]
+    S_Code[&quot;코드&quot;]
+    S_Data[&quot;데이터&quot;]
+    S_Heap[&quot;힙&quot;]
+    S_Stack[&quot;스택&quot;]
+    S_Reg[&quot;레지스터&quot;]
+    S_PC[&quot;PC&quot;]
+  end
 
-┌──────────────┐          ┌──────────────────────┐
-│  코드         │          │  코드 (공유)           │
-│  데이터       │          │  데이터 (공유)          │
-│  힙          │          │  힙 (공유)             │
-│  스택         │          │  ┌─────┬─────┬─────┐ │
-│  레지스터     │          │  │스택1 │스택2 │스택3 │ │
-│  PC          │          │  │레지1 │레지2 │레지3 │ │
-└──────────────┘          │  │PC1  │PC2  │PC3  │ │
-                          │  └─────┴─────┴─────┘ │
-                          └──────────────────────┘
-```
+  subgraph Multi[&quot;멀티 스레드 프로세스&quot;]
+    M_Code[&quot;코드 (공유)&quot;]
+    M_Data[&quot;데이터 (공유)&quot;]
+    M_Heap[&quot;힙 (공유)&quot;]
+    subgraph Threads[&quot;스레드별 독립 영역&quot;]
+      T1[&quot;스레드1\n스택1 / 레지1 / PC1&quot;]
+      T2[&quot;스레드2\n스택2 / 레지2 / PC2&quot;]
+      T3[&quot;스레드3\n스택3 / 레지3 / PC3&quot;]
+    end
+  end
+
+  style Single fill:#e8f4fd,stroke:#333
+  style Multi fill:#e8fde8,stroke:#333
+  style Threads fill:#fff3cd,stroke:#333
+" />
 
 ### 프로세스 vs 스레드
 
@@ -172,149 +175,6 @@ CPU가 현재 실행 중인 프로세스를 다른 프로세스로 교체하는 
 | 예시 | Chrome 브라우저 (탭마다 별도 프로세스) | Java/Python 웹 서버 (요청마다 스레드) |
 
 > **실전**: Chrome은 각 탭을 별도 프로세스로 실행한다. 한 탭이 crash되어도 다른 탭에 영향이 없다. 반면 스레드 기반 서버는 메모리를 효율적으로 공유하지만, 하나의 버그가 전체 서버를 다운시킬 수 있다.
-
-## 코드 예시
-
-### Python 멀티프로세스
-
-```python
-import multiprocessing
-import os
-import time
-
-def worker(name, duration):
-    """각 프로세스에서 실행될 함수"""
-    pid = os.getpid()
-    ppid = os.getppid()
-    print(f"[프로세스 {name}] PID={pid}, 부모 PID={ppid}, 시작")
-    time.sleep(duration)
-    print(f"[프로세스 {name}] 완료 ({duration}초 소요)")
-    return f"{name} 결과"
-
-
-if __name__ == '__main__':
-    print(f"[메인 프로세스] PID={os.getpid()}")
-
-    # 프로세스 생성
-    processes = []
-    for i in range(3):
-        p = multiprocessing.Process(
-            target=worker,
-            args=(f"Worker-{i}", i + 1)
-        )
-        processes.append(p)
-        p.start()                          # 프로세스 시작
-
-    # 모든 프로세스 완료 대기
-    for p in processes:
-        p.join()                           # 완료될 때까지 대기
-
-    print("[메인] 모든 프로세스 완료")
-
-# 출력 예시:
-# [메인 프로세스] PID=1234
-# [프로세스 Worker-0] PID=1235, 부모 PID=1234, 시작
-# [프로세스 Worker-1] PID=1236, 부모 PID=1234, 시작
-# [프로세스 Worker-2] PID=1237, 부모 PID=1234, 시작
-# [프로세스 Worker-0] 완료 (1초 소요)
-# [프로세스 Worker-1] 완료 (2초 소요)
-# [프로세스 Worker-2] 완료 (3초 소요)
-# [메인] 모든 프로세스 완료
-```
-
-### Python 멀티스레드
-
-```python
-import threading
-import time
-
-# 공유 자원 (스레드 간 공유됨 — 주의!)
-shared_counter = 0
-lock = threading.Lock()
-
-def increment(name, count):
-    """공유 카운터를 증가시키는 함수"""
-    global shared_counter
-    for _ in range(count):
-        with lock:                         # 락으로 동기화
-            shared_counter += 1
-    print(f"[스레드 {name}] {count}번 증가 완료")
-
-
-# 스레드 생성
-threads = []
-for i in range(5):
-    t = threading.Thread(
-        target=increment,
-        args=(f"T-{i}", 100000)
-    )
-    threads.append(t)
-    t.start()
-
-# 모든 스레드 완료 대기
-for t in threads:
-    t.join()
-
-print(f"최종 카운터: {shared_counter}")    # 500000 (락 사용 시)
-# 락 없이 하면 500000보다 작을 수 있음 (경쟁 조건!)
-```
-
-### 프로세스 vs 스레드 성능 비교
-
-```python
-import multiprocessing
-import threading
-import time
-
-def cpu_bound_task(n):
-    """CPU 집약적 작업 (소수 계산)"""
-    count = 0
-    for i in range(2, n):
-        is_prime = True
-        for j in range(2, int(i ** 0.5) + 1):
-            if i % j == 0:
-                is_prime = False
-                break
-        if is_prime:
-            count += 1
-    return count
-
-def io_bound_task(duration):
-    """I/O 집약적 작업 (대기)"""
-    time.sleep(duration)
-
-N = 50000
-NUM_WORKERS = 4
-
-# === 순차 실행 ===
-start = time.time()
-for _ in range(NUM_WORKERS):
-    cpu_bound_task(N // NUM_WORKERS)
-seq_time = time.time() - start
-print(f"순차 실행: {seq_time:.2f}초")
-
-# === 멀티프로세스 (CPU 작업에 적합) ===
-start = time.time()
-with multiprocessing.Pool(NUM_WORKERS) as pool:
-    pool.map(cpu_bound_task, [N // NUM_WORKERS] * NUM_WORKERS)
-mp_time = time.time() - start
-print(f"멀티프로세스: {mp_time:.2f}초")
-
-# === 멀티스레드 (Python GIL 때문에 CPU 작업에 부적합) ===
-start = time.time()
-threads = [threading.Thread(target=cpu_bound_task, args=(N // NUM_WORKERS,))
-           for _ in range(NUM_WORKERS)]
-for t in threads:
-    t.start()
-for t in threads:
-    t.join()
-mt_time = time.time() - start
-print(f"멀티스레드: {mt_time:.2f}초")
-
-# 결과: CPU 작업에서는 멀티프로세스가 빠르고,
-#        I/O 작업에서는 멀티스레드도 효과적
-```
-
 ## 정리
 
 | 항목 | 내용 |

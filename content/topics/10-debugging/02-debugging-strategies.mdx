@@ -162,34 +162,6 @@ for user in data["users"]:
 
 ★ 가설 없이 이것저것 바꾸면 시간만 낭비된다
 ```
-
-
-## 코드 예시
-
-### 효과적인 print 디버깅 패턴
-
-```python
-# 나쁜 예: 무의미한 print
-print("here")
-print("here2")
-print(x)
-
-# 좋은 예: 위치와 값을 함께 출력
-print(f"[DEBUG] process_data 시작: input_len={len(data)}")
-print(f"[DEBUG] validate 결과: valid={is_valid}, errors={errors}")
-print(f"[DEBUG] transform 전: type={type(value)}, value={value!r}")
-```
-
-```javascript
-// JavaScript — console 활용
-console.log("[DEBUG] API 응답:", JSON.stringify(response.data, null, 2));
-console.table(users);           // 배열을 표 형태로 출력
-console.time("DB query");       // 시간 측정 시작
-// ... DB 쿼리 ...
-console.timeEnd("DB query");    // "DB query: 342ms"
-```
-
-
 ## 연습 문제
 
 ### Q1. "어제까지 되던 코드가 오늘 안 된다." 가장 먼저 확인해야 할 것은?

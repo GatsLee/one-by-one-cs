@@ -11,14 +11,22 @@ order: 02
 
 브랜치(Branch)는 **독립적인 작업 공간**이다. 메인 코드에 영향을 주지 않고 새 기능을 개발하거나 버그를 수정할 수 있다.
 
-```
-브랜치 = 평행 타임라인
+<Mermaid chart="
+gitgraph
+  commit id: &quot;A&quot;
+  commit id: &quot;B&quot;
+  commit id: &quot;C&quot;
+  branch feature
+  checkout main
+  commit id: &quot;D&quot;
+  commit id: &quot;E&quot;
+  checkout feature
+  commit id: &quot;F&quot;
+  commit id: &quot;G&quot;
+  commit id: &quot;H&quot;
+" />
 
-  main:     A ── B ── C ── D ── E        (안정된 코드)
-                       │
-  feature:             └── F ── G ── H    (새 기능 개발 중)
-                                          main에 영향 없음!
-```
+> 브랜치 = 평행 타임라인. feature에서 작업해도 main에 영향 없음!
 
 ### 2. 브랜치 기본 명령어
 
@@ -51,23 +59,34 @@ git switch main               # main으로 이동
 git merge feat/login          # feat/login을 main에 합침
 ```
 
-```
-Fast-forward 머지 (분기 없을 때):
+**Fast-forward 머지** (분기 없을 때 — 일직선으로 합쳐짐):
 
-  Before:   main: A ── B
-                         └── feat: C ── D
+<Mermaid chart="
+gitgraph
+  commit id: &quot;A&quot;
+  commit id: &quot;B&quot;
+  branch feat
+  checkout feat
+  commit id: &quot;C&quot;
+  commit id: &quot;D&quot;
+  checkout main
+  merge feat
+" />
 
-  After:    main: A ── B ── C ── D          (일직선으로 합쳐짐)
+**3-way 머지** (분기가 있을 때 — M = 머지 커밋 생성):
 
-
-3-way 머지 (분기가 있을 때):
-
-  Before:   main: A ── B ── E
-                         └── feat: C ── D
-
-  After:    main: A ── B ── E ── M          (M = 머지 커밋)
-                         └── C ── D ──┘
-```
+<Mermaid chart="
+gitgraph
+  commit id: &quot;A&quot;
+  commit id: &quot;B&quot;
+  branch feat
+  checkout feat
+  commit id: &quot;C&quot;
+  commit id: &quot;D&quot;
+  checkout main
+  commit id: &quot;E&quot;
+  merge feat id: &quot;M&quot;
+" />
 
 ### 4. 머지 충돌(Merge Conflict) 해결
 
@@ -120,21 +139,31 @@ Hello Korea
 
 실무에서 가장 많이 쓰는 브랜치 전략:
 
-```
-  main ─────────────────────────────────────── (항상 안정)
-    │                        │          ▲
-    └── feat/login ──────────┘          │
-    │                                   │
-    └── feat/search ────────────────────┘
-    │
-    └── fix/typo ── (작업 중)
+<Mermaid chart="
+gitgraph
+  commit id: &quot;init&quot;
+  branch feat/login
+  checkout feat/login
+  commit id: &quot;login-1&quot;
+  commit id: &quot;login-2&quot;
+  checkout main
+  merge feat/login
+  branch feat/search
+  checkout feat/search
+  commit id: &quot;search-1&quot;
+  commit id: &quot;search-2&quot;
+  checkout main
+  merge feat/search
+  branch fix/typo
+  checkout fix/typo
+  commit id: &quot;typo-fix&quot; type: HIGHLIGHT
+" />
 
-규칙:
-  1. main에서 직접 커밋하지 않는다
-  2. 기능별로 브랜치를 만든다 (feat/xxx, fix/xxx)
-  3. 작업 완료 후 PR(Pull Request)로 리뷰받고 머지
-  4. 머지 후 브랜치는 삭제
-```
+**규칙:**
+1. main에서 직접 커밋하지 않는다
+2. 기능별로 브랜치를 만든다 (feat/xxx, fix/xxx)
+3. 작업 완료 후 PR(Pull Request)로 리뷰받고 머지
+4. 머지 후 브랜치는 삭제
 
 ### 6. Rebase vs Merge
 
@@ -153,50 +182,31 @@ Hello Korea
 └──────────────────────────────────────────────────────────┘
 ```
 
-```
-Merge:
-  main:    A ── B ── E ── M
-                │         │
-  feat:         └── C ── D┘
+**Merge** (머지 커밋이 생기고 분기 이력 보존):
 
-Rebase:
-  main:    A ── B ── E ── C' ── D'    (일직선, 깔끔)
-```
+<Mermaid chart="
+gitgraph
+  commit id: &quot;A&quot;
+  commit id: &quot;B&quot;
+  branch feat
+  checkout feat
+  commit id: &quot;C&quot;
+  commit id: &quot;D&quot;
+  checkout main
+  commit id: &quot;E&quot;
+  merge feat id: &quot;M&quot;
+" />
 
+**Rebase** (일직선, 깔끔한 이력):
 
-## 코드 예시
-
-### 브랜치 작업 전체 흐름
-
-```bash
-# 1. main 최신 상태로 업데이트
-git switch main
-git pull origin main
-
-# 2. 새 기능 브랜치 생성
-git switch -c feat/search
-
-# 3. 작업, 커밋
-# ... 코드 작성 ...
-git add src/search.py
-git commit -m "feat: add search function"
-
-# ... 추가 작업 ...
-git add src/search.py tests/test_search.py
-git commit -m "test: add search unit tests"
-
-# 4. main 최신 변경 가져오기 (충돌 방지)
-git switch main
-git pull origin main
-git switch feat/search
-git merge main                # main의 최신 변경을 내 브랜치에 반영
-
-# 5. push 후 PR 생성
-git push -u origin feat/search
-# GitHub에서 Pull Request 생성
-```
-
-
+<Mermaid chart="
+gitgraph
+  commit id: &quot;A&quot;
+  commit id: &quot;B&quot;
+  commit id: &quot;E&quot;
+  commit id: &quot;C'&quot;
+  commit id: &quot;D'&quot;
+" />
 ## 연습 문제
 
 ### Q1. Fast-forward 머지와 3-way 머지의 차이는?

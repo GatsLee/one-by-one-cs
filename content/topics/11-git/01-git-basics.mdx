@@ -185,32 +185,6 @@ git pull origin main
 # 원격 상태 확인
 git remote -v
 ```
-
-
-## 코드 예시
-
-### Git 시작부터 첫 push까지
-
-```bash
-# 1. 프로젝트 초기화
-mkdir my-app && cd my-app
-git init
-
-# 2. 파일 생성
-echo "# My App" > README.md
-echo "node_modules/" > .gitignore
-
-# 3. 첫 커밋
-git add README.md .gitignore
-git commit -m "feat: initial project setup"
-
-# 4. GitHub 저장소 연결 및 push
-git remote add origin https://github.com/user/my-app.git
-git branch -M main
-git push -u origin main
-```
-
-
 ## 연습 문제
 
 ### Q1. Git의 3가지 영역(Working Directory, Staging Area, Repository)의 역할은?

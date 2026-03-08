@@ -182,46 +182,6 @@ curl -o /dev/null -s -w "%{http_code}" https://api.example.com/health
 # 포트 확인 (이 포트를 누가 쓰고 있나?)
 lsof -i :3000
 ```
-
-
-## 코드 예시
-
-### VS Code launch.json 설정 (Python)
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Python: Current File",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${file}",
-      "console": "integratedTerminal"
-    }
-  ]
-}
-```
-
-### VS Code launch.json 설정 (Next.js)
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Next.js: debug server",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "dev"],
-      "skipFiles": ["<node_internals>/**"]
-    }
-  ]
-}
-```
-
-
 ## 연습 문제
 
 ### Q1. 웹에서 "API 호출이 안 된다"고 할 때 가장 먼저 확인해야 할 곳은?

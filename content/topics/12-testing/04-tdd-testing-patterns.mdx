@@ -219,40 +219,6 @@ CI 자동 테스트 흐름:
 5. 테스트도 코드다 — 가독성을 챙겨라
    중복 제거, 명확한 변수명, 불필요한 로직 제거
 ```
-
-
-## 코드 예시
-
-### 테스트 커버리지 측정
-
-```bash
-# Python — pytest-cov
-pip install pytest-cov
-pytest --cov=src --cov-report=term-missing
-
-# 출력 예시:
-# Name               Stmts   Miss  Cover   Missing
-# src/calculator.py     12      1    92%    15
-# src/validator.py       8      0   100%
-# TOTAL                 20      1    95%
-
-# JavaScript — Vitest coverage
-npx vitest --coverage
-```
-
-```
-커버리지란?
-
-  테스트가 실행하는 코드 줄 수 / 전체 코드 줄 수 × 100%
-
-  80% 이상이면 양호
-  100%를 목표로 하면 오버엔지니어링 — 의미 있는 테스트에 집중
-
-  ★ 커버리지가 높다 ≠ 좋은 테스트
-    (assert 없이 함수만 호출해도 커버리지는 올라감)
-```
-
-
 ## 연습 문제
 
 ### Q1. TDD의 Red-Green-Refactor 사이클을 설명하라.

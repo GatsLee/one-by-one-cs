@@ -201,22 +201,6 @@ git reset --hard e4f5g6h
   → git revert -m 1 머지커밋해시
     (-m 1은 main 쪽을 유지하겠다는 의미)
 ```
-
-
-## 코드 예시
-
-### cherry-pick — 특정 커밋만 가져오기
-
-```bash
-# 다른 브랜치의 특정 커밋 하나만 현재 브랜치로 가져오기
-git cherry-pick a1b2c3d
-
-# 사용 예:
-#   feat/A 브랜치에서 만든 유틸 함수가 feat/B에도 필요할 때
-#   feat/A의 해당 커밋만 cherry-pick
-```
-
-
 ## 연습 문제
 
 ### Q1. git revert와 git reset의 차이점을 설명하라.

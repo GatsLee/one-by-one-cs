@@ -34,6 +34,33 @@ export const STUDY_ORDER = [
   { topicDir: "12-testing", label: "테스팅", desc: "테스트 피라미드, Unit/Integration/E2E, TDD" },
 ];
 
+export const TOPIC_GROUPS = [
+  {
+    label: "CS 기초",
+    desc: "컴퓨터 과학의 핵심 이론",
+    color: "book-blue",
+    topics: ["01-data-structures", "02-os", "03-network", "04-database"],
+  },
+  {
+    label: "시스템 & 설계",
+    desc: "대규모 시스템과 아키텍처",
+    color: "book-charcoal",
+    topics: ["05-system-design", "09-architecture"],
+  },
+  {
+    label: "AI",
+    desc: "인공지능과 에이전트",
+    color: "book-red",
+    topics: ["06-ai", "08-ai-agent"],
+  },
+  {
+    label: "개발 실무",
+    desc: "현업에서 바로 쓰는 기술",
+    color: "book-green",
+    topics: ["07-infra", "10-debugging", "11-git", "12-testing"],
+  },
+];
+
 export interface TopicCategory {
   dirName: string;
   label: string;

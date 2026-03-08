@@ -44,4 +44,6 @@ body {
 pre, pre code {
   background-color: #1e1e2e !important;
   color: #e4e4e7 !important;
+  font-family: var(--font-mono) !important;
+  line-height: 1.6 !important;
 }

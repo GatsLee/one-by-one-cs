@@ -23,7 +23,7 @@ export default function CodeBlock({
   return (
     <div className="relative group my-4">
       <pre
-        className="overflow-x-auto rounded-lg bg-[#1e1e2e] border border-ink/10 p-4 text-sm shadow-sm"
+        className="overflow-x-auto rounded-lg bg-[#1e1e2e] border border-ink/10 p-4 text-sm shadow-sm font-mono leading-[1.6]"
         data-code-target=""
         {...props}
       >

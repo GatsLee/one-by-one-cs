@@ -201,32 +201,6 @@ test("shows error for wrong password", async ({ page }) => {
   비율 가이드:
     Unit 70% : Integration 20% : E2E 10%
 ```
-
-
-## 코드 예시
-
-### Playwright 설정 (playwright.config.ts)
-
-```typescript
-import { defineConfig } from "@playwright/test";
-
-export default defineConfig({
-  testDir: "./tests",
-  timeout: 30000,
-  use: {
-    baseURL: "http://localhost:3000",
-    screenshot: "only-on-failure",    // 실패 시 스크린샷 저장
-    trace: "on-first-retry",         // 재시도 시 트레이스 기록
-  },
-  webServer: {
-    command: "npm run dev",          // 테스트 전 서버 자동 시작
-    port: 3000,
-    reuseExistingServer: true,
-  },
-});
-```
-
-
 ## 연습 문제
 
 ### Q1. 단위 테스트와 통합 테스트의 핵심 차이점은?

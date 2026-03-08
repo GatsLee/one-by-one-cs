@@ -270,38 +270,6 @@ E       AssertionError: assert 'ab' == 'ab'       ← 예상과 실제 비교
   → PASSED: 테스트 통과
   → FAILED: 테스트 실패 + 어디서 왜 실패했는지 표시
 ```
-
-
-## 코드 예시
-
-### 경계값 테스트 (Edge Case Testing)
-
-```python
-def clamp(value, min_val, max_val):
-    """값을 min_val과 max_val 사이로 제한."""
-    return max(min_val, min(value, max_val))
-
-# 경계값을 집중적으로 테스트
-def test_clamp_within_range():
-    assert clamp(5, 0, 10) == 5
-
-def test_clamp_at_minimum():
-    assert clamp(0, 0, 10) == 0       # 정확히 최소값
-
-def test_clamp_below_minimum():
-    assert clamp(-5, 0, 10) == 0      # 최소값 아래
-
-def test_clamp_at_maximum():
-    assert clamp(10, 0, 10) == 10     # 정확히 최대값
-
-def test_clamp_above_maximum():
-    assert clamp(15, 0, 10) == 10     # 최대값 위
-
-def test_clamp_equal_bounds():
-    assert clamp(5, 5, 5) == 5        # min == max
-```
-
-
 ## 연습 문제
 
 ### Q1. 단위 테스트에서 외부 의존성(DB, API)을 직접 사용하면 안 되는 이유는?

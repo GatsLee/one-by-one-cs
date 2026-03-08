@@ -225,47 +225,6 @@ with open("data.csv", encoding="utf-8") as f:
   │ DB 스키마 다름      │ 마이그레이션 파일 공유            │
   └────────────────────┴────────────────────────────────┘
 ```
-
-
-## 코드 예시
-
-### 방어적 프로그래밍 패턴 모음
-
-```python
-# 1. 안전한 딕셔너리 접근
-value = data.get("key", "기본값")
-
-# 2. 안전한 리스트 접근
-first = items[0] if items else None
-
-# 3. 안전한 나눗셈
-result = a / b if b != 0 else 0
-
-# 4. 안전한 타입 변환
-try:
-    num = int(user_input)
-except ValueError:
-    num = 0
-```
-
-```javascript
-// 1. 옵셔널 체이닝 + Nullish 병합
-const city = user?.address?.city ?? "미설정";
-
-// 2. 배열 기본값
-const items = response.data ?? [];
-const first = items[0] ?? null;
-
-// 3. 안전한 JSON 파싱
-let parsed;
-try {
-  parsed = JSON.parse(rawString);
-} catch {
-  parsed = {};
-}
-```
-
-
 ## 연습 문제
 
 ### Q1. 다음 코드의 버그를 찾아라.

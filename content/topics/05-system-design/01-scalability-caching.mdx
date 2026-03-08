@@ -13,42 +13,17 @@ order: 01
 
 ### 2. 수직 확장 vs 수평 확장
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    수직 확장 (Scale Up)                    │
-│                                                         │
-│   ┌──────────┐         ┌──────────────┐                 │
-│   │  서버 1   │   →→→   │   서버 1      │                │
-│   │ 4GB RAM  │         │  64GB RAM    │                 │
-│   │ 2 CPU    │         │  32 CPU      │                 │
-│   └──────────┘         └──────────────┘                 │
-│   (기존 서버)           (더 강력한 서버)                   │
-│                                                         │
-│   - 하드웨어 업그레이드 (CPU, RAM, SSD 추가)               │
-│   - 단일 서버의 한계 존재 (물리적 상한)                     │
-│   - 단일 장애점(SPOF) 위험                                │
-│   - 구현이 간단 (코드 수정 불필요)                         │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                    수평 확장 (Scale Out)                   │
-│                                                         │
-│                   ┌──────────┐                          │
-│                   │ 로드밸런서 │                          │
-│                   └────┬─────┘                          │
-│              ┌─────────┼─────────┐                      │
-│              ▼         ▼         ▼                      │
-│         ┌────────┐┌────────┐┌────────┐                  │
-│         │ 서버 1  ││ 서버 2  ││ 서버 3  │                 │
-│         │ 4GB    ││ 4GB    ││ 4GB    │                  │
-│         └────────┘└────────┘└────────┘                  │
-│                                                         │
-│   - 동일한 사양의 서버를 여러 대 추가                       │
-│   - 이론적으로 무한 확장 가능                              │
-│   - 장애 발생 시 다른 서버가 대체 (고가용성)                │
-│   - 상태 관리, 세션 동기화 등 복잡도 증가                   │
-└─────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph LR
+  subgraph ScaleUp[&quot;수직 확장 (Scale Up)&quot;]
+    A1[&quot;서버 1\n4GB RAM\n2 CPU&quot;] -->|업그레이드| A2[&quot;서버 1\n64GB RAM\n32 CPU&quot;]
+  end
+  subgraph ScaleOut[&quot;수평 확장 (Scale Out)&quot;]
+    LB[로드밸런서] --> S1[&quot;서버 1\n4GB&quot;]
+    LB --> S2[&quot;서버 2\n4GB&quot;]
+    LB --> S3[&quot;서버 3\n4GB&quot;]
+  end
+" />
 
 **비유**: 수직 확장은 "더 큰 트럭을 사는 것"이고, 수평 확장은 "트럭 여러 대를 운행하는 것"이다.
 
@@ -65,20 +40,22 @@ order: 01
 
 캐싱은 **자주 요청되는 데이터를 빠른 저장소에 미리 저장해두어 응답 속도를 높이는 기법**이다.
 
-```
-캐시 없는 경우:
-  클라이언트 ──요청──→ 서버 ──쿼리──→ DB (100ms)
-  클라이언트 ←─응답── 서버 ←─결과── DB
-
-캐시 있는 경우:
-  클라이언트 ──요청──→ 서버 ──조회──→ 캐시 (1ms) ← Cache Hit!
-  클라이언트 ←─응답── 서버 ←─결과── 캐시
-
-  (캐시에 없으면)
-  클라이언트 ──요청──→ 서버 ──쿼리──→ DB (100ms) ← Cache Miss
-  클라이언트 ←─응답── 서버 ←─결과── DB
-                              └──저장──→ 캐시
-```
+<Mermaid chart="
+graph LR
+  subgraph NoCache[&quot;캐시 없는 경우&quot;]
+    C1[클라이언트] -->|요청| S1[서버] -->|쿼리 100ms| D1[DB]
+    D1 -->|결과| S1 -->|응답| C1
+  end
+  subgraph WithCache[&quot;캐시 있는 경우&quot;]
+    C2[클라이언트] -->|요청| S2[서버]
+    S2 -->|조회 1ms| Cache[캐시]
+    Cache -->|Cache Hit!| S2
+    S2 -->|응답| C2
+    S2 -.->|Cache Miss 쿼리 100ms| D2[DB]
+    D2 -.->|결과| S2
+    S2 -.->|저장| Cache
+  end
+" />
 
 **비유**: 도서관에서 책을 빌릴 때, 자주 빌리는 책은 책상 위에 올려두는 것과 같다. 서가까지 갈 필요 없이 바로 집으면 된다.
 
@@ -88,24 +65,21 @@ order: 01
 
 가장 일반적인 전략. 애플리케이션이 캐시를 직접 관리한다.
 
-```
-읽기 흐름:
-1. 캐시에서 데이터 조회
-2-a. Cache Hit → 캐시 데이터 반환
-2-b. Cache Miss → DB에서 조회 → 캐시에 저장 → 반환
-
-┌──────┐    1.조회     ┌──────┐
-│ 앱   │───────────→ │캐시   │  Hit → 반환
-│ 서버  │←──────────  │(Redis)│
-│      │  2-b.Miss   │      │
-│      │─────────→   └──────┘
-│      │    DB 조회    ┌──────┐
-│      │───────────→ │  DB   │
-│      │←──────────  │      │
-│      │   결과 반환   └──────┘
-│      │─── 캐시 저장 → 캐시
-└──────┘
-```
+<Mermaid chart="
+sequenceDiagram
+    participant App as 앱 서버
+    participant Cache as 캐시 (Redis)
+    participant DB as DB
+    App->>Cache: 1. 데이터 조회
+    alt Cache Hit
+        Cache-->>App: 캐시 데이터 반환
+    else Cache Miss
+        Cache-->>App: Miss
+        App->>DB: DB 조회
+        DB-->>App: 결과 반환
+        App->>Cache: 캐시에 저장
+    end
+" />
 
 - **장점**: 필요한 데이터만 캐싱, 캐시 장애 시에도 DB로 동작 가능
 - **단점**: 첫 요청은 항상 느림(Cold Start), 데이터 불일치 가능
@@ -114,18 +88,16 @@ order: 01
 
 쓰기 시 캐시와 DB에 동시에 저장한다.
 
-```
-쓰기 흐름:
-1. 앱 → 캐시에 쓰기
-2. 캐시 → DB에 쓰기 (동기)
-3. 완료 응답
-
-┌──────┐   1.쓰기    ┌──────┐   2.쓰기    ┌──────┐
-│  앱   │──────────→│ 캐시  │──────────→│  DB   │
-│      │←──────────│      │←──────────│      │
-│      │   3.완료   │      │   동기완료  │      │
-└──────┘           └──────┘           └──────┘
-```
+<Mermaid chart="
+sequenceDiagram
+    participant App as 앱
+    participant Cache as 캐시
+    participant DB as DB
+    App->>Cache: 1. 쓰기
+    Cache->>DB: 2. 쓰기 (동기)
+    DB-->>Cache: 동기 완료
+    Cache-->>App: 3. 완료 응답
+" />
 
 - **장점**: 캐시와 DB가 항상 일관성 유지
 - **단점**: 쓰기 지연 증가 (캐시 + DB 두 번 쓰기), 읽히지 않는 데이터도 캐싱
@@ -134,17 +106,15 @@ order: 01
 
 쓰기 시 캐시에만 저장하고, DB에는 나중에 비동기적으로 반영한다.
 
-```
-쓰기 흐름:
-1. 앱 → 캐시에 쓰기 (즉시 완료)
-2. 캐시 → DB에 비동기 쓰기 (나중에)
-
-┌──────┐   1.쓰기    ┌──────┐ ···비동기··→ ┌──────┐
-│  앱   │──────────→│ 캐시  │             │  DB   │
-│      │←──────────│      │             │      │
-│      │   즉시완료  │      │──2.배치쓰기──→│      │
-└──────┘           └──────┘             └──────┘
-```
+<Mermaid chart="
+sequenceDiagram
+    participant App as 앱
+    participant Cache as 캐시
+    participant DB as DB
+    App->>Cache: 1. 쓰기
+    Cache-->>App: 즉시 완료
+    Cache-)DB: 2. 비동기 배치 쓰기 (나중에)
+" />
 
 - **장점**: 쓰기 성능 최고, DB 부하 감소
 - **단점**: 캐시 장애 시 데이터 유실 위험, 복잡한 구현
@@ -153,17 +123,19 @@ order: 01
 
 CDN은 **전 세계에 분산된 서버 네트워크**를 통해 정적 콘텐츠(이미지, CSS, JS)를 사용자와 가까운 위치에서 제공한다.
 
-```
-CDN 없이:
-  한국 사용자 ──────────────→ 미국 원본 서버 (지연 200ms)
-  일본 사용자 ──────────────→ 미국 원본 서버 (지연 150ms)
-
-CDN 사용:
-  한국 사용자 ──→ 서울 CDN 엣지 (지연 10ms)
-  일본 사용자 ──→ 도쿄 CDN 엣지 (지연 10ms)
-                       ↕ (주기적 동기화)
-                  미국 원본 서버
-```
+<Mermaid chart="
+graph LR
+  subgraph NoCDN[&quot;CDN 없이&quot;]
+    KR1[한국 사용자] -->|200ms| US1[미국 원본 서버]
+    JP1[일본 사용자] -->|150ms| US1
+  end
+  subgraph WithCDN[&quot;CDN 사용&quot;]
+    KR2[한국 사용자] -->|10ms| Seoul[서울 CDN 엣지]
+    JP2[일본 사용자] -->|10ms| Tokyo[도쿄 CDN 엣지]
+    Seoul <-->|주기적 동기화| US2[미국 원본 서버]
+    Tokyo <-->|주기적 동기화| US2
+  end
+" />
 
 **CDN 동작 원리**:
 1. 사용자가 리소스 요청
@@ -209,168 +181,6 @@ Sorted Set: "leaderboard" → {(김철수,100), (이영희,95)}  (랭킹)
 | 버전 태그 | URL에 버전/해시 포함 | 정확한 무효화 | 관리 복잡 |
 
 **캐시 스탬피드(Cache Stampede)**: TTL 만료 직후 동시에 수많은 요청이 DB로 몰리는 현상. 해결책으로 **잠금(Locking)**, **사전 갱신(Preemptive Refresh)**, **확률적 조기 만료** 등이 있다.
-
-## 코드 예시
-
-### Cache-Aside 패턴 구현 (Python + Redis)
-
-```python
-import redis
-import json
-import time
-
-# Redis 연결
-cache = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-
-# 가상의 데이터베이스 (딕셔너리로 시뮬레이션)
-fake_db = {
-    "user:1": {"name": "김철수", "age": 25, "email": "kim@example.com"},
-    "user:2": {"name": "이영희", "age": 30, "email": "lee@example.com"},
-}
-
-
-def get_from_db(key: str) -> dict | None:
-    """데이터베이스에서 조회하는 함수 (시뮬레이션)"""
-    time.sleep(0.1)  # DB 조회 지연 시뮬레이션 (100ms)
-    return fake_db.get(key)
-
-
-def get_user_cache_aside(user_id: str) -> dict | None:
-    """
-    Cache-Aside 패턴으로 사용자 정보를 조회한다.
-    1. 먼저 캐시에서 찾는다 (빠름)
-    2. 없으면 DB에서 가져와서 캐시에 저장한다
-    """
-    cache_key = f"user:{user_id}"
-
-    # 1단계: 캐시에서 조회
-    cached = cache.get(cache_key)
-    if cached:
-        print(f"  [Cache HIT] {cache_key}")
-        return json.loads(cached)
-
-    # 2단계: Cache Miss → DB에서 조회
-    print(f"  [Cache MISS] {cache_key} → DB 조회 중...")
-    data = get_from_db(cache_key)
-
-    if data:
-        # 3단계: 캐시에 저장 (TTL 300초 = 5분)
-        cache.setex(cache_key, 300, json.dumps(data))
-        print(f"  [캐시 저장] {cache_key} (TTL: 300초)")
-
-    return data
-
-
-def update_user(user_id: str, new_data: dict) -> None:
-    """
-    사용자 정보 수정 시 캐시를 무효화한다.
-    DB를 먼저 수정한 뒤 캐시를 삭제한다 (Cache Invalidation).
-    """
-    cache_key = f"user:{user_id}"
-
-    # 1단계: DB 업데이트
-    fake_db[cache_key] = new_data
-    print(f"  [DB 업데이트] {cache_key}")
-
-    # 2단계: 캐시 무효화 (삭제)
-    cache.delete(cache_key)
-    print(f"  [캐시 삭제] {cache_key}")
-
-
-# === 실행 예시 ===
-if __name__ == "__main__":
-    print("=== 첫 번째 조회 (Cache Miss) ===")
-    user = get_user_cache_aside("1")
-    print(f"  결과: {user}\n")
-
-    print("=== 두 번째 조회 (Cache Hit) ===")
-    user = get_user_cache_aside("1")
-    print(f"  결과: {user}\n")
-
-    print("=== 사용자 정보 수정 ===")
-    update_user("1", {"name": "김철수", "age": 26, "email": "kim_new@example.com"})
-    print()
-
-    print("=== 수정 후 조회 (Cache Miss → 새 데이터) ===")
-    user = get_user_cache_aside("1")
-    print(f"  결과: {user}")
-```
-
-### Redis 자료구조 활용 예시
-
-```python
-import redis
-
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-
-# === 1. String: 단순 캐싱 ===
-r.setex("session:abc123", 3600, "user_id:42")  # 1시간 TTL
-session = r.get("session:abc123")
-
-# === 2. Hash: 사용자 프로필 저장 ===
-r.hset("user:1", mapping={
-    "name": "김철수",
-    "age": "25",
-    "city": "서울"
-})
-name = r.hget("user:1", "name")      # "김철수"
-all_info = r.hgetall("user:1")        # {"name": "김철수", "age": "25", ...}
-
-# === 3. List: 작업 큐 ===
-r.rpush("queue:emails", "email_1", "email_2", "email_3")  # 오른쪽에 추가
-task = r.lpop("queue:emails")  # 왼쪽에서 꺼냄 → "email_1" (FIFO)
-
-# === 4. Set: 태그 관리 ===
-r.sadd("post:1:tags", "python", "redis", "caching")
-r.sadd("post:2:tags", "python", "django", "web")
-# 교집합: 두 게시글의 공통 태그
-common = r.sinter("post:1:tags", "post:2:tags")  # {"python"}
-
-# === 5. Sorted Set: 리더보드 ===
-r.zadd("leaderboard", {"김철수": 100, "이영희": 95, "박민수": 120})
-# 상위 3명 (점수 높은 순)
-top3 = r.zrevrange("leaderboard", 0, 2, withscores=True)
-# [("박민수", 120.0), ("김철수", 100.0), ("이영희", 95.0)]
-```
-
-### Write-Through 패턴 간단 구현
-
-```python
-import redis
-import json
-
-cache = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-fake_db = {}
-
-
-def write_through(key: str, value: dict, ttl: int = 300) -> None:
-    """
-    Write-Through: 캐시와 DB에 동시에 쓴다.
-    항상 일관성을 보장하지만, 쓰기 지연이 늘어난다.
-    """
-    # 1단계: 캐시에 저장
-    cache.setex(key, ttl, json.dumps(value))
-    print(f"  [캐시 저장] {key}")
-
-    # 2단계: DB에 저장 (동기)
-    fake_db[key] = value
-    print(f"  [DB 저장] {key}")
-
-
-def read_through(key: str) -> dict | None:
-    """항상 캐시에서 읽는다 (Write-Through에서는 캐시가 항상 최신)"""
-    cached = cache.get(key)
-    if cached:
-        return json.loads(cached)
-    return None
-
-
-# 사용 예시
-write_through("product:1", {"name": "노트북", "price": 1500000})
-product = read_through("product:1")
-print(f"  조회 결과: {product}")
-```
-
 ## 정리
 
 | 개념 | 핵심 포인트 |

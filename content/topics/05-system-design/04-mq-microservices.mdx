@@ -11,15 +11,18 @@ order: 04
 
 메시지 큐는 **비동기 통신**을 위한 미들웨어다. 프로듀서(생산자)가 메시지를 큐에 넣으면, 컨슈머(소비자)가 나중에 꺼내서 처리한다. 두 시스템이 직접 통신하지 않고, 중간 버퍼를 통해 느슨하게 결합(loose coupling)된다.
 
-```
-[동기 통신 — 직접 호출]
-서비스A ──요청──► 서비스B (B가 죽으면 A도 실패!)
-         ◄──응답──
-
-[비동기 통신 — 메시지 큐 사용]
-서비스A ──메시지──► [  큐  ] ──메시지──► 서비스B
-  (즉시 반환)       (버퍼)       (자기 속도로 처리)
-```
+<Mermaid chart="
+graph LR
+  subgraph Sync[&quot;동기 통신 — 직접 호출&quot;]
+    A1[서비스A] -->|요청| B1[서비스B]
+    B1 -->|응답| A1
+    B1 -.-|B가 죽으면 A도 실패!| A1
+  end
+  subgraph Async[&quot;비동기 통신 — 메시지 큐&quot;]
+    A2[서비스A] -->|메시지\n즉시 반환| Q[큐\n버퍼]
+    Q -->|메시지\n자기 속도로 처리| B2[서비스B]
+  end
+" />
 
 **비유**: 식당의 주문 전표 시스템
 - 웨이터(프로듀서)가 주문서를 전표 걸이(큐)에 건다
@@ -45,15 +48,15 @@ order: 04
 
 하나의 메시지는 **하나의 컨슈머만** 처리한다. 작업 분배(work distribution)에 적합하다.
 
-```
-                    ┌──────────┐
-Producer ──msg1──►  │          │ ──msg1──► Consumer A
-Producer ──msg2──►  │   큐     │ ──msg2──► Consumer B
-Producer ──msg3──►  │          │ ──msg3──► Consumer A
-                    └──────────┘
-  msg1은 A만, msg2는 B만, msg3은 A만 처리
-  → 각 메시지는 정확히 한 번만 처리됨
-```
+<Mermaid chart="
+graph LR
+  P1[Producer] -->|msg1| Q[큐]
+  P2[Producer] -->|msg2| Q
+  P3[Producer] -->|msg3| Q
+  Q -->|msg1| CA[Consumer A]
+  Q -->|msg2| CB[Consumer B]
+  Q -->|msg3| CA
+" />
 
 **사용 사례**: 주문 처리, 이메일 발송, 이미지 변환 등
 
@@ -61,13 +64,13 @@ Producer ──msg3──►  │          │ ──msg3──► Consumer A
 
 하나의 메시지가 **모든 구독자**에게 전달된다. 이벤트 브로드캐스트에 적합하다.
 
-```
-                    ┌──────────┐ ──msg──► Subscriber A (알림 서비스)
-Publisher ──msg──►  │  토픽    │ ──msg──► Subscriber B (로그 서비스)
-                    │ (topic)  │ ──msg──► Subscriber C (분석 서비스)
-                    └──────────┘
-  모든 구독자가 같은 메시지를 받음
-```
+<Mermaid chart="
+graph LR
+  Pub[Publisher] -->|msg| Topic[토픽 Topic]
+  Topic -->|msg| SubA[Subscriber A\n알림 서비스]
+  Topic -->|msg| SubB[Subscriber B\n로그 서비스]
+  Topic -->|msg| SubC[Subscriber C\n분석 서비스]
+" />
 
 **사용 사례**: 이벤트 알림, 로그 수집, 실시간 데이터 스트리밍
 
@@ -86,22 +89,21 @@ Publisher ──msg──►  │  토픽    │ ──msg──► Subscriber B
 
 링크드인에서 개발한 분산 이벤트 스트리밍 플랫폼이다. **로그 기반** 아키텍처로, 메시지를 디스크에 순차적으로 저장한다.
 
-```
-[Kafka 아키텍처]
-
-Producer ──►┌──────────────────────────────────┐
-Producer ──►│         Kafka 클러스터             │
-Producer ──►│                                   │
-            │  Topic: "orders"                  │
-            │  ┌──────────────────────────┐     │
-            │  │ Partition 0: [m1][m2][m5] │     │──► Consumer Group A
-            │  │ Partition 1: [m3][m4][m6] │     │    (주문 처리)
-            │  │ Partition 2: [m7][m8]     │     │
-            │  └──────────────────────────┘     │──► Consumer Group B
-            │                                   │    (분석)
-            │  Broker 1  |  Broker 2  | Broker 3│
-            └──────────────────────────────────┘
-```
+<Mermaid chart="
+graph LR
+  P1[Producer] --> Kafka
+  P2[Producer] --> Kafka
+  P3[Producer] --> Kafka
+  subgraph Kafka[&quot;Kafka 클러스터\nBroker 1 | Broker 2 | Broker 3&quot;]
+    subgraph Orders[&quot;Topic: orders&quot;]
+      Part0[&quot;Partition 0\nm1, m2, m5&quot;]
+      Part1[&quot;Partition 1\nm3, m4, m6&quot;]
+      Part2[&quot;Partition 2\nm7, m8&quot;]
+    end
+  end
+  Kafka --> CGA[&quot;Consumer Group A\n주문 처리&quot;]
+  Kafka --> CGB[&quot;Consumer Group B\n분석&quot;]
+" />
 
 #### Kafka 핵심 개념
 
@@ -126,19 +128,19 @@ Producer ──►│                                   │
 
 Erlang으로 개발된 전통적인 메시지 브로커다. AMQP(Advanced Message Queuing Protocol)를 구현한다.
 
-```
-[RabbitMQ 아키텍처]
+<Mermaid chart="
+graph LR
+  P[Producer] --> Ex[Exchange]
+  Ex -->|라우팅| Q1[Queue 1] --> CA[Consumer A]
+  Ex -->|라우팅| Q2[Queue 2] --> CB[Consumer B]
+  Ex -->|라우팅| Q3[Queue 3] --> CC[Consumer C]
+" />
 
-Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
-                │                Queue2 ──► Consumer B
-                │                Queue3 ──► Consumer C
-                │
-     Exchange Types:
-     - Direct:  라우팅 키 정확히 매칭
-     - Fanout:  모든 큐에 복사 (브로드캐스트)
-     - Topic:   패턴 매칭 (orders.* → orders.create, orders.cancel)
-     - Headers: 메시지 헤더 기반 라우팅
-```
+**Exchange Types**:
+- **Direct**: 라우팅 키 정확히 매칭
+- **Fanout**: 모든 큐에 복사 (브로드캐스트)
+- **Topic**: 패턴 매칭 (orders.* -> orders.create, orders.cancel)
+- **Headers**: 메시지 헤더 기반 라우팅
 
 #### RabbitMQ의 특징
 - **유연한 라우팅**: Exchange 타입으로 다양한 라우팅 패턴 지원
@@ -173,21 +175,17 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 하나의 코드베이스에 모든 기능이 포함된 단일 애플리케이션이다.
 
-```
-[모놀리식]
-┌────────────────────────────────────┐
-│            하나의 애플리케이션         │
-│  ┌────────┐ ┌────────┐ ┌────────┐ │
-│  │ 사용자  │ │ 주문   │ │ 결제   │ │
-│  │ 모듈   │ │ 모듈   │ │ 모듈   │ │
-│  └────┬───┘ └────┬───┘ └────┬───┘ │
-│       └──────────┼──────────┘     │
-│            ┌─────▼─────┐          │
-│            │ 공유 DB    │          │
-│            └───────────┘          │
-└────────────────────────────────────┘
-  하나의 프로세스로 실행, 하나의 DB 공유
-```
+<Mermaid chart="
+graph TD
+  subgraph Monolith[&quot;하나의 애플리케이션&quot;]
+    UserMod[사용자 모듈]
+    OrderMod[주문 모듈]
+    PayMod[결제 모듈]
+  end
+  UserMod --> DB[공유 DB]
+  OrderMod --> DB
+  PayMod --> DB
+" />
 
 **장점**: 개발 단순, 디버깅 쉬움, 트랜잭션 관리 간단
 **단점**: 규모가 커지면 빌드/배포 느림, 한 모듈 장애가 전체 영향, 기술 스택 변경 어려움
@@ -196,16 +194,19 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 기능 단위로 독립된 서비스로 분리하여 각각 배포, 확장, 관리한다.
 
-```
-[마이크로서비스]
-┌─────────┐   ┌─────────┐   ┌─────────┐
-│ 사용자   │   │ 주문    │   │ 결제    │
-│ 서비스   │◄─►│ 서비스  │◄─►│ 서비스  │
-│ (Python) │   │ (Java)  │   │ (Go)    │
-│ [DB1]    │   │ [DB2]   │   │ [DB3]   │
-└─────────┘   └─────────┘   └─────────┘
-  각각 독립된 프로세스, 독립된 DB, 독립된 기술 스택
-```
+<Mermaid chart="
+graph LR
+  subgraph UserSvc[&quot;사용자 서비스\nPython&quot;]
+    DB1[(DB1)]
+  end
+  subgraph OrderSvc[&quot;주문 서비스\nJava&quot;]
+    DB2[(DB2)]
+  end
+  subgraph PaySvc[&quot;결제 서비스\nGo&quot;]
+    DB3[(DB3)]
+  end
+  UserSvc <--> OrderSvc <--> PaySvc
+" />
 
 **장점**: 독립 배포, 독립 확장, 장애 격리, 팀별 자율성
 **단점**: 운영 복잡성, 분산 트랜잭션, 네트워크 지연, 디버깅 어려움
@@ -216,31 +217,26 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 마이크로서비스 환경에서 서비스 인스턴스의 위치(IP, 포트)를 동적으로 찾는 메커니즘이다. 서비스가 수시로 생성/삭제되는 클라우드 환경에서 필수적이다.
 
-```
-[클라이언트 사이드 디스커버리]
-                  ┌────────────────┐
-                  │  Service       │
-                  │  Registry      │
-                  │  (Consul/etcd) │
-                  └───────┬────────┘
-                    ②조회  │  ①등록
-        ┌─────────────────┼─────────────────┐
-        │                 │                 │
-   ┌────▼────┐      ┌────▼────┐      ┌────▼────┐
-   │ 주문    │      │ 주문    │      │ 주문    │
-   │서비스 A │      │서비스 B │      │서비스 C │
-   │:8001   │      │:8002   │      │:8003   │
-   └─────────┘      └─────────┘      └─────────┘
+<Mermaid chart="
+graph TD
+  subgraph ClientSide[&quot;클라이언트 사이드 디스커버리&quot;]
+    SR1[&quot;Service Registry\nConsul / etcd&quot;]
+    SA[&quot;주문 서비스 A\n:8001&quot;] -->|①등록| SR1
+    SB[&quot;주문 서비스 B\n:8002&quot;] -->|①등록| SR1
+    SC[&quot;주문 서비스 C\n:8003&quot;] -->|①등록| SR1
+    Client1[클라이언트] -->|②조회| SR1
+    Client1 -->|직접 호출| SA
+  end
+" />
 
-클라이언트가 Registry에서 서비스 목록을 조회한 후 직접 호출
-
-[서버 사이드 디스커버리]
-클라이언트 ──► Load Balancer ──► 서비스 인스턴스
-                    │
-              Service Registry
-  로드 밸런서가 Registry를 조회하여 라우팅
-  (AWS ELB, Kubernetes Service 등)
-```
+<Mermaid chart="
+graph LR
+  subgraph ServerSide[&quot;서버 사이드 디스커버리&quot;]
+    Client2[클라이언트] --> LB[Load Balancer]
+    LB --> Instance[서비스 인스턴스]
+    SR2[&quot;Service Registry&quot;] -.->|조회| LB
+  end
+" />
 
 ---
 
@@ -248,23 +244,13 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 마이크로서비스 앞단에서 모든 요청을 받아 적절한 서비스로 라우팅하는 진입점이다.
 
-```
-                    ┌──────────────────┐
-클라이언트 ────────►│  API Gateway     │
-  (웹/앱)          │                  │
-                    │ - 인증/인가       │
-                    │ - 라우팅          │
-                    │ - 속도 제한       │
-                    │ - 로깅            │
-                    │ - 응답 캐싱       │
-                    │ - 응답 집계       │
-                    └───┬──────┬───────┘
-                        │      │
-              ┌─────────▼┐  ┌──▼────────┐
-              │ 사용자    │  │  주문     │  ...
-              │ 서비스    │  │  서비스   │
-              └──────────┘  └──────────┘
-```
+<Mermaid chart="
+graph LR
+  Client[&quot;클라이언트\n웹/앱&quot;] --> GW[&quot;API Gateway\n인증/인가 | 라우팅\n속도 제한 | 로깅\n응답 캐싱 | 응답 집계&quot;]
+  GW --> UserSvc[사용자 서비스]
+  GW --> OrderSvc[주문 서비스]
+  GW --> Etc[...]
+" />
 
 **대표 도구**: Kong, AWS API Gateway, Netflix Zuul, Nginx
 
@@ -283,18 +269,17 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 > **사가(Saga)**: 여러 로컬 트랜잭션의 연쇄로, 하나가 실패하면 보상 트랜잭션(compensating transaction)을 실행하여 이전 단계를 되돌린다.
 
-```
-[주문 사가 — 성공 시나리오]
-① 주문 생성 ──► ② 재고 차감 ──► ③ 결제 처리 ──► ④ 배송 요청
-   (주문DB)       (재고DB)        (결제DB)        (배송DB)
-
-[주문 사가 — 결제 실패 시나리오]
-① 주문 생성 ──► ② 재고 차감 ──► ③ 결제 실패! ──X
-   (주문DB)       (재고DB)        (결제DB)
-       ◄──────────── ◄──────────
-④ 재고 복구      ⑤ 주문 취소
-  (보상 트랜잭션)   (보상 트랜잭션)
-```
+<Mermaid chart="
+graph LR
+  subgraph Success[&quot;성공 시나리오&quot;]
+    S1[&quot;① 주문 생성\n주문DB&quot;] --> S2[&quot;② 재고 차감\n재고DB&quot;] --> S3[&quot;③ 결제 처리\n결제DB&quot;] --> S4[&quot;④ 배송 요청\n배송DB&quot;]
+  end
+  subgraph Failure[&quot;결제 실패 시나리오&quot;]
+    F1[&quot;① 주문 생성\n주문DB&quot;] --> F2[&quot;② 재고 차감\n재고DB&quot;] --> F3[&quot;③ 결제 실패!\n결제DB&quot;] -->|X| Stop((중단))
+    F3 -.->|보상| F2R[&quot;④ 재고 복구&quot;]
+    F2R -.->|보상| F1R[&quot;⑤ 주문 취소&quot;]
+  end
+" />
 
 #### 사가 구현 방식
 
@@ -302,16 +287,16 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 각 서비스가 이벤트를 발행하고, 다음 서비스가 이를 구독하여 처리한다. 중앙 관리자가 없다.
 
-```
-주문 서비스                  재고 서비스                결제 서비스
-    │                          │                        │
-    ├── "주문생성" 이벤트 ────►│                        │
-    │                          ├── "재고차감" 이벤트 ──►│
-    │                          │                        ├── "결제완료" 이벤트
-    │                          │                        │
-    ◄──────────────────────────┼────────────────────────┘
-    주문 확정
-```
+<Mermaid chart="
+sequenceDiagram
+    participant Order as 주문 서비스
+    participant Stock as 재고 서비스
+    participant Pay as 결제 서비스
+    Order->>Stock: 주문생성 이벤트
+    Stock->>Pay: 재고차감 이벤트
+    Pay-->>Order: 결제완료 이벤트
+    Note over Order: 주문 확정
+" />
 
 장점: 단순, 느슨한 결합
 단점: 흐름 파악 어려움, 순환 의존성 위험
@@ -320,372 +305,17 @@ Producer ──► Exchange ──라우팅──► Queue1 ──► Consumer A
 
 하나의 오케스트레이터가 전체 흐름을 관리한다.
 
-```
-                ┌──────────────┐
-                │ 사가          │
-                │ 오케스트레이터 │
-                └──────┬───────┘
-                       │
-       ┌───────────────┼───────────────┐
-       ▼               ▼               ▼
-  ┌─────────┐    ┌─────────┐    ┌─────────┐
-  │ 주문    │    │ 재고    │    │ 결제    │
-  │ 서비스  │    │ 서비스  │    │ 서비스  │
-  └─────────┘    └─────────┘    └─────────┘
-```
+<Mermaid chart="
+graph TD
+  Orch[사가 오케스트레이터] --> OrderSvc[주문 서비스]
+  Orch --> StockSvc[재고 서비스]
+  Orch --> PaySvc[결제 서비스]
+" />
 
 장점: 흐름이 명확, 복잡한 로직 관리 용이
 단점: 오케스트레이터가 단일 장애점이 될 수 있음
 
 ---
-
-## 코드 예시
-
-### 메시지 큐 시뮬레이션 (Point-to-Point & Pub/Sub)
-
-```python
-import threading
-import time
-import queue
-from collections import defaultdict
-from typing import Callable, List
-
-# === 1. Point-to-Point 큐 ===
-
-class PointToPointQueue:
-    """
-    Point-to-Point 메시지 큐.
-    하나의 메시지는 정확히 하나의 컨슈머만 처리한다.
-    내부적으로 Python의 thread-safe queue.Queue를 사용한다.
-    """
-
-    def __init__(self, name: str):
-        self.name = name
-        self._queue = queue.Queue()
-
-    def send(self, message: str):
-        """프로듀서가 메시지를 큐에 넣는다"""
-        self._queue.put(message)
-        print(f"[P2P:{self.name}] 전송: '{message}'")
-
-    def receive(self, consumer_id: str, timeout: float = 1.0) -> str:
-        """컨슈머가 메시지를 큐에서 가져간다 (블로킹)"""
-        try:
-            message = self._queue.get(timeout=timeout)
-            print(f"[P2P:{self.name}] 컨슈머 {consumer_id} 수신: '{message}'")
-            return message
-        except queue.Empty:
-            return None
-
-
-# === 2. Pub/Sub 시스템 ===
-
-class PubSubBroker:
-    """
-    Pub/Sub 메시지 브로커.
-    토픽에 발행된 메시지는 모든 구독자에게 전달된다.
-    """
-
-    def __init__(self):
-        # 토픽별 구독자 목록
-        self._subscribers: dict[str, List[Callable]] = defaultdict(list)
-
-    def subscribe(self, topic: str, callback: Callable, subscriber_name: str):
-        """토픽을 구독한다. 메시지가 오면 callback이 호출된다."""
-        self._subscribers[topic].append((subscriber_name, callback))
-        print(f"[PubSub] '{subscriber_name}'이 토픽 '{topic}' 구독")
-
-    def publish(self, topic: str, message: str):
-        """토픽에 메시지를 발행한다. 모든 구독자에게 전달된다."""
-        print(f"\n[PubSub] 토픽 '{topic}'에 발행: '{message}'")
-        subscribers = self._subscribers.get(topic, [])
-
-        if not subscribers:
-            print(f"  구독자 없음!")
-            return
-
-        for subscriber_name, callback in subscribers:
-            callback(message)
-            print(f"  → '{subscriber_name}' 수신 완료")
-
-
-# === 3. 사가 패턴 시뮬레이션 ===
-
-class SagaOrchestrator:
-    """
-    사가 오케스트레이터.
-    여러 단계(step)를 순서대로 실행하고,
-    실패 시 보상 트랜잭션을 역순으로 실행한다.
-    """
-
-    def __init__(self, name: str):
-        self.name = name
-        self.steps: list[dict] = []
-        self.completed_steps: list[dict] = []
-
-    def add_step(self, name: str, action: Callable, compensation: Callable):
-        """
-        사가에 단계를 추가한다.
-        action: 정방향 트랜잭션
-        compensation: 보상(롤백) 트랜잭션
-        """
-        self.steps.append({
-            "name": name,
-            "action": action,
-            "compensation": compensation
-        })
-
-    def execute(self) -> bool:
-        """사가를 실행한다. 실패 시 보상 트랜잭션을 실행한다."""
-        print(f"\n{'='*50}")
-        print(f"사가 '{self.name}' 실행 시작")
-        print(f"{'='*50}")
-
-        for step in self.steps:
-            print(f"\n[단계] {step['name']} 실행 중...")
-            try:
-                result = step["action"]()
-                if not result:
-                    raise Exception(f"{step['name']} 실패")
-
-                self.completed_steps.append(step)
-                print(f"  ✓ {step['name']} 성공")
-            except Exception as e:
-                print(f"  ✗ {step['name']} 실패: {e}")
-                self._compensate()
-                return False
-
-        print(f"\n사가 '{self.name}' 완료!")
-        return True
-
-    def _compensate(self):
-        """완료된 단계를 역순으로 보상한다."""
-        print(f"\n[보상] 롤백 시작 (완료된 {len(self.completed_steps)}단계)")
-
-        for step in reversed(self.completed_steps):
-            print(f"  [보상] {step['name']} 되돌리기...")
-            try:
-                step["compensation"]()
-                print(f"  ✓ {step['name']} 보상 완료")
-            except Exception as e:
-                print(f"  ✗ {step['name']} 보상 실패: {e} (수동 처리 필요!)")
-
-
-# === 시뮬레이션 실행 ===
-
-def demo_point_to_point():
-    """Point-to-Point 큐 시뮬레이션"""
-    print("=" * 50)
-    print("1. Point-to-Point 큐 시뮬레이션")
-    print("=" * 50)
-
-    q = PointToPointQueue("orders")
-
-    # 프로듀서: 메시지 3개 전송
-    q.send("주문#001: 노트북")
-    q.send("주문#002: 키보드")
-    q.send("주문#003: 마우스")
-
-    # 컨슈머 2개가 나눠서 처리
-    print("\n--- 컨슈머들이 메시지 가져감 ---")
-    q.receive("Worker-A")  # 주문#001
-    q.receive("Worker-B")  # 주문#002
-    q.receive("Worker-A")  # 주문#003
-    # 각 메시지는 한 컨슈머만 처리!
-
-
-def demo_pubsub():
-    """Pub/Sub 시뮬레이션"""
-    print("\n" + "=" * 50)
-    print("2. Pub/Sub 시뮬레이션")
-    print("=" * 50)
-
-    broker = PubSubBroker()
-
-    # 구독자 등록
-    notifications = []
-    analytics = []
-
-    broker.subscribe("order-events", lambda m: notifications.append(m), "알림서비스")
-    broker.subscribe("order-events", lambda m: analytics.append(m), "분석서비스")
-    broker.subscribe("order-events", lambda m: None, "로그서비스")
-
-    # 메시지 발행 → 모든 구독자에게 전달
-    broker.publish("order-events", "주문#001 생성됨")
-    broker.publish("order-events", "주문#001 결제완료")
-
-
-def demo_saga():
-    """사가 패턴 시뮬레이션"""
-    print("\n" + "=" * 50)
-    print("3. 사가 패턴 시뮬레이션")
-    print("=" * 50)
-
-    # 상태 저장소 (시뮬레이션용)
-    state = {"order": None, "inventory": 10, "payment": 0}
-
-    # --- 성공 시나리오 ---
-    saga = SagaOrchestrator("주문 처리 (성공)")
-
-    saga.add_step(
-        "주문 생성",
-        action=lambda: (state.update({"order": "CREATED"}), True)[1],
-        compensation=lambda: state.update({"order": "CANCELLED"})
-    )
-    saga.add_step(
-        "재고 차감",
-        action=lambda: (state.update({"inventory": state["inventory"] - 1}), True)[1],
-        compensation=lambda: state.update({"inventory": state["inventory"] + 1})
-    )
-    saga.add_step(
-        "결제 처리",
-        action=lambda: (state.update({"payment": 50000}), True)[1],
-        compensation=lambda: state.update({"payment": 0})
-    )
-
-    saga.execute()
-    print(f"최종 상태: {state}")
-
-    # --- 실패 시나리오 (결제 실패) ---
-    state2 = {"order": None, "inventory": 10, "payment": 0}
-    saga2 = SagaOrchestrator("주문 처리 (결제 실패)")
-
-    saga2.add_step(
-        "주문 생성",
-        action=lambda: (state2.update({"order": "CREATED"}), True)[1],
-        compensation=lambda: state2.update({"order": "CANCELLED"})
-    )
-    saga2.add_step(
-        "재고 차감",
-        action=lambda: (state2.update({"inventory": state2["inventory"] - 1}), True)[1],
-        compensation=lambda: state2.update({"inventory": state2["inventory"] + 1})
-    )
-    saga2.add_step(
-        "결제 처리",
-        action=lambda: False,  # 결제 실패!
-        compensation=lambda: None
-    )
-
-    saga2.execute()
-    print(f"최종 상태: {state2}")
-    # 보상 트랜잭션으로 재고가 복구되고 주문이 취소됨
-
-
-if __name__ == "__main__":
-    demo_point_to_point()
-    demo_pubsub()
-    demo_saga()
-```
-
-### Kafka 프로듀서/컨슈머 의사 코드
-
-```python
-"""
-실제 Kafka 사용 시의 코드 패턴 (kafka-python 라이브러리 기반).
-실행하려면 Kafka 클러스터가 필요하다.
-여기서는 패턴만 보여준다.
-"""
-
-# === Kafka 프로듀서 ===
-# from kafka import KafkaProducer
-# import json
-
-# producer = KafkaProducer(
-#     bootstrap_servers=['localhost:9092'],
-#     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-#     # acks='all'  → 모든 복제본이 쓰기를 확인해야 성공 (내구성 최대)
-#     # acks=1      → 리더만 확인 (기본값)
-#     # acks=0      → 확인 안 함 (가장 빠르지만 데이터 손실 가능)
-# )
-#
-# # 메시지 발행
-# producer.send(
-#     topic='order-events',
-#     key=b'order-001',        # 같은 키 → 같은 파티션 → 순서 보장
-#     value={'event': 'created', 'order_id': 'order-001', 'amount': 50000}
-# )
-# producer.flush()  # 버퍼 비우기
-
-# === Kafka 컨슈머 ===
-# from kafka import KafkaConsumer
-#
-# consumer = KafkaConsumer(
-#     'order-events',
-#     bootstrap_servers=['localhost:9092'],
-#     group_id='order-processor',     # 컨슈머 그룹
-#     auto_offset_reset='earliest',   # 처음부터 읽기
-#     value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-# )
-#
-# for message in consumer:
-#     print(f"파티션: {message.partition}")
-#     print(f"오프셋: {message.offset}")
-#     print(f"키:     {message.key}")
-#     print(f"값:     {message.value}")
-#     # 주문 처리 로직...
-
-
-# === 실행 가능한 인메모리 시뮬레이션 ===
-
-class SimpleKafkaSimulator:
-    """Kafka의 파티셔닝 동작을 인메모리로 시뮬레이션"""
-
-    def __init__(self, topic: str, num_partitions: int = 3):
-        self.topic = topic
-        self.partitions = {i: [] for i in range(num_partitions)}
-        self.num_partitions = num_partitions
-        self.consumer_offsets = {}  # (group, partition) → offset
-
-    def send(self, key: str, value: dict):
-        """키를 해싱하여 파티션을 결정하고 메시지 저장"""
-        partition_id = hash(key) % self.num_partitions
-        offset = len(self.partitions[partition_id])
-        self.partitions[partition_id].append({
-            "offset": offset,
-            "key": key,
-            "value": value
-        })
-        print(f"[Send] key='{key}' → partition={partition_id}, offset={offset}")
-
-    def consume(self, group_id: str, partition_id: int) -> list:
-        """특정 파티션에서 아직 안 읽은 메시지를 가져옴"""
-        offset_key = (group_id, partition_id)
-        current_offset = self.consumer_offsets.get(offset_key, 0)
-        messages = self.partitions[partition_id][current_offset:]
-        self.consumer_offsets[offset_key] = len(self.partitions[partition_id])
-        return messages
-
-    def show_partitions(self):
-        """파티션 상태 출력"""
-        print(f"\n[토픽: {self.topic}]")
-        for pid, messages in self.partitions.items():
-            print(f"  Partition {pid}: {len(messages)}개 메시지")
-            for msg in messages:
-                print(f"    [{msg['offset']}] {msg['key']}: {msg['value']}")
-
-
-# 시뮬레이션
-kafka = SimpleKafkaSimulator("order-events", num_partitions=3)
-
-# 같은 키 → 같은 파티션 (순서 보장)
-kafka.send("user-A", {"event": "order_created", "amount": 10000})
-kafka.send("user-B", {"event": "order_created", "amount": 20000})
-kafka.send("user-A", {"event": "payment_completed", "amount": 10000})
-kafka.send("user-C", {"event": "order_created", "amount": 30000})
-kafka.send("user-B", {"event": "payment_completed", "amount": 20000})
-
-kafka.show_partitions()
-
-# 컨슈머 그룹이 파티션에서 읽기
-print("\n[Consumer Group 'processors' 읽기]")
-for pid in range(3):
-    messages = kafka.consume("processors", pid)
-    if messages:
-        print(f"  Partition {pid}: {len(messages)}개 메시지 처리")
-```
-
----
-
 ## 정리
 
 | 개념 | 핵심 내용 | 사용 사례 |

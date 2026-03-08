@@ -11,23 +11,13 @@ order: 04
 
 UI 아키텍처 패턴은 **프레젠테이션 로직과 비즈니스 로직을 분리**하여 유지보수성과 테스트 용이성을 확보하는 설계 방법이다. 대표적으로 MVC, MVP, MVVM이 있다.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              UI 아키텍처 패턴 진화                          │
-│                                                          │
-│  MVC (1979)                                              │
-│    │  Controller가 모든 흐름 제어                          │
-│    │  View가 Model을 직접 참조 가능                        │
-│    ▼                                                     │
-│  MVP (1990s)                                             │
-│    │  Presenter가 View와 Model 사이를 중재                 │
-│    │  View는 수동적(Passive View)                          │
-│    ▼                                                     │
-│  MVVM (2005)                                             │
-│       ViewModel이 데이터 바인딩으로 View와 연결             │
-│       선언적 UI 프레임워크에 최적화                         │
-└──────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph TD
+    MVC[&quot;MVC (1979)<br/>Controller가 모든 흐름 제어<br/>View가 Model을 직접 참조 가능&quot;]
+    MVP[&quot;MVP (1990s)<br/>Presenter가 View와 Model 사이를 중재<br/>View는 수동적 Passive View&quot;]
+    MVVM[&quot;MVVM (2005)<br/>ViewModel이 데이터 바인딩으로 View와 연결<br/>선언적 UI 프레임워크에 최적화&quot;]
+    MVC --> MVP --> MVVM
+" />
 
 ---
 
@@ -35,30 +25,13 @@ UI 아키텍처 패턴은 **프레젠테이션 로직과 비즈니스 로직을 
 
 > **사용자 입력(Controller), 데이터(Model), 화면(View)을 분리한다.**
 
-```
-┌─────────────────────────────────────────────────────┐
-│              MVC 흐름                                │
-│                                                     │
-│           사용자 입력                                 │
-│               │                                     │
-│               ▼                                     │
-│         ┌────────────┐                              │
-│         │ Controller │  ← 입력 해석, Model 업데이트   │
-│         └─────┬──────┘                              │
-│               │                                     │
-│          ┌────▼────┐                                │
-│          │  Model  │  ← 데이터 + 비즈니스 로직       │
-│          └────┬────┘                                │
-│               │ 상태 변경 통보                        │
-│               ▼                                     │
-│          ┌─────────┐                                │
-│          │  View   │  ← Model 데이터를 화면에 표시   │
-│          └─────────┘                                │
-│               │                                     │
-│               ▼                                     │
-│           화면 출력                                   │
-└─────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph TD
+    Input[&quot;사용자 입력&quot;] --> Controller
+    Controller[&quot;Controller<br/>입력 해석, Model 업데이트&quot;] --> Model
+    Model[&quot;Model<br/>데이터 + 비즈니스 로직&quot;] -->|상태 변경 통보| View
+    View[&quot;View<br/>Model 데이터를 화면에 표시&quot;] --> Output[&quot;화면 출력&quot;]
+" />
 
 ```python
 # === Django 스타일 MVC (MTV) ===
@@ -146,22 +119,11 @@ class ArticleRepository:
 
 > **Presenter가 View와 Model 사이를 완전히 중재한다. View는 수동적이다.**
 
-```
-┌─────────────────────────────────────────────────────┐
-│              MVP 흐름                                │
-│                                                     │
-│  ┌────────┐     ┌───────────┐     ┌───────┐        │
-│  │  View  │◀───▶│ Presenter │◀───▶│ Model │        │
-│  │(수동적)│     │ (중재자)  │     │       │        │
-│  └────────┘     └───────────┘     └───────┘        │
-│                                                     │
-│  1. View가 사용자 입력을 Presenter에 전달             │
-│  2. Presenter가 Model에서 데이터 조회/수정            │
-│  3. Presenter가 View를 직접 업데이트                  │
-│                                                     │
-│  View는 인터페이스로 추상화 → 테스트 시 Mock 교체     │
-└─────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph LR
+    View[&quot;View<br/>(수동적)&quot;] <-->|1. 사용자 입력 전달<br/>3. View 직접 업데이트| Presenter[&quot;Presenter<br/>(중재자)&quot;]
+    Presenter <-->|2. 데이터 조회/수정| Model[&quot;Model&quot;]
+" />
 
 ```python
 from abc import ABC, abstractmethod
@@ -248,20 +210,11 @@ assert "로그인 실패" in view.errors[-1]
 
 > **ViewModel이 데이터 바인딩을 통해 View와 자동으로 동기화된다.**
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              MVVM 흐름                                    │
-│                                                          │
-│  ┌────────┐   데이터 바인딩   ┌───────────┐   ┌───────┐ │
-│  │  View  │◀═══════════════▶│ ViewModel │◀─▶│ Model │  │
-│  │(선언적)│   양방향 동기화   │(상태+로직)│   │       │  │
-│  └────────┘                  └───────────┘   └───────┘  │
-│                                                          │
-│  View는 ViewModel의 상태를 선언적으로 바인딩               │
-│  ViewModel 상태 변경 → View 자동 업데이트                  │
-│  View 입력 → ViewModel 자동 반영                          │
-└──────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph LR
+    View[&quot;View<br/>(선언적)&quot;] <-->|데이터 바인딩<br/>양방향 동기화| ViewModel[&quot;ViewModel<br/>(상태+로직)&quot;]
+    ViewModel <--> Model[&quot;Model&quot;]
+" />
 
 ```typescript
 // === React에서의 MVVM 패턴 ===
@@ -366,34 +319,14 @@ function TodoView() {
 
 가장 전통적이고 널리 사용되는 아키텍처 패턴이다.
 
-```
-┌──────────────────────────────────────────────────────┐
-│              계층형 아키텍처                            │
-│                                                      │
-│  ┌──────────────────────────────────┐                │
-│  │        Presentation Layer        │  ← UI, API     │
-│  │   (Controller, View, REST API)   │                │
-│  └──────────────┬───────────────────┘                │
-│                 │ 호출                                │
-│  ┌──────────────▼───────────────────┐                │
-│  │         Business Layer           │  ← 핵심 로직   │
-│  │   (Service, Domain Logic)        │                │
-│  └──────────────┬───────────────────┘                │
-│                 │ 호출                                │
-│  ┌──────────────▼───────────────────┐                │
-│  │        Persistence Layer         │  ← 데이터 접근 │
-│  │   (Repository, DAO, ORM)         │                │
-│  └──────────────┬───────────────────┘                │
-│                 │                                    │
-│  ┌──────────────▼───────────────────┐                │
-│  │         Database Layer           │  ← 저장소      │
-│  │   (PostgreSQL, MongoDB, Redis)   │                │
-│  └──────────────────────────────────┘                │
-│                                                      │
-│  규칙: 각 계층은 바로 아래 계층에만 의존한다             │
-│  Presentation → Business → Persistence → Database    │
-└──────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph TD
+    Presentation[&quot;Presentation Layer<br/>Controller, View, REST API&quot;]
+    Business[&quot;Business Layer<br/>Service, Domain Logic&quot;]
+    Persistence[&quot;Persistence Layer<br/>Repository, DAO, ORM&quot;]
+    Database[&quot;Database Layer<br/>PostgreSQL, MongoDB, Redis&quot;]
+    Presentation -->|호출| Business -->|호출| Persistence --> Database
+" />
 
 ```python
 # === 계층형 아키텍처 예시 ===
@@ -458,26 +391,13 @@ class UserController:
 
 > **컴포넌트 간 직접 호출 대신 이벤트를 통해 비동기적으로 통신한다.**
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              이벤트 기반 아키텍처                           │
-│                                                          │
-│  ┌──────────┐   이벤트 발행   ┌──────────────┐           │
-│  │ Producer │──────────────▶│ Event Bus /  │           │
-│  │ (주문)   │               │ Message Queue│           │
-│  └──────────┘               └──────┬───────┘           │
-│                                    │ 이벤트 전달         │
-│                        ┌───────────┼───────────┐        │
-│                        │           │           │        │
-│                   ┌────▼───┐  ┌───▼────┐ ┌───▼────┐   │
-│                   │결제    │  │재고    │ │알림    │    │
-│                   │서비스  │  │서비스  │ │서비스  │    │
-│                   └────────┘  └────────┘ └────────┘    │
-│                                                          │
-│  느슨한 결합: 생산자는 소비자를 모른다                      │
-│  확장 용이: 새 소비자 추가가 기존 코드에 영향 없음           │
-└──────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph LR
+    Producer[&quot;Producer<br/>(주문)&quot;] -->|이벤트 발행| EventBus[&quot;Event Bus /<br/>Message Queue&quot;]
+    EventBus -->|이벤트 전달| Payment[&quot;결제 서비스&quot;]
+    EventBus -->|이벤트 전달| Inventory[&quot;재고 서비스&quot;]
+    EventBus -->|이벤트 전달| Notification[&quot;알림 서비스&quot;]
+" />
 
 #### 이벤트 소싱 (Event Sourcing)
 
@@ -503,29 +423,14 @@ class UserController:
 
 #### CQRS (Command Query Responsibility Segregation)
 
-```
-┌────────────────────────────────────────────────────────┐
-│              CQRS 패턴                                  │
-│                                                        │
-│           ┌─────────────┐                              │
-│           │   Client    │                              │
-│           └──────┬──────┘                              │
-│            ┌─────┴─────┐                               │
-│            │           │                               │
-│       ┌────▼───┐  ┌───▼────┐                          │
-│       │Command │  │ Query  │                           │
-│       │(쓰기)  │  │(읽기)  │                           │
-│       └────┬───┘  └───┬────┘                           │
-│            │          │                                │
-│       ┌────▼───┐  ┌───▼────┐                          │
-│       │ Write  │  │ Read   │  ← 읽기/쓰기 DB 분리      │
-│       │  DB    │─▶│  DB    │  (이벤트로 동기화)         │
-│       └────────┘  └────────┘                           │
-│                                                        │
-│  쓰기: 정규화된 DB (정합성 중시)                         │
-│  읽기: 비정규화된 DB (성능 중시)                         │
-└────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph TD
+    Client[&quot;Client&quot;] --> Command[&quot;Command<br/>(쓰기)&quot;]
+    Client --> Query[&quot;Query<br/>(읽기)&quot;]
+    Command --> WriteDB[&quot;Write DB<br/>정규화된 DB, 정합성 중시&quot;]
+    Query --> ReadDB[&quot;Read DB<br/>비정규화된 DB, 성능 중시&quot;]
+    WriteDB -->|이벤트로 동기화| ReadDB
+" />
 
 ---
 
@@ -535,35 +440,31 @@ class UserController:
 
 알리스테어 콕번(Alistair Cockburn)이 제안한 패턴으로, 도메인 로직이 프레임워크, DB, 외부 서비스에 의존하지 않도록 설계한다.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              헥사고날 아키텍처                              │
-│                                                          │
-│               [REST API]   [CLI]   [gRPC]                │
-│                  │          │        │                    │
-│                  ▼          ▼        ▼                    │
-│             ┌────────── Inbound Ports ──────────┐        │
-│             │  (입력 인터페이스: UseCase)         │        │
-│             │                                   │        │
-│             │    ┌──────────────────────┐        │        │
-│             │    │   Domain Core       │        │        │
-│             │    │                     │        │        │
-│             │    │  Entity, Value Obj  │        │        │
-│             │    │  Domain Service     │        │        │
-│             │    │  Business Rules     │        │        │
-│             │    └──────────────────────┘        │        │
-│             │                                   │        │
-│             └────────── Outbound Ports ─────────┘        │
-│                  │           │          │                 │
-│                  ▼           ▼          ▼                 │
-│             [PostgreSQL] [Redis]  [External API]         │
-│              Adapter      Adapter    Adapter             │
-│                                                          │
-│  Port = 인터페이스 (추상)                                  │
-│  Adapter = 구현체 (구체)                                   │
-│  Domain Core는 Port에만 의존 → 외부 교체 자유               │
-└──────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph TD
+    subgraph Inbound[&quot;Inbound Adapters&quot;]
+        REST[&quot;REST API&quot;]
+        CLI[&quot;CLI&quot;]
+        GRPC[&quot;gRPC&quot;]
+    end
+    subgraph Core[&quot;Application Core&quot;]
+        InPort[&quot;Inbound Ports<br/>(UseCase 인터페이스)&quot;]
+        Domain[&quot;Domain Core<br/>Entity, Value Object<br/>Domain Service<br/>Business Rules&quot;]
+        OutPort[&quot;Outbound Ports<br/>(Repository 인터페이스)&quot;]
+        InPort --> Domain --> OutPort
+    end
+    subgraph Outbound[&quot;Outbound Adapters&quot;]
+        PG[&quot;PostgreSQL Adapter&quot;]
+        Redis[&quot;Redis Adapter&quot;]
+        ExtAPI[&quot;External API Adapter&quot;]
+    end
+    REST --> InPort
+    CLI --> InPort
+    GRPC --> InPort
+    OutPort --> PG
+    OutPort --> Redis
+    OutPort --> ExtAPI
+" />
 
 ```python
 from abc import ABC, abstractmethod
@@ -636,28 +537,18 @@ test_service = OrderService(InMemoryOrderRepository())
 
 에릭 에반스(Eric Evans)가 2003년에 제시한 설계 철학이다.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              DDD 핵심 개념                                 │
-│                                                          │
-│  ┌─────────────────────────────────────────────┐         │
-│  │           Bounded Context                    │         │
-│  │  "주문" 컨텍스트          "배송" 컨텍스트       │         │
-│  │  ┌──────────────┐       ┌──────────────┐    │         │
-│  │  │ Order        │       │ Shipment     │    │         │
-│  │  │ - items      │       │ - trackingNo │    │         │
-│  │  │ - total      │       │ - address    │    │         │
-│  │  │ - customer   │       │ - status     │    │         │
-│  │  └──────────────┘       └──────────────┘    │         │
-│  │                                             │         │
-│  │  같은 "고객"이라도 컨텍스트마다 의미가 다르다    │         │
-│  │  주문: 구매자 정보    배송: 수령인 정보          │         │
-│  └─────────────────────────────────────────────┘         │
-│                                                          │
-│  유비쿼터스 언어: 개발자와 도메인 전문가가 같은 용어 사용    │
-│  "Order", "주문 취소", "재고 확인" 등                      │
-└──────────────────────────────────────────────────────────┘
-```
+<Mermaid chart="
+graph TD
+    subgraph BC[&quot;Bounded Context&quot;]
+        subgraph OrderCtx[&quot;주문 컨텍스트&quot;]
+            Order[&quot;Order<br/>- items<br/>- total<br/>- customer&quot;]
+        end
+        subgraph ShipCtx[&quot;배송 컨텍스트&quot;]
+            Shipment[&quot;Shipment<br/>- trackingNo<br/>- address<br/>- status&quot;]
+        end
+    end
+    Note[&quot;같은 고객이라도 컨텍스트마다 의미가 다르다<br/>주문: 구매자 정보 / 배송: 수령인 정보&quot;]
+" />
 
 #### DDD 빌딩 블록
 

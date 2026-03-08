@@ -176,40 +176,6 @@ Issue와 PR 연결:
 
   이 과정을 반복
 ```
-
-
-## 코드 예시
-
-### Fork → 기여 전체 흐름
-
-```bash
-# 1. Fork (GitHub 웹에서 버튼 클릭)
-
-# 2. Fork한 저장소를 로컬에 클론
-git clone https://github.com/me/project.git
-cd project
-
-# 3. 원본 저장소를 upstream으로 등록
-git remote add upstream https://github.com/original/project.git
-
-# 4. 최신 변경 동기화
-git fetch upstream
-git merge upstream/main
-
-# 5. 브랜치 만들고 작업
-git switch -c fix/typo-in-readme
-
-# ... 수정 ...
-git add README.md
-git commit -m "docs: fix typo in installation guide"
-
-# 6. 내 fork에 push
-git push -u origin fix/typo-in-readme
-
-# 7. GitHub에서 PR 생성 (original/project ← me/project)
-```
-
-
 ## 연습 문제
 
 ### Q1. Fork와 Clone은 언제 각각 사용하는가?
