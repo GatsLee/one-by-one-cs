@@ -1,0 +1,319 @@
+---
+title: "자주 발생하는 버그 패턴 (Common Bug Patterns)"
+topic: "10-debugging"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. Off-by-One 에러
+
+가장 흔한 버그. 배열 인덱스, 반복문 범위, 경계 조건에서 **1 차이**로 발생한다.
+
+```python
+# ✗ 버그: 마지막 요소를 건너뜀
+items = ["a", "b", "c", "d"]
+for i in range(len(items) - 1):  # 0, 1, 2 — "d"가 빠짐!
+    print(items[i])
+
+# ✓ 수정
+for i in range(len(items)):      # 0, 1, 2, 3
+    print(items[i])
+```
+
+```javascript
+// ✗ 버그: 배열 범위 초과
+const arr = [10, 20, 30];
+for (let i = 0; i <= arr.length; i++) {  // i=3일 때 undefined
+  console.log(arr[i]);
+}
+
+// ✓ 수정: < (미만)을 써야 함
+for (let i = 0; i < arr.length; i++) {
+  console.log(arr[i]);
+}
+```
+
+```
+Off-by-One 체크리스트:
+
+  □ 반복문: < vs <= 확인
+  □ 배열: 인덱스가 0부터 시작함을 기억
+  □ 문자열 슬라이싱: 끝 인덱스가 포함인지 미포함인지
+  □ 페이지네이션: 0-based vs 1-based
+  □ 날짜: "3일 후"가 오늘 포함인지 아닌지
+```
+
+### 2. Null / Undefined 참조
+
+존재하지 않는 값에 접근하는 버그. 모든 언어에서 가장 많은 런타임 에러의 원인이다.
+
+```javascript
+// ✗ 버그: API 응답이 비어 있을 때
+const user = await fetchUser(id);
+const name = user.name;  // user가 null이면 TypeError
+
+// ✓ 방어 1: 옵셔널 체이닝
+const name = user?.name ?? "Unknown";
+
+// ✓ 방어 2: 가드 절
+if (!user) {
+  console.error("User not found:", id);
+  return;
+}
+const name = user.name;
+```
+
+```python
+# ✗ 버그: None에 메서드 호출
+result = find_item(query)
+length = len(result)  # result가 None이면 TypeError
+
+# ✓ 수정
+result = find_item(query)
+if result is None:
+    print("결과 없음")
+    length = 0
+else:
+    length = len(result)
+```
+
+```
+Null 버그가 자주 발생하는 곳:
+
+  1. API 응답  →  서버가 null/빈 배열을 반환할 수 있음
+  2. DB 조회   →  결과가 없을 수 있음
+  3. DOM 접근  →  요소가 아직 렌더링 안 됐을 수 있음
+  4. 객체 중첩  →  user.address.city (address가 없을 수 있음)
+  5. 초기 상태  →  React state가 null로 시작할 수 있음
+```
+
+### 3. 비동기 타이밍 문제
+
+비동기 코드에서 **실행 순서가 예상과 다른** 문제.
+
+```javascript
+// ✗ 버그: 데이터가 아직 안 왔는데 사용
+let data;
+fetch("/api/users").then(res => res.json()).then(d => { data = d; });
+console.log(data);  // undefined — fetch가 끝나기 전에 실행됨
+
+// ✓ 수정: async/await 사용
+const response = await fetch("/api/users");
+const data = await response.json();
+console.log(data);  // 정상
+```
+
+```python
+# ✗ 비동기 함수를 await 없이 호출
+async def get_data():
+    return await fetch_from_db()
+
+result = get_data()        # coroutine 객체가 반환됨 (데이터가 아님!)
+result = await get_data()  # ✓ 실제 데이터
+```
+
+```
+비동기 타이밍 버그 징후:
+
+  - 값이 undefined/None인데 "있어야 하는데..."
+  - console.log 순서가 코드 순서와 다름
+  - "가끔" 되고 "가끔" 안 됨 (race condition)
+  - Promise를 반환하는 함수에 await 빠짐
+```
+
+### 4. 변수 스코프 문제
+
+변수가 의도한 범위 밖에서 접근되거나, 같은 이름의 다른 변수와 혼동되는 버그.
+
+```javascript
+// ✗ 버그: var는 함수 스코프 (블록 스코프 아님)
+for (var i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 100);
+}
+// 출력: 3, 3, 3 (모두 같은 i를 참조)
+
+// ✓ 수정: let은 블록 스코프
+for (let i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 100);
+}
+// 출력: 0, 1, 2
+```
+
+```python
+# ✗ 버그: 함수 기본값이 공유됨
+def add_item(item, items=[]):  # 기본값 []가 모든 호출에서 공유!
+    items.append(item)
+    return items
+
+print(add_item("a"))  # ["a"]
+print(add_item("b"))  # ["a", "b"] — 이전 호출의 결과가 남아 있음!
+
+# ✓ 수정: None을 기본값으로
+def add_item(item, items=None):
+    if items is None:
+        items = []
+    items.append(item)
+    return items
+```
+
+### 5. 상태 변이(Mutation) 문제
+
+객체나 배열을 복사하지 않고 직접 수정하면 예상치 못한 곳에서 값이 바뀐다.
+
+```javascript
+// ✗ 버그: 원본 배열 변이
+const original = [3, 1, 2];
+const sorted = original.sort();  // sort()는 원본을 변경!
+console.log(original);  // [1, 2, 3] — 원본이 바뀌었음
+
+// ✓ 수정: 복사 후 정렬
+const sorted = [...original].sort();
+// 또는
+const sorted = original.toSorted();  // ES2023
+```
+
+```python
+# ✗ 버그: 딕셔너리 공유 참조
+defaults = {"color": "red", "size": 10}
+item1 = defaults
+item1["color"] = "blue"
+print(defaults["color"])  # "blue" — defaults도 바뀜!
+
+# ✓ 수정: 복사
+item1 = defaults.copy()
+item1["color"] = "blue"
+print(defaults["color"])  # "red" — 원본 유지
+```
+
+### 6. 인코딩 문제
+
+한국어를 다루는 프로그램에서 자주 발생하는 문자 인코딩 문제.
+
+```python
+# ✗ 에러: 파일 인코딩 불일치
+with open("data.csv") as f:          # 기본 인코딩 (시스템 의존)
+    content = f.read()               # UnicodeDecodeError 가능
+
+# ✓ 수정: 인코딩 명시
+with open("data.csv", encoding="utf-8") as f:
+    content = f.read()
+```
+
+```
+인코딩 문제 체크리스트:
+
+  □ 파일 읽기/쓰기 시 encoding="utf-8" 명시
+  □ API 응답의 Content-Type charset 확인
+  □ DB 연결 시 charset 설정 확인
+  □ 한국어가 깨지면 → cp949(Windows) vs utf-8 의심
+```
+
+### 7. 환경 차이 ("제 컴퓨터에서는 돼요")
+
+```
+흔한 환경 차이:
+
+  ┌────────────────────┬────────────────────────────────┐
+  │ 차이 원인           │ 해결 방법                        │
+  ├────────────────────┼────────────────────────────────┤
+  │ 런타임 버전 다름    │ .nvmrc, pyproject.toml로 고정    │
+  │ 환경 변수 다름      │ .env.example 공유               │
+  │ OS 차이 (경로 등)   │ path.join() 사용, / vs \\ 주의  │
+  │ 의존성 버전 다름    │ lock 파일(package-lock.json) 커밋│
+  │ DB 스키마 다름      │ 마이그레이션 파일 공유            │
+  └────────────────────┴────────────────────────────────┘
+```
+
+
+## 코드 예시
+
+### 방어적 프로그래밍 패턴 모음
+
+```python
+# 1. 안전한 딕셔너리 접근
+value = data.get("key", "기본값")
+
+# 2. 안전한 리스트 접근
+first = items[0] if items else None
+
+# 3. 안전한 나눗셈
+result = a / b if b != 0 else 0
+
+# 4. 안전한 타입 변환
+try:
+    num = int(user_input)
+except ValueError:
+    num = 0
+```
+
+```javascript
+// 1. 옵셔널 체이닝 + Nullish 병합
+const city = user?.address?.city ?? "미설정";
+
+// 2. 배열 기본값
+const items = response.data ?? [];
+const first = items[0] ?? null;
+
+// 3. 안전한 JSON 파싱
+let parsed;
+try {
+  parsed = JSON.parse(rawString);
+} catch {
+  parsed = {};
+}
+```
+
+
+## 연습 문제
+
+### Q1. 다음 코드의 버그를 찾아라.
+
+```javascript
+const items = [1, 2, 3, 4, 5];
+for (let i = 1; i <= items.length; i++) {
+  console.log(items[i]);
+}
+```
+
+<details>
+<summary>정답 보기</summary>
+Off-by-one 에러 2개. (1) i가 1부터 시작해서 첫 요소(items[0])를 건너뜀. (2) i <= items.length에서 i=5일 때 items[5]는 undefined. 수정: `for (let i = 0; i < items.length; i++)`
+</details>
+
+### Q2. React에서 `TypeError: Cannot read properties of undefined (reading 'map')`이 자주 발생하는 이유는?
+
+<details>
+<summary>정답 보기</summary>
+초기 state가 undefined/null인데 render에서 바로 .map()을 호출하기 때문. API 데이터를 가져오기 전에 렌더링이 먼저 실행된다. 해결: 초기값을 빈 배열([])로 설정하거나, `data?.map()` 옵셔널 체이닝 사용.
+</details>
+
+### Q3. 다음 Python 코드에서 왜 두 번째 호출에 이전 값이 남아 있나?
+
+```python
+def append_to(element, to=[]):
+    to.append(element)
+    return to
+```
+
+<details>
+<summary>정답 보기</summary>
+Python의 가변 기본 인자(mutable default argument) 문제. 기본값 `[]`가 함수 정의 시 한 번만 생성되고 모든 호출에서 공유된다. 수정: `def append_to(element, to=None): if to is None: to = []`
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| Off-by-one 에러란? | 배열 인덱스나 반복 범위에서 1만큼 차이나는 버그 (< vs <=, 0-based vs 1-based) |
+| null/undefined 참조 에러를 방지하는 JS 문법은? | 옵셔널 체이닝(?.)과 Nullish 병합(??) — `user?.name ?? "기본"` |
+| 비동기 타이밍 버그의 대표적 징후는? | 값이 undefined인데 "있어야 하는데", console.log 순서가 코드와 다름 |
+| JavaScript에서 var vs let의 스코프 차이는? | var는 함수 스코프, let은 블록 스코프 |
+| Python 가변 기본 인자 문제란? | `def f(x=[]):`처럼 가변 객체를 기본값으로 쓰면 모든 호출에서 공유됨 |
+| sort()가 원본을 변경하는 언어는? | JavaScript의 Array.sort()는 원본 변경. 복사 후 정렬하려면 [...arr].sort() |
+| "제 컴에서는 되는데요"의 주요 원인은? | 런타임 버전, 환경 변수, OS 차이, 의존성 버전, DB 스키마 차이 |
+| 한국어 깨짐 문제의 첫 번째 확인 사항은? | 파일/API/DB의 인코딩이 UTF-8인지 확인 |
+| Python에서 딕셔너리 안전 접근 방법은? | `data.get("key", "기본값")` — 키 없을 때 기본값 반환 |
+| race condition이란? | 여러 비동기 작업의 실행 순서에 따라 결과가 달라지는 버그 |

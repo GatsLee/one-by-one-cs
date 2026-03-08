@@ -1,0 +1,267 @@
+---
+title: "에러 메시지 읽기 (Reading Error Messages)"
+topic: "10-debugging"
+order: 01
+---
+
+
+## 핵심 개념
+
+### 1. 에러 메시지는 지도다
+
+프로그램이 멈추면 에러 메시지가 출력된다. 많은 입문자가 빨간 글씨를 보면 당황하지만, 에러 메시지는 **"여기가 문제야"** 라고 알려주는 지도다. 읽는 법만 알면 디버깅 시간을 90% 줄일 수 있다.
+
+```
+에러 메시지를 읽는 3단계:
+
+1. 에러 타입 확인   →  "무슨 종류의 문제인가?"
+2. 에러 내용 읽기   →  "구체적으로 뭐가 잘못됐나?"
+3. 위치(스택 트레이스) →  "코드 어디에서 발생했나?"
+```
+
+### 2. 스택 트레이스(Stack Trace) 읽기
+
+스택 트레이스는 에러가 발생하기까지 **함수 호출 경로**를 보여준다. 가장 중요한 건 **가장 아래(마지막) 줄**이다.
+
+#### Python 스택 트레이스
+
+```python
+# 에러를 일으키는 코드
+def calculate_average(numbers):
+    total = sum(numbers)
+    return total / len(numbers)
+
+def process_data(data):
+    scores = data["scores"]    # 여기서 KeyError 발생 가능
+    return calculate_average(scores)
+
+result = process_data({"name": "Kim"})  # "scores" 키 없음
+```
+
+```
+Traceback (most recent call last):         ← "역추적" 시작
+  File "main.py", line 9, in <module>      ← 호출 시작점
+    result = process_data({"name": "Kim"})
+  File "main.py", line 6, in process_data  ← 중간 호출
+    scores = data["scores"]
+KeyError: 'scores'                          ← ★ 에러 타입 + 원인
+```
+
+```
+읽는 순서 (아래에서 위로):
+
+   ① KeyError: 'scores'           →  딕셔너리에 'scores' 키가 없음
+   ② line 6, in process_data      →  process_data 함수, 6번째 줄
+   ③ line 9, in <module>          →  9번째 줄에서 호출됨
+
+   → 해결: data에 "scores" 키가 있는지 먼저 확인
+```
+
+#### JavaScript 스택 트레이스
+
+```javascript
+// 에러를 일으키는 코드
+function getUser(id) {
+  const user = users.find(u => u.id === id);
+  return user.name;  // user가 undefined일 때 에러
+}
+```
+
+```
+TypeError: Cannot read properties of undefined (reading 'name')
+    at getUser (app.js:3:15)         ← ★ 에러 발생 위치
+    at handleRequest (server.js:42:10)
+    at processRequest (server.js:15:5)
+```
+
+```
+읽는 순서 (위에서 아래로 — Python과 반대!):
+
+   ① TypeError                    →  타입 에러 (undefined에서 속성 읽기 시도)
+   ② at getUser (app.js:3:15)     →  app.js 3번째 줄, 15번째 글자
+   ③ 'name'을 읽으려 했다         →  user가 undefined
+
+   → 해결: user가 존재하는지 먼저 확인
+```
+
+```
+★ 핵심 차이:
+  Python  → 스택 트레이스를 아래에서 위로 읽는다 (마지막이 에러)
+  JS/TS   → 스택 트레이스를 위에서 아래로 읽는다 (첫 줄이 에러)
+```
+
+### 3. 자주 만나는 에러 타입
+
+#### Python 에러 타입
+
+```
+┌─────────────────┬──────────────────────────────────────────┐
+│ 에러 타입        │ 의미                                      │
+├─────────────────┼──────────────────────────────────────────┤
+│ SyntaxError     │ 문법 오류 (괄호 안 닫음, 콜론 빠짐)         │
+│ NameError       │ 정의되지 않은 변수 사용                      │
+│ TypeError       │ 잘못된 타입 연산 (문자열 + 숫자 등)          │
+│ IndexError      │ 리스트 범위 밖 인덱스 접근                   │
+│ KeyError        │ 딕셔너리에 없는 키 접근                     │
+│ AttributeError  │ 객체에 없는 속성/메서드 호출                 │
+│ ImportError     │ 모듈을 찾을 수 없음                         │
+│ ValueError      │ 값이 예상 범위 밖 (int("abc") 등)           │
+│ FileNotFoundError│ 파일 경로가 잘못됨                         │
+└─────────────────┴──────────────────────────────────────────┘
+```
+
+#### JavaScript/TypeScript 에러 타입
+
+```
+┌──────────────────┬──────────────────────────────────────────┐
+│ 에러 타입         │ 의미                                      │
+├──────────────────┼──────────────────────────────────────────┤
+│ SyntaxError      │ 문법 오류 (JSON.parse 실패 등)              │
+│ ReferenceError   │ 정의되지 않은 변수 참조                      │
+│ TypeError        │ undefined/null에서 속성 접근, 함수 아닌 것 호출 │
+│ RangeError       │ 배열 크기 초과, 스택 오버플로                │
+│ URIError         │ URI 인코딩/디코딩 실패                      │
+└──────────────────┴──────────────────────────────────────────┘
+```
+
+### 4. HTTP 에러 코드
+
+웹 개발에서 자주 만나는 에러 코드:
+
+```
+┌──────┬────────────────┬──────────────────────────────────┐
+│ 코드  │ 이름            │ 의미와 대응                        │
+├──────┼────────────────┼──────────────────────────────────┤
+│ 400  │ Bad Request    │ 요청 데이터가 잘못됨 → 파라미터 확인  │
+│ 401  │ Unauthorized   │ 인증 필요 → 로그인/토큰 확인         │
+│ 403  │ Forbidden      │ 권한 없음 → 권한 설정 확인           │
+│ 404  │ Not Found      │ URL이 잘못됨 → 경로 확인            │
+│ 405  │ Method Not     │ GET/POST 등 메서드가 잘못됨          │
+│      │ Allowed        │                                  │
+│ 500  │ Internal Error │ 서버 코드 에러 → 서버 로그 확인       │
+│ 502  │ Bad Gateway    │ 프록시/게이트웨이 문제               │
+│ 503  │ Service        │ 서버 과부하/점검 중                  │
+│      │ Unavailable    │                                  │
+└──────┴────────────────┴──────────────────────────────────┘
+```
+
+### 5. 에러 메시지로 검색하는 법
+
+에러를 직접 해결할 수 없을 때, 효과적으로 검색하는 방법:
+
+```
+검색 공식:
+
+  [언어/프레임워크] + [에러 타입] + [핵심 메시지]
+
+예시:
+  ✗ "에러가 났어요"
+  ✗ "python error line 42"
+
+  ✓ "python KeyError dictionary"
+  ✓ "javascript TypeError cannot read property of undefined"
+  ✓ "react useEffect cleanup function"
+  ✓ "next.js 500 internal server error api route"
+```
+
+```
+검색 팁:
+
+1. 에러 메시지에서 내 변수명/파일명은 제거
+   ✗ "KeyError: 'my_special_scores_variable'"
+   ✓ "python KeyError dictionary key not found"
+
+2. 특정 값보다 패턴으로 검색
+   ✗ "TypeError at line 42 of main.py"
+   ✓ "python TypeError NoneType has no attribute"
+
+3. Stack Overflow가 뜨면 질문보다 "답변"을 먼저 읽기
+
+4. 최신 답변 우선 (3년 이상 된 답변은 라이브러리 버전이 다를 수 있음)
+```
+
+
+## 코드 예시
+
+### 에러를 안전하게 처리하는 패턴
+
+```python
+# Python — 에러 메시지를 직접 확인하는 습관
+def safe_get_score(data, key):
+    try:
+        return data[key]
+    except KeyError:
+        print(f"[DEBUG] '{key}' 키가 data에 없습니다.")
+        print(f"[DEBUG] 사용 가능한 키: {list(data.keys())}")
+        return None
+
+# 사용
+result = safe_get_score({"name": "Kim"}, "score")
+# 출력:
+# [DEBUG] 'score' 키가 data에 없습니다.
+# [DEBUG] 사용 가능한 키: ['name']
+```
+
+```javascript
+// JavaScript — undefined 체크 패턴
+function getUser(id) {
+  const user = users.find(u => u.id === id);
+
+  if (!user) {
+    console.error(`[DEBUG] id=${id}인 사용자를 찾을 수 없습니다.`);
+    console.error(`[DEBUG] 전체 사용자 수: ${users.length}`);
+    return null;
+  }
+
+  return user.name;
+}
+```
+
+
+## 연습 문제
+
+### Q1. 다음 Python 에러의 원인은 무엇이고, 어떻게 고칠 수 있을까?
+
+```
+Traceback (most recent call last):
+  File "app.py", line 15, in fetch_data
+    response = requests.get(url, timeout=5)
+  File "app.py", line 22, in main
+    data = fetch_data("https://api.example.com/users")
+ConnectionError: Max retries exceeded with url: /users
+```
+
+<details>
+<summary>정답 보기</summary>
+ConnectionError — 서버에 연결할 수 없다. 원인: 서버가 꺼져 있거나, URL이 잘못되었거나, 네트워크가 불안정. 해결: URL 확인, 네트워크 상태 확인, try/except로 재시도 로직 추가.
+</details>
+
+### Q2. JavaScript에서 `TypeError: Cannot read properties of null (reading 'map')`이 발생했다. 무엇이 문제인가?
+
+<details>
+<summary>정답 보기</summary>
+null 값에 대해 .map()을 호출하려 했다. 배열이어야 할 변수가 null이다. API 응답이 비어 있거나 초기 상태가 null인 경우 자주 발생. 해결: `data?.map()` 옵셔널 체이닝 또는 `data && data.map()` 가드 사용.
+</details>
+
+### Q3. HTTP 500 에러와 400 에러의 차이점은?
+
+<details>
+<summary>정답 보기</summary>
+400은 클라이언트 잘못(요청 데이터 문제), 500은 서버 잘못(서버 코드 에러). 400이면 내가 보낸 데이터를 확인, 500이면 서버 로그를 확인해야 한다.
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| Python 스택 트레이스는 어느 방향으로 읽나? | 아래에서 위로 (마지막 줄이 실제 에러) |
+| JavaScript 스택 트레이스는 어느 방향으로 읽나? | 위에서 아래로 (첫 줄이 에러 발생 위치) |
+| KeyError는 언제 발생하나? | 딕셔너리에 존재하지 않는 키에 접근할 때 |
+| TypeError의 일반적인 원인은? | 잘못된 타입에 대해 연산/속성 접근 시도 (None.method(), undefined.prop) |
+| HTTP 404는 무엇을 의미하나? | 요청한 리소스(URL)를 찾을 수 없음 |
+| 에러 메시지로 검색할 때 제거해야 할 것은? | 내 코드의 변수명, 파일명, 줄 번호 등 특정 값 |
+| IndexError는 언제 발생하나? | 리스트/배열의 범위를 벗어나는 인덱스에 접근할 때 |
+| HTTP 500과 400의 차이는? | 400은 클라이언트 잘못(요청 문제), 500은 서버 잘못(서버 코드 에러) |
+| SyntaxError는 언제 발생하나? | 문법 규칙 위반 (괄호 안 닫음, 콜론 누락, JSON 형식 오류 등) |
+| 스택 트레이스(Stack Trace)란? | 에러 발생까지의 함수 호출 경로를 보여주는 정보 |

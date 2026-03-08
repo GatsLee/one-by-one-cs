@@ -14,6 +14,9 @@ export const TOPIC_LABELS: Record<string, string> = {
   "07-infra": "인프라/DevOps",
   "08-ai-agent": "AI 에이전트",
   "09-architecture": "소프트웨어 아키텍처",
+  "10-debugging": "디버깅",
+  "11-git": "Git/버전관리",
+  "12-testing": "테스팅",
 };
 
 export const STUDY_ORDER = [
@@ -26,6 +29,9 @@ export const STUDY_ORDER = [
   { topicDir: "07-infra", label: "인프라/DevOps", desc: "Linux, Docker, CI/CD, 클라우드, 모니터링, IaC" },
   { topicDir: "08-ai-agent", label: "AI 에이전트", desc: "ReAct, 오케스트레이션, MCP, 배포" },
   { topicDir: "09-architecture", label: "소프트웨어 아키텍처", desc: "SOLID, 생성/구조/행위 패턴, 아키텍처 패턴, 클린 아키텍처" },
+  { topicDir: "10-debugging", label: "디버깅", desc: "에러 메시지, 디버깅 전략, 개발자 도구, 버그 패턴, AI 디버깅" },
+  { topicDir: "11-git", label: "Git/버전관리", desc: "Git 기초, 브랜치, 협업, 되돌리기" },
+  { topicDir: "12-testing", label: "테스팅", desc: "테스트 피라미드, Unit/Integration/E2E, TDD" },
 ];
 
 export interface TopicCategory {

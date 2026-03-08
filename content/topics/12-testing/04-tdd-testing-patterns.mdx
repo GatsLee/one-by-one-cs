@@ -1,0 +1,293 @@
+---
+title: "TDD와 테스트 패턴 (TDD & Testing Patterns)"
+topic: "12-testing"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. TDD (Test-Driven Development)
+
+TDD는 **테스트를 먼저 작성하고, 그 테스트를 통과하는 코드를 작성**하는 개발 방법이다.
+
+```
+일반적인 개발: 코드 작성 → 테스트 작성 (또는 안 함)
+TDD:          테스트 작성 → 코드 작성 → 리팩토링
+
+TDD의 3단계 (Red-Green-Refactor):
+
+  ┌─────────┐     ┌─────────┐     ┌─────────┐
+  │  RED    │ ──→ │  GREEN  │ ──→ │REFACTOR │ ──→ (반복)
+  │         │     │         │     │         │
+  │ 실패하는 │     │ 통과하는 │     │ 코드를   │
+  │ 테스트   │     │ 최소한의 │     │ 정리     │
+  │ 작성    │     │ 코드 작성│     │         │
+  └─────────┘     └─────────┘     └─────────┘
+```
+
+#### TDD 실전 예시: 로마 숫자 변환기
+
+```python
+# Step 1 - RED: 실패하는 테스트 작성
+def test_roman_1():
+    assert to_roman(1) == "I"
+# → NameError: to_roman is not defined (RED!)
+
+# Step 2 - GREEN: 테스트를 통과하는 최소 코드
+def to_roman(num):
+    return "I"
+# → test_roman_1 PASSED (GREEN!)
+
+# Step 3 - 다음 테스트 추가 (RED)
+def test_roman_4():
+    assert to_roman(4) == "IV"
+# → AssertionError: "I" != "IV" (RED!)
+
+# Step 4 - 코드 확장 (GREEN)
+def to_roman(num):
+    result = ""
+    values = [(4, "IV"), (1, "I")]
+    for value, numeral in values:
+        while num >= value:
+            result += numeral
+            num -= value
+    return result
+# → 모든 테스트 PASSED (GREEN!)
+
+# Step 5 - REFACTOR: 전체 로마 숫자 지원으로 확장
+# ... 값-기호 쌍을 추가하며 반복 ...
+```
+
+### 2. TDD의 장점과 한계
+
+```
+장점:
+  ✓ 설계를 먼저 생각하게 됨 ("이 함수는 어떻게 쓰일까?")
+  ✓ 코드가 항상 테스트에 의해 보호됨
+  ✓ 작은 단위로 진행하므로 디버깅이 쉬움
+  ✓ 테스트가 문서 역할
+
+한계:
+  ✗ 초반 속도가 느림 (익숙해지면 빨라짐)
+  ✗ 요구사항이 불명확하면 테스트부터 쓰기 어려움
+  ✗ UI/프론트엔드에는 적용하기 까다로움
+  ✗ 모든 프로젝트에 맞는 건 아님
+
+★ TDD를 꼭 해야 하는 건 아니지만,
+  "테스트를 먼저 생각하는 습관"은 모든 개발자에게 유익하다
+```
+
+### 3. 테스트 더블 (Test Doubles)
+
+Mock은 테스트 더블의 한 종류다. 5가지 종류가 있다.
+
+```
+┌──────────────┬─────────────────────────────────────────────┐
+│ 종류          │ 설명                                         │
+├──────────────┼─────────────────────────────────────────────┤
+│ Dummy        │ 전달만 되고 사용되지 않는 객체                  │
+│              │ 예: 함수 인자를 채우기 위한 빈 객체             │
+├──────────────┼─────────────────────────────────────────────┤
+│ Stub         │ 미리 정해진 값을 반환하는 객체                  │
+│              │ 예: DB 대신 고정 데이터 반환                   │
+├──────────────┼─────────────────────────────────────────────┤
+│ Spy          │ 호출 기록을 남기는 객체 (실제 동작도 수행)       │
+│              │ 예: "이 함수가 몇 번 호출되었나?" 확인          │
+├──────────────┼─────────────────────────────────────────────┤
+│ Mock         │ 호출 방식을 검증하는 객체                      │
+│              │ 예: "이 인자로 정확히 1번 호출되었나?" 검증      │
+├──────────────┼─────────────────────────────────────────────┤
+│ Fake         │ 간소화된 실제 구현                             │
+│              │ 예: 실제 DB 대신 인메모리 딕셔너리 사용          │
+└──────────────┴─────────────────────────────────────────────┘
+```
+
+```python
+# Stub 예시
+class FakeEmailService:
+    """실제 이메일을 보내지 않는 가짜 서비스."""
+    def send(self, to, subject, body):
+        return True  # 항상 성공
+
+# Spy 예시
+class SpyEmailService:
+    """호출 기록을 남기는 서비스."""
+    def __init__(self):
+        self.sent_emails = []
+
+    def send(self, to, subject, body):
+        self.sent_emails.append({"to": to, "subject": subject})
+        return True
+
+# 테스트에서 사용
+def test_registration_sends_welcome_email():
+    spy = SpyEmailService()
+    register_user("kim@test.com", email_service=spy)
+
+    assert len(spy.sent_emails) == 1
+    assert spy.sent_emails[0]["to"] == "kim@test.com"
+```
+
+### 4. 비동기 코드 테스트
+
+```python
+# Python — pytest-asyncio
+import pytest
+
+@pytest.mark.asyncio
+async def test_fetch_data():
+    result = await fetch_data("https://api.example.com")
+    assert result["status"] == "ok"
+```
+
+```javascript
+// JavaScript — async/await 테스트
+test("fetchUser returns user data", async () => {
+  const user = await fetchUser(1);
+  expect(user.name).toBe("Kim");
+});
+
+// Promise rejection 테스트
+test("fetchUser throws on invalid id", async () => {
+  await expect(fetchUser(-1)).rejects.toThrow("Invalid ID");
+});
+
+// 타임아웃이 있는 비동기 테스트
+test("long operation completes within 5s", async () => {
+  const result = await longOperation();
+  expect(result).toBeDefined();
+}, 5000);  // 타임아웃 5초
+```
+
+### 5. CI에서 자동 테스트
+
+테스트를 수동으로 실행하는 건 잊기 쉽다. **CI(Continuous Integration)**에서 자동으로 실행하면 빠뜨릴 수 없다.
+
+```yaml
+# .github/workflows/test.yml (GitHub Actions)
+name: Test
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -v --tb=short
+```
+
+```
+CI 자동 테스트 흐름:
+
+  코드 push → GitHub Actions 실행 → 테스트 실행
+    ├── 모든 테스트 통과 ✓ → PR 머지 가능
+    └── 테스트 실패 ✗ → PR 머지 차단, 수정 필요
+
+  → "테스트가 깨진 코드"는 main에 들어갈 수 없음
+```
+
+### 6. 테스트 작성 팁
+
+```
+1. 한 테스트 = 한 가지 동작
+   ✗ test_everything()  (add, subtract, divide 모두 검증)
+   ✓ test_add(), test_subtract(), test_divide() (각각 분리)
+
+2. 테스트 이름으로 의도를 전달
+   ✗ test_1, test_func
+   ✓ test_divide_by_zero_raises_error
+
+3. 테스트 간 독립성 유지
+   테스트 A의 결과가 테스트 B에 영향을 주면 안 됨
+   (테스트 실행 순서가 바뀌어도 통과해야 함)
+
+4. 구현이 아닌 동작을 테스트
+   ✗ "내부에서 for문을 3번 돌았는가?" (구현 세부사항)
+   ✓ "결과가 [1, 2, 3]인가?" (외부에서 관찰 가능한 동작)
+
+5. 테스트도 코드다 — 가독성을 챙겨라
+   중복 제거, 명확한 변수명, 불필요한 로직 제거
+```
+
+
+## 코드 예시
+
+### 테스트 커버리지 측정
+
+```bash
+# Python — pytest-cov
+pip install pytest-cov
+pytest --cov=src --cov-report=term-missing
+
+# 출력 예시:
+# Name               Stmts   Miss  Cover   Missing
+# src/calculator.py     12      1    92%    15
+# src/validator.py       8      0   100%
+# TOTAL                 20      1    95%
+
+# JavaScript — Vitest coverage
+npx vitest --coverage
+```
+
+```
+커버리지란?
+
+  테스트가 실행하는 코드 줄 수 / 전체 코드 줄 수 × 100%
+
+  80% 이상이면 양호
+  100%를 목표로 하면 오버엔지니어링 — 의미 있는 테스트에 집중
+
+  ★ 커버리지가 높다 ≠ 좋은 테스트
+    (assert 없이 함수만 호출해도 커버리지는 올라감)
+```
+
+
+## 연습 문제
+
+### Q1. TDD의 Red-Green-Refactor 사이클을 설명하라.
+
+<details>
+<summary>정답 보기</summary>
+Red: 실패하는 테스트를 먼저 작성. Green: 그 테스트를 통과하는 최소한의 코드를 작성. Refactor: 코드를 정리(중복 제거, 구조 개선)하되 테스트는 계속 통과. 이 사이클을 반복.
+</details>
+
+### Q2. Mock과 Stub의 차이는?
+
+<details>
+<summary>정답 보기</summary>
+Stub은 미리 정해진 값을 반환하는 것(입력 제어). Mock은 함수가 어떻게 호출되었는지 검증하는 것(호출 방식 검증). Stub은 "이 값을 반환해", Mock은 "이 인자로 1번 호출되었나?" 확인.
+</details>
+
+### Q3. CI에서 테스트를 자동으로 실행하는 이점은?
+
+<details>
+<summary>정답 보기</summary>
+(1) 테스트 실행을 잊을 수 없다(자동). (2) 테스트가 깨진 코드가 main에 합쳐지는 것을 방지. (3) 모든 팀원의 코드가 동일한 기준으로 검증됨. (4) PR 머지 전 자동 검증으로 코드 품질 보장.
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| TDD란? | 테스트를 먼저 작성하고, 통과하는 코드를 작성하는 개발 방법 |
+| Red-Green-Refactor 사이클이란? | 실패 테스트 작성 → 통과 코드 작성 → 코드 정리 (반복) |
+| Stub이란? | 미리 정해진 값을 반환하는 테스트 더블 |
+| Spy란? | 호출 기록을 남기는 테스트 더블 (몇 번, 어떤 인자로 호출되었나) |
+| Fake란? | 간소화된 실제 구현 (예: 인메모리 DB) |
+| CI에서 테스트 자동 실행의 이점은? | 테스트 실패한 코드가 main에 합쳐지는 것을 자동 차단 |
+| 테스트 커버리지란? | 테스트가 실행하는 코드 비율 (%). 80% 이상이면 양호 |
+| "구현이 아닌 동작을 테스트"의 의미는? | 내부 로직이 아닌 외부에서 관찰 가능한 결과를 검증 |
+| 비동기 테스트에서 주의할 점은? | async/await 사용, 타임아웃 설정, Promise rejection 처리 |
+| 한 테스트에 한 가지 동작만 테스트하는 이유는? | 실패 시 원인을 정확히 파악 가능, 테스트 이름이 명확 |

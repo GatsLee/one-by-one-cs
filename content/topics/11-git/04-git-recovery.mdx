@@ -1,0 +1,257 @@
+---
+title: "되돌리기와 복구 (Undo & Recovery)"
+topic: "11-git"
+order: 04
+---
+
+
+## 핵심 개념
+
+### 1. Git에서 되돌리기가 중요한 이유
+
+실수는 누구나 한다. 잘못된 파일을 커밋했거나, 브랜치를 잘못 머지했거나, 코드를 망가뜨렸을 때 **Git이 타임머신** 역할을 한다. 당황하지 말고 상황에 맞는 되돌리기 방법을 쓰면 된다.
+
+```
+"실수했다!" → 무엇을 되돌려야 하나?
+
+  아직 커밋 안 한 변경     → git restore / git checkout
+  staging에 올린 것       → git restore --staged
+  방금 한 커밋            → git revert / git reset
+  여러 커밋 전으로         → git revert / git reset
+  삭제한 브랜치            → git reflog → checkout
+  모든 것이 엉망          → git reflog (최후의 보루)
+```
+
+### 2. 파일 변경 되돌리기 (커밋 전)
+
+```bash
+# Working Directory의 변경 취소 (파일을 마지막 커밋 상태로)
+git restore src/app.py              # 특정 파일
+git restore .                       # 모든 변경 취소 (주의!)
+
+# Staging Area에서 내리기 (변경 내용은 유지)
+git restore --staged src/app.py     # 특정 파일 unstage
+git restore --staged .              # 전부 unstage
+```
+
+```
+┌──────────────┐  git restore --staged  ┌──────────────┐  git restore  ┌──────────────┐
+│  Repository  │ ◀──────────────────── │   Staging    │ ◀─────────── │  Working     │
+│  (커밋된 상태) │                       │   Area       │              │  Directory   │
+└──────────────┘                       └──────────────┘              └──────────────┘
+                    unstage만 (변경 유지)              변경 자체를 취소
+```
+
+### 3. git revert — 안전한 커밋 되돌리기
+
+`git revert`는 이전 커밋의 변경을 **되돌리는 새 커밋**을 만든다. 이력이 보존되므로 공유 브랜치에서도 안전하다.
+
+```bash
+# 마지막 커밋 되돌리기
+git revert HEAD
+
+# 특정 커밋 되돌리기
+git revert a1b2c3d
+
+# 결과:
+# A ── B ── C ── D (revert C)
+#                 └── C' ← C의 변경을 되돌리는 새 커밋
+```
+
+```
+revert의 핵심:
+
+  원래 커밋: "파일에 100줄 추가"
+  revert 커밋: "그 100줄 삭제"    (되돌리는 새 커밋)
+
+  → 이력에 "되돌렸다"는 기록이 남음
+  → 팀원에게 영향 없음 (안전!)
+```
+
+### 4. git reset — 커밋 자체를 제거
+
+`git reset`은 커밋을 **없었던 것처럼** 되돌린다. 이력이 변경되므로 공유 브랜치에서는 위험하다.
+
+```bash
+# 3가지 모드
+
+# --soft: 커밋만 취소, 변경은 staging에 유지
+git reset --soft HEAD~1
+
+# --mixed (기본값): 커밋 취소, 변경은 working에 유지
+git reset HEAD~1
+
+# --hard: 커밋 취소, 변경도 전부 삭제 (위험!)
+git reset --hard HEAD~1
+```
+
+```
+HEAD~1 = 한 커밋 전, HEAD~3 = 세 커밋 전
+
+  커밋 이력:  A ── B ── C ── D (HEAD)
+
+  git reset --soft HEAD~1:
+    이력: A ── B ── C (HEAD)
+    D의 변경: Staging Area에 있음 (다시 커밋 가능)
+
+  git reset --mixed HEAD~1:
+    이력: A ── B ── C (HEAD)
+    D의 변경: Working Directory에 있음
+
+  git reset --hard HEAD~1:
+    이력: A ── B ── C (HEAD)
+    D의 변경: 완전 삭제! ← 복구 어려움
+```
+
+```
+★ revert vs reset:
+
+  ┌────────────┬───────────────────┬──────────────────────┐
+  │            │ revert            │ reset                │
+  ├────────────┼───────────────────┼──────────────────────┤
+  │ 방식       │ 되돌리는 새 커밋   │ 커밋 자체를 제거       │
+  │ 이력       │ 보존됨            │ 변경됨                │
+  │ 공유 브랜치│ 안전              │ 위험 (force push 필요) │
+  │ 사용 시점  │ 이미 push한 커밋   │ 아직 push 안 한 커밋   │
+  └────────────┴───────────────────┴──────────────────────┘
+```
+
+### 5. git stash — 임시 저장
+
+작업 중인 변경을 잠시 치워두고 다른 일을 한 뒤 다시 꺼낸다.
+
+```bash
+# 현재 변경 임시 저장
+git stash
+
+# 다른 브랜치로 이동하여 급한 일 처리
+git switch main
+# ... 작업 ...
+git switch feat/my-feature
+
+# 임시 저장한 것 복원
+git stash pop              # 복원 + stash에서 제거
+git stash apply            # 복원 (stash에 유지)
+
+# stash 목록 확인
+git stash list
+# stash@{0}: WIP on feat/my-feature: a1b2c3d 작업 중
+# stash@{1}: WIP on main: e4f5g6h 다른 작업
+```
+
+```
+stash가 필요한 상황:
+
+  1. 작업 중에 급하게 다른 브랜치로 이동해야 할 때
+  2. pull을 받아야 하는데 uncommitted 변경이 있을 때
+  3. 실험적 변경을 잠시 치워두고 싶을 때
+```
+
+### 6. git reflog — 최후의 보루
+
+`reflog`는 **HEAD가 가리킨 모든 이력**을 기록한다. reset --hard로 날린 커밋도 여기서 찾을 수 있다.
+
+```bash
+# reflog 보기
+git reflog
+
+# 출력 예시:
+# a1b2c3d (HEAD -> main) HEAD@{0}: reset: moving to HEAD~1
+# e4f5g6h HEAD@{1}: commit: feat: add search     ← 날아간 커밋!
+# h7i8j9k HEAD@{2}: commit: fix: login bug
+
+# 날아간 커밋으로 복구
+git reset --hard e4f5g6h
+```
+
+```
+★ reflog는 "Git의 Git"이다
+
+  일반 log:   커밋 이력만 보여줌
+  reflog:     HEAD의 모든 움직임을 기록 (reset, checkout, merge 등)
+
+  "다 망했다" → git reflog → 원하는 시점 찾기 → git reset --hard 해시
+
+  단, reflog는 로컬에만 존재 (push 불가)
+  기본 30일 후 만료
+```
+
+### 7. 위험한 상황별 복구 가이드
+
+```
+상황 1: "커밋 메시지를 잘못 썼다"
+  → git commit --amend -m "올바른 메시지"
+    (아직 push 안 했을 때만!)
+
+상황 2: "파일 하나를 깜빡하고 커밋했다"
+  → git add 빠진파일
+  → git commit --amend --no-edit
+    (이전 커밋에 포함시킴, push 전에만!)
+
+상황 3: "잘못된 브랜치에서 커밋했다"
+  → git stash (또는 기억해둠)
+  → git switch 올바른브랜치
+  → git stash pop (또는 cherry-pick)
+
+상황 4: "push한 커밋을 되돌려야 한다"
+  → git revert 해시    (새 커밋으로 되돌리기)
+  → git push           (안전하게 push)
+
+상황 5: "merge를 잘못했다"
+  → git revert -m 1 머지커밋해시
+    (-m 1은 main 쪽을 유지하겠다는 의미)
+```
+
+
+## 코드 예시
+
+### cherry-pick — 특정 커밋만 가져오기
+
+```bash
+# 다른 브랜치의 특정 커밋 하나만 현재 브랜치로 가져오기
+git cherry-pick a1b2c3d
+
+# 사용 예:
+#   feat/A 브랜치에서 만든 유틸 함수가 feat/B에도 필요할 때
+#   feat/A의 해당 커밋만 cherry-pick
+```
+
+
+## 연습 문제
+
+### Q1. git revert와 git reset의 차이점을 설명하라.
+
+<details>
+<summary>정답 보기</summary>
+revert는 이전 커밋의 변경을 되돌리는 새 커밋을 만든다(이력 보존, 공유 브랜치 안전). reset은 커밋 자체를 이력에서 제거한다(이력 변경, 공유 브랜치에서 위험).
+</details>
+
+### Q2. git reset의 --soft, --mixed, --hard 차이는?
+
+<details>
+<summary>정답 보기</summary>
+--soft: 커밋만 취소, 변경은 Staging에 유지. --mixed(기본): 커밋 취소, 변경은 Working Directory에 유지. --hard: 커밋 취소, 변경도 모두 삭제(복구 어려움).
+</details>
+
+### Q3. git reset --hard로 실수로 커밋을 날렸을 때 복구하는 방법은?
+
+<details>
+<summary>정답 보기</summary>
+git reflog로 날아간 커밋의 해시를 찾은 뒤 git reset --hard 해시로 복구. reflog는 HEAD의 모든 이동 기록을 보관하므로 30일 이내라면 복구 가능.
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| git restore의 역할은? | Working Directory의 파일을 마지막 커밋 상태로 되돌림 |
+| git restore --staged의 역할은? | Staging Area에서 내림 (변경 내용은 Working에 유지) |
+| git revert의 동작 방식은? | 지정한 커밋의 변경을 되돌리는 새 커밋을 생성 |
+| git reset --hard의 위험성은? | 커밋과 변경 내용이 모두 삭제되어 복구가 어려움 |
+| git stash의 용도는? | 현재 변경을 임시 저장하고 나중에 복원 |
+| git stash pop과 apply의 차이는? | pop은 복원 후 stash에서 제거, apply는 stash에 유지 |
+| git reflog란? | HEAD가 가리킨 모든 이력을 기록하는 로컬 로그 |
+| cherry-pick이란? | 다른 브랜치의 특정 커밋 하나만 현재 브랜치로 가져오기 |
+| push한 커밋을 되돌리는 안전한 방법은? | git revert (새 커밋으로 되돌리기) |
+| git commit --amend의 용도는? | 마지막 커밋의 메시지나 내용을 수정 (push 전에만 사용) |

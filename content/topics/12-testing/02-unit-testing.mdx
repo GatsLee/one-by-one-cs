@@ -1,0 +1,342 @@
+---
+title: "단위 테스트 (Unit Testing)"
+topic: "12-testing"
+order: 02
+---
+
+
+## 핵심 개념
+
+### 1. 단위 테스트(Unit Test)란?
+
+단위 테스트는 **함수 하나, 메서드 하나**를 독립적으로 검증하는 테스트다. 가장 작은 단위의 코드가 올바르게 동작하는지 확인한다.
+
+```
+단위 테스트의 특징:
+
+  ✓ 빠르다: 밀리초 단위로 실행
+  ✓ 독립적이다: 다른 테스트에 영향받지 않음
+  ✓ 반복 가능하다: 실행할 때마다 같은 결과
+  ✓ 자동화된다: 사람의 개입 없이 실행
+
+  외부 의존성 없음: DB, 네트워크, 파일 시스템에 접근하지 않음
+  (의존성이 필요하면 Mock으로 대체)
+```
+
+### 2. pytest 기초 (Python)
+
+Python에서 가장 많이 쓰이는 테스트 프레임워크.
+
+```bash
+# 설치
+pip install pytest
+
+# 실행
+pytest                     # 모든 테스트 실행
+pytest test_calc.py        # 특정 파일만
+pytest -v                  # 상세 출력
+pytest -k "test_add"       # 이름에 "test_add"가 포함된 것만
+```
+
+```python
+# calculator.py
+def add(a, b):
+    return a + b
+
+def divide(a, b):
+    if b == 0:
+        raise ZeroDivisionError("0으로 나눌 수 없습니다")
+    return a / b
+
+
+# test_calculator.py
+from calculator import add, divide
+import pytest
+
+def test_add_positive():
+    assert add(2, 3) == 5
+
+def test_add_negative():
+    assert add(-1, -2) == -3
+
+def test_add_zero():
+    assert add(0, 0) == 0
+
+def test_divide_normal():
+    assert divide(10, 2) == 5.0
+
+def test_divide_by_zero():
+    with pytest.raises(ZeroDivisionError):
+        divide(10, 0)
+```
+
+```
+pytest 규칙:
+
+  - 테스트 파일명: test_*.py 또는 *_test.py
+  - 테스트 함수명: test_로 시작
+  - assert 문으로 검증
+  - 에러 검증: pytest.raises(에러타입)
+```
+
+### 3. Jest/Vitest 기초 (JavaScript/TypeScript)
+
+```bash
+# Vitest 설치 (Vite 프로젝트에서 추천)
+npm install -D vitest
+
+# Jest 설치
+npm install -D jest @types/jest ts-jest
+```
+
+```javascript
+// calculator.js
+export function add(a, b) {
+  return a + b;
+}
+
+export function divide(a, b) {
+  if (b === 0) throw new Error("0으로 나눌 수 없습니다");
+  return a / b;
+}
+
+// calculator.test.js
+import { add, divide } from "./calculator";
+
+describe("calculator", () => {
+  test("add returns sum of two numbers", () => {
+    expect(add(2, 3)).toBe(5);
+  });
+
+  test("add handles negative numbers", () => {
+    expect(add(-1, -2)).toBe(-3);
+  });
+
+  test("divide returns quotient", () => {
+    expect(divide(10, 2)).toBe(5);
+  });
+
+  test("divide throws on zero", () => {
+    expect(() => divide(10, 0)).toThrow("0으로 나눌 수 없습니다");
+  });
+});
+```
+
+### 4. AAA 패턴 (Arrange-Act-Assert)
+
+모든 테스트는 이 3단계 구조를 따른다.
+
+```python
+def test_user_full_name():
+    # Arrange (준비)
+    user = User(first_name="길동", last_name="홍")
+
+    # Act (실행)
+    result = user.full_name()
+
+    # Assert (검증)
+    assert result == "홍길동"
+```
+
+```
+좋은 테스트 이름:
+
+  ✗ test_1, test_function, test_it_works
+
+  ✓ test_add_returns_sum_of_two_positive_numbers
+  ✓ test_divide_raises_error_when_divisor_is_zero
+  ✓ test_user_full_name_combines_last_and_first
+
+  이름만 보고 "뭘 테스트하는지" 알 수 있어야 함
+```
+
+### 5. Fixture — 테스트 데이터 준비
+
+여러 테스트에서 같은 데이터가 필요할 때 fixture로 공유한다.
+
+```python
+import pytest
+
+@pytest.fixture
+def sample_users():
+    return [
+        {"name": "Kim", "age": 25},
+        {"name": "Lee", "age": 30},
+        {"name": "Park", "age": 22},
+    ]
+
+def test_find_oldest(sample_users):
+    oldest = max(sample_users, key=lambda u: u["age"])
+    assert oldest["name"] == "Lee"
+
+def test_count_users(sample_users):
+    assert len(sample_users) == 3
+```
+
+```javascript
+// Jest/Vitest — beforeEach로 데이터 준비
+describe("UserService", () => {
+  let users;
+
+  beforeEach(() => {
+    users = [
+      { name: "Kim", age: 25 },
+      { name: "Lee", age: 30 },
+    ];
+  });
+
+  test("findOldest returns user with max age", () => {
+    const oldest = users.reduce((a, b) => (a.age > b.age ? a : b));
+    expect(oldest.name).toBe("Lee");
+  });
+});
+```
+
+### 6. Mock — 외부 의존성 대체
+
+API 호출, DB 접근 등 외부 의존성을 가짜 객체로 대체하여 테스트를 독립적으로 만든다.
+
+```python
+from unittest.mock import patch, MagicMock
+
+def get_weather(city):
+    """외부 API를 호출하여 날씨를 가져온다."""
+    import requests
+    response = requests.get(f"https://api.weather.com/{city}")
+    return response.json()["temperature"]
+
+# 테스트: 실제 API를 호출하지 않고 가짜 응답 사용
+@patch("requests.get")
+def test_get_weather(mock_get):
+    # Mock 설정
+    mock_get.return_value = MagicMock()
+    mock_get.return_value.json.return_value = {"temperature": 25}
+
+    # 테스트 실행
+    result = get_weather("Seoul")
+    assert result == 25
+
+    # API가 올바른 URL로 호출되었는지 검증
+    mock_get.assert_called_once_with("https://api.weather.com/Seoul")
+```
+
+```javascript
+// Jest/Vitest — Mock
+import { getUser } from "./userService";
+import { fetchFromDB } from "./database";
+
+// database 모듈을 Mock으로 대체
+vi.mock("./database", () => ({
+  fetchFromDB: vi.fn(),
+}));
+
+test("getUser returns user data", async () => {
+  // Mock 반환값 설정
+  fetchFromDB.mockResolvedValue({ id: 1, name: "Kim" });
+
+  const user = await getUser(1);
+  expect(user.name).toBe("Kim");
+  expect(fetchFromDB).toHaveBeenCalledWith("users", 1);
+});
+```
+
+```
+Mock을 쓰는 이유:
+
+  1. 속도: 실제 API/DB 호출 없이 즉시 실행
+  2. 안정성: 외부 서비스 장애와 무관하게 테스트
+  3. 격리: 테스트 대상 함수만 검증 (외부 영향 제거)
+  4. 제어: 에러 상황, 느린 응답 등 특수 케이스 시뮬레이션
+```
+
+### 7. 테스트 실행 결과 읽기
+
+```
+$ pytest -v
+
+test_calculator.py::test_add_positive PASSED     ✓
+test_calculator.py::test_add_negative PASSED     ✓
+test_calculator.py::test_divide_normal PASSED    ✓
+test_calculator.py::test_divide_by_zero PASSED   ✓
+test_calculator.py::test_add_string FAILED       ✗
+
+======================== FAILURES ========================
+test_calculator.py::test_add_string
+    def test_add_string():
+>       assert add("a", "b") == "ab"
+E       AssertionError: assert 'ab' == 'ab'       ← 예상과 실제 비교
+======================== 4 passed, 1 failed ===============
+
+  → PASSED: 테스트 통과
+  → FAILED: 테스트 실패 + 어디서 왜 실패했는지 표시
+```
+
+
+## 코드 예시
+
+### 경계값 테스트 (Edge Case Testing)
+
+```python
+def clamp(value, min_val, max_val):
+    """값을 min_val과 max_val 사이로 제한."""
+    return max(min_val, min(value, max_val))
+
+# 경계값을 집중적으로 테스트
+def test_clamp_within_range():
+    assert clamp(5, 0, 10) == 5
+
+def test_clamp_at_minimum():
+    assert clamp(0, 0, 10) == 0       # 정확히 최소값
+
+def test_clamp_below_minimum():
+    assert clamp(-5, 0, 10) == 0      # 최소값 아래
+
+def test_clamp_at_maximum():
+    assert clamp(10, 0, 10) == 10     # 정확히 최대값
+
+def test_clamp_above_maximum():
+    assert clamp(15, 0, 10) == 10     # 최대값 위
+
+def test_clamp_equal_bounds():
+    assert clamp(5, 5, 5) == 5        # min == max
+```
+
+
+## 연습 문제
+
+### Q1. 단위 테스트에서 외부 의존성(DB, API)을 직접 사용하면 안 되는 이유는?
+
+<details>
+<summary>정답 보기</summary>
+(1) 느려진다(네트워크/디스크 I/O), (2) 외부 서비스 장애로 테스트가 실패할 수 있다(불안정), (3) 테스트 대상이 아닌 외부 시스템을 테스트하게 된다. Mock으로 대체하여 독립적이고 빠른 테스트를 유지한다.
+</details>
+
+### Q2. pytest에서 에러가 발생하는지 테스트하는 방법은?
+
+<details>
+<summary>정답 보기</summary>
+`with pytest.raises(에러타입):` 블록 안에서 에러를 발생시키는 코드를 실행. 해당 에러가 발생하면 테스트 통과, 발생하지 않으면 테스트 실패.
+</details>
+
+### Q3. Fixture의 역할과 장점은?
+
+<details>
+<summary>정답 보기</summary>
+여러 테스트에서 공통으로 필요한 데이터나 상태를 준비하는 코드. 중복을 줄이고, 테스트 데이터를 일관되게 관리하며, 테스트의 Arrange(준비) 단계를 깔끔하게 분리한다.
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| 단위 테스트의 4가지 특징은? | 빠르다, 독립적이다, 반복 가능하다, 자동화된다 |
+| pytest에서 테스트 함수의 이름 규칙은? | test_로 시작해야 함 (예: test_add_positive) |
+| AAA 패턴이란? | Arrange(준비) → Act(실행) → Assert(검증) |
+| pytest.fixture의 역할은? | 여러 테스트에서 공통으로 필요한 데이터를 준비하여 공유 |
+| Mock의 목적은? | 외부 의존성(API, DB)을 가짜 객체로 대체하여 테스트 독립성 확보 |
+| expect().toBe()와 expect().toEqual()의 차이는? | toBe는 === 비교(참조), toEqual은 값이 같은지 깊은 비교 |
+| 경계값 테스트란? | 최소, 최대, 0, 빈 입력 등 극단적 값에서의 동작을 검증 |
+| 좋은 테스트 이름의 조건은? | 이름만 보고 무엇을 테스트하는지 알 수 있어야 함 |
+| Mock에서 assert_called_once_with의 역할은? | Mock 함수가 특정 인자로 정확히 1번 호출되었는지 검증 |
+| 테스트 파일이 FAILED일 때 확인할 것은? | 에러 메시지에서 기대값(expected)과 실제값(actual)의 차이 확인 |

@@ -1,0 +1,260 @@
+---
+title: "개발자 도구 활용 (Developer Tools)"
+topic: "10-debugging"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 1. 브라우저 개발자 도구 (DevTools)
+
+모든 브라우저에 내장된 개발자 도구는 웹 개발의 필수 무기다. `F12` 또는 `Ctrl+Shift+I`(Mac: `Cmd+Option+I`)로 열 수 있다.
+
+```
+브라우저 DevTools 주요 탭:
+
+┌─────────────────────────────────────────────────────────┐
+│  Elements │ Console │ Network │ Sources │ Application   │
+├───────────┼─────────┼─────────┼─────────┼──────────────┤
+│ HTML/CSS  │ 로그,   │ API     │ 소스    │ 쿠키,         │
+│ 구조 확인  │ 에러    │ 요청    │ 디버거  │ 스토리지       │
+│ 실시간 수정│ JS 실행  │ 응답    │ 중단점  │ 캐시          │
+└───────────┴─────────┴─────────┴─────────┴──────────────┘
+```
+
+#### Console 탭 — 에러 확인과 코드 실행
+
+```javascript
+// Console에서 바로 실행 가능
+document.querySelectorAll("button").length  // 페이지의 버튼 개수
+localStorage.getItem("user")               // 저장된 데이터 확인
+
+// 에러가 빨간색으로 표시됨
+// "Uncaught TypeError: Cannot read property 'map' of undefined"
+// → 클릭하면 소스 코드 위치로 이동
+```
+
+#### Network 탭 — API 요청 디버깅
+
+```
+Network 탭에서 확인할 것:
+
+  ┌─────────┬─────────────────────────────────────────┐
+  │  항목    │  확인 내용                                │
+  ├─────────┼─────────────────────────────────────────┤
+  │ Status  │ 200 OK? 404? 500? (응답 코드)             │
+  │ Method  │ GET/POST/PUT/DELETE (올바른 메서드?)       │
+  │ URL     │ 요청 URL이 맞는지                         │
+  │ Headers │ Authorization, Content-Type 확인           │
+  │ Payload │ 보낸 데이터(Request Body) 확인              │
+  │ Preview │ 받은 데이터(Response) 확인                  │
+  │ Timing  │ 응답 시간 (느린 API 찾기)                   │
+  └─────────┴─────────────────────────────────────────┘
+
+  ★ "API 호출이 안 돼요" → Network 탭 먼저 열어서 요청이 갔는지 확인
+```
+
+### 2. VS Code 디버거
+
+VS Code의 내장 디버거로 코드를 한 줄씩 실행하며 변수를 확인할 수 있다.
+
+```
+VS Code 디버거 핵심 기능:
+
+  Breakpoint (중단점)     →  코드 줄 번호 왼쪽 클릭 (빨간 점)
+                              실행이 그 줄에서 멈춤
+
+  Step Over (F10)         →  현재 줄 실행, 다음 줄로 이동
+  Step Into (F11)         →  함수 안으로 들어감
+  Step Out  (Shift+F11)   →  함수 밖으로 나옴
+  Continue  (F5)          →  다음 중단점까지 실행
+
+  Variables 패널          →  현재 스코프의 모든 변수 값 확인
+  Watch 패널              →  특정 표현식 값 추적
+  Call Stack 패널         →  현재 함수 호출 경로
+```
+
+```
+디버거 사용 흐름:
+
+  1. 의심되는 줄에 Breakpoint 설정
+  2. F5로 디버깅 시작
+  3. Breakpoint에서 멈추면:
+     - Variables에서 변수 값 확인
+     - Step Over로 한 줄씩 진행
+     - 예상과 다른 값이 나오는 지점 = 버그
+```
+
+### 3. Python 디버거 (pdb)
+
+터미널에서 Python 코드를 디버깅할 때 사용한다.
+
+```python
+# 방법 1: breakpoint() 사용 (Python 3.7+)
+def calculate(x, y):
+    result = x * y
+    breakpoint()            # ← 여기서 실행이 멈춤
+    return result / (x - y)
+
+# 방법 2: 커맨드라인에서 실행
+# python -m pdb script.py
+```
+
+```
+pdb 주요 명령어:
+
+  n (next)      →  다음 줄 실행
+  s (step)      →  함수 안으로 들어감
+  c (continue)  →  다음 breakpoint까지 실행
+  p 변수명       →  변수 값 출력 (예: p result)
+  l (list)      →  현재 위치 주변 코드 표시
+  w (where)     →  콜 스택 표시
+  q (quit)      →  디버거 종료
+```
+
+### 4. 로그 레벨 (Log Levels)
+
+print 대신 **로그 시스템**을 사용하면 메시지를 중요도별로 관리할 수 있다.
+
+```
+로그 레벨 (낮은 순 → 높은 순):
+
+  DEBUG    →  개발 중 상세 정보 (변수 값, 흐름 추적)
+  INFO     →  일반적인 작동 기록 (서버 시작, 요청 처리)
+  WARNING  →  경고 (곧 문제가 될 수 있는 상황)
+  ERROR    →  에러 (기능이 실패, 하지만 앱은 계속 실행)
+  CRITICAL →  치명적 (앱이 멈춰야 할 수준)
+
+  개발 환경: DEBUG 이상 모두 출력
+  운영 환경: WARNING 이상만 출력
+```
+
+```python
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+def fetch_user(user_id):
+    logger.debug(f"사용자 조회 시작: id={user_id}")
+
+    user = db.get(user_id)
+    if user is None:
+        logger.warning(f"사용자를 찾을 수 없음: id={user_id}")
+        return None
+
+    logger.info(f"사용자 조회 완료: {user['name']}")
+    return user
+```
+
+```javascript
+// JavaScript — console 메서드로 로그 레벨 구분
+console.debug("상세 정보");   // 회색 (기본적으로 숨김)
+console.info("일반 정보");    // 파란 아이콘
+console.warn("경고");         // 노란 배경
+console.error("에러");        // 빨간 배경
+```
+
+### 5. 네트워크 디버깅 도구
+
+```
+┌──────────────┬────────────────────────────────────────┐
+│ 도구          │ 용도                                    │
+├──────────────┼────────────────────────────────────────┤
+│ curl         │ 터미널에서 HTTP 요청 보내기               │
+│ Postman      │ GUI로 API 테스트 (헤더, 바디 편집)        │
+│ ping         │ 서버 연결 확인                           │
+│ nslookup     │ DNS 확인 (도메인 → IP)                   │
+│ netstat      │ 포트 사용 상태 확인                       │
+└──────────────┴────────────────────────────────────────┘
+```
+
+```bash
+# curl로 API 테스트
+curl -X GET https://api.example.com/users \
+  -H "Authorization: Bearer token123" \
+  -H "Content-Type: application/json"
+
+# 응답 코드만 확인
+curl -o /dev/null -s -w "%{http_code}" https://api.example.com/health
+
+# 포트 확인 (이 포트를 누가 쓰고 있나?)
+lsof -i :3000
+```
+
+
+## 코드 예시
+
+### VS Code launch.json 설정 (Python)
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal"
+    }
+  ]
+}
+```
+
+### VS Code launch.json 설정 (Next.js)
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js: debug server",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev"],
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}
+```
+
+
+## 연습 문제
+
+### Q1. 웹에서 "API 호출이 안 된다"고 할 때 가장 먼저 확인해야 할 곳은?
+
+<details>
+<summary>정답 보기</summary>
+브라우저 DevTools의 Network 탭. 요청이 실제로 나갔는지, 응답 코드가 무엇인지, 요청 URL과 헤더/바디가 올바른지 확인한다.
+</details>
+
+### Q2. VS Code 디버거에서 Step Over와 Step Into의 차이는?
+
+<details>
+<summary>정답 보기</summary>
+Step Over(F10)는 현재 줄을 실행하고 다음 줄로 넘어간다(함수 내부로 들어가지 않음). Step Into(F11)는 현재 줄의 함수 안으로 들어가서 그 함수의 첫 줄부터 실행한다.
+</details>
+
+### Q3. 운영 환경에서 DEBUG 로그를 끄는 이유는?
+
+<details>
+<summary>정답 보기</summary>
+DEBUG 로그는 양이 많아 성능에 영향을 주고, 민감한 정보(변수 값, 내부 상태)가 노출될 수 있다. 운영 환경에서는 WARNING 이상만 출력하여 중요한 문제만 기록한다.
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| 브라우저 DevTools 여는 단축키는? | F12 또는 Ctrl+Shift+I (Mac: Cmd+Option+I) |
+| Network 탭에서 가장 먼저 확인할 것은? | 응답 코드(Status), 요청 URL, 메서드(GET/POST) |
+| VS Code에서 Breakpoint 설정 방법은? | 코드 줄 번호 왼쪽을 클릭 (빨간 점) |
+| Step Over(F10)와 Step Into(F11)의 차이는? | Over는 함수를 건너뛰고, Into는 함수 안으로 들어감 |
+| Python breakpoint()의 역할은? | 해당 줄에서 실행을 멈추고 pdb 대화형 디버거 진입 |
+| 로그 레벨 5단계는? | DEBUG → INFO → WARNING → ERROR → CRITICAL |
+| curl로 API 테스트하는 기본 명령은? | curl -X GET URL -H "Header: value" |
+| 개발 환경과 운영 환경의 로그 레벨 차이는? | 개발: DEBUG 이상 전부, 운영: WARNING 이상만 |

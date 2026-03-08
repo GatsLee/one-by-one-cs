@@ -1,0 +1,267 @@
+---
+title: "통합 테스트와 E2E (Integration & E2E Testing)"
+topic: "12-testing"
+order: 03
+---
+
+
+## 핵심 개념
+
+### 1. 통합 테스트(Integration Test)란?
+
+단위 테스트가 함수 하나를 검증한다면, 통합 테스트는 **여러 모듈이 함께 동작하는지** 검증한다.
+
+```
+단위 테스트:   함수 A가 맞게 동작하는가?  ✓
+              함수 B가 맞게 동작하는가?  ✓
+              → 그런데 A와 B를 연결하면? 💥
+
+통합 테스트:   A + B가 함께 동작하는가?  → 여기서 버그 발견!
+
+비유:
+  단위 테스트 = 부품 검사 (엔진 OK, 바퀴 OK)
+  통합 테스트 = 조립 후 검사 (엔진 + 바퀴 = 차가 움직이나?)
+```
+
+### 2. API 엔드포인트 테스트
+
+백엔드 개발에서 가장 흔한 통합 테스트: HTTP 요청을 보내고 응답을 검증.
+
+```python
+# FastAPI 예시
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+def test_get_users():
+    response = client.get("/api/users")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+
+def test_create_user():
+    response = client.post("/api/users", json={
+        "name": "Kim",
+        "email": "kim@example.com",
+    })
+    assert response.status_code == 201
+    assert response.json()["name"] == "Kim"
+
+def test_create_user_invalid_email():
+    response = client.post("/api/users", json={
+        "name": "Kim",
+        "email": "invalid",       # 잘못된 이메일
+    })
+    assert response.status_code == 422   # Validation Error
+```
+
+```javascript
+// Next.js / Express 테스트 (supertest)
+import request from "supertest";
+import app from "./app";
+
+describe("GET /api/users", () => {
+  test("returns 200 and user list", async () => {
+    const res = await request(app).get("/api/users");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  test("returns 404 for non-existent user", async () => {
+    const res = await request(app).get("/api/users/99999");
+    expect(res.status).toBe(404);
+  });
+});
+```
+
+### 3. 데이터베이스 테스트
+
+DB를 포함하는 통합 테스트는 **테스트 전후로 데이터를 정리**해야 한다.
+
+```python
+import pytest
+from app.database import get_db, User
+
+@pytest.fixture
+def db_session():
+    """테스트용 DB 세션. 테스트 후 롤백."""
+    db = get_db()
+    db.begin()          # 트랜잭션 시작
+    yield db
+    db.rollback()       # 테스트 후 모든 변경 롤백 (원상 복구)
+
+def test_create_and_find_user(db_session):
+    # 생성
+    user = User(name="Kim", email="kim@test.com")
+    db_session.add(user)
+    db_session.flush()
+
+    # 조회
+    found = db_session.query(User).filter_by(email="kim@test.com").first()
+    assert found is not None
+    assert found.name == "Kim"
+```
+
+```
+DB 테스트 전략:
+
+  1. 트랜잭션 롤백: 테스트마다 트랜잭션 → 롤백 (가장 깔끔)
+  2. 테스트 DB: 별도 DB 사용 (test.db, test 스키마)
+  3. 시딩 + 클린업: beforeEach에서 데이터 넣고, afterEach에서 삭제
+```
+
+### 4. E2E 테스트 (End-to-End)
+
+실제 사용자처럼 **브라우저에서** 전체 흐름을 테스트한다.
+
+```
+E2E 테스트 도구:
+
+  ┌──────────────┬──────────────────────────────────────┐
+  │ 도구          │ 특징                                  │
+  ├──────────────┼──────────────────────────────────────┤
+  │ Playwright   │ 크로스 브라우저, 빠름, MS 지원          │
+  │ Cypress      │ 실시간 미리보기, DX 좋음, Chrome 중심   │
+  │ Selenium     │ 레거시, 모든 브라우저, 느림              │
+  └──────────────┴──────────────────────────────────────┘
+```
+
+#### Playwright 기초
+
+```bash
+# 설치
+npm init playwright@latest
+```
+
+```javascript
+// tests/login.spec.js (Playwright)
+import { test, expect } from "@playwright/test";
+
+test("user can log in successfully", async ({ page }) => {
+  // 1. 로그인 페이지로 이동
+  await page.goto("http://localhost:3000/login");
+
+  // 2. 이메일과 비밀번호 입력
+  await page.fill('input[name="email"]', "user@example.com");
+  await page.fill('input[name="password"]', "password123");
+
+  // 3. 로그인 버튼 클릭
+  await page.click('button[type="submit"]');
+
+  // 4. 대시보드로 이동되었는지 확인
+  await expect(page).toHaveURL("http://localhost:3000/dashboard");
+  await expect(page.locator("h1")).toContainText("Welcome");
+});
+
+test("shows error for wrong password", async ({ page }) => {
+  await page.goto("http://localhost:3000/login");
+  await page.fill('input[name="email"]', "user@example.com");
+  await page.fill('input[name="password"]', "wrongpassword");
+  await page.click('button[type="submit"]');
+
+  // 에러 메시지 확인
+  await expect(page.locator(".error-message")).toBeVisible();
+});
+```
+
+### 5. 테스트 종류별 비교
+
+```
+┌────────────┬──────────────┬──────────────┬─────────────────────┐
+│            │ Unit         │ Integration  │ E2E                 │
+├────────────┼──────────────┼──────────────┼─────────────────────┤
+│ 범위       │ 함수/클래스   │ 모듈 간 연결  │ 전체 시스템           │
+│ 속도       │ 매우 빠름    │ 보통         │ 느림                 │
+│ 의존성     │ 없음 (Mock)  │ DB, API 등   │ 전체 (브라우저 포함)   │
+│ 비용       │ 낮음         │ 중간         │ 높음                 │
+│ 신뢰도     │ 낮음 (격리)  │ 중간         │ 높음 (실제 환경)      │
+│ 수량       │ 가장 많이    │ 적당히       │ 핵심만               │
+├────────────┼──────────────┼──────────────┼─────────────────────┤
+│ 예시       │ add(2,3)==5  │ POST /users  │ "회원가입→로그인→주문"│
+│            │              │ → DB 저장    │  전체 흐름            │
+└────────────┴──────────────┴──────────────┴─────────────────────┘
+```
+
+### 6. 어떤 테스트를 얼마나 작성할 것인가
+
+```
+실전 가이드 (프로젝트 크기별):
+
+  개인 프로젝트 / 프로토타입:
+    - Unit: 핵심 비즈니스 로직만
+    - Integration: API 엔드포인트 주요 경로
+    - E2E: 안 해도 됨
+
+  팀 프로젝트 / 프로덕션:
+    - Unit: 모든 비즈니스 로직 + 유틸 함수
+    - Integration: 모든 API 엔드포인트
+    - E2E: 핵심 사용자 흐름 (로그인, 결제 등)
+
+  비율 가이드:
+    Unit 70% : Integration 20% : E2E 10%
+```
+
+
+## 코드 예시
+
+### Playwright 설정 (playwright.config.ts)
+
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests",
+  timeout: 30000,
+  use: {
+    baseURL: "http://localhost:3000",
+    screenshot: "only-on-failure",    // 실패 시 스크린샷 저장
+    trace: "on-first-retry",         // 재시도 시 트레이스 기록
+  },
+  webServer: {
+    command: "npm run dev",          // 테스트 전 서버 자동 시작
+    port: 3000,
+    reuseExistingServer: true,
+  },
+});
+```
+
+
+## 연습 문제
+
+### Q1. 단위 테스트와 통합 테스트의 핵심 차이점은?
+
+<details>
+<summary>정답 보기</summary>
+단위 테스트는 함수/클래스 하나를 외부 의존성 없이(Mock 사용) 독립적으로 검증한다. 통합 테스트는 여러 모듈이 함께(DB, API 등 실제 의존성 포함) 올바르게 동작하는지 검증한다.
+</details>
+
+### Q2. DB 통합 테스트에서 트랜잭션 롤백 전략의 장점은?
+
+<details>
+<summary>정답 보기</summary>
+테스트가 끝나면 트랜잭션을 롤백하여 DB를 원래 상태로 되돌린다. 테스트 간 데이터 간섭이 없고, 별도 클린업 코드가 필요 없으며, 속도가 빠르다.
+</details>
+
+### Q3. E2E 테스트를 핵심 흐름에만 작성하는 이유는?
+
+<details>
+<summary>정답 보기</summary>
+E2E 테스트는 실행 시간이 길고(브라우저 실행), 깨지기 쉬우며(UI 변경에 민감), 유지 비용이 높다. 모든 케이스에 작성하면 테스트 실행 시간이 급증하므로, 가장 중요한 사용자 흐름(로그인, 결제 등)에만 집중한다.
+</details>
+
+
+## 플래시카드
+
+| 질문 | 답변 |
+|------|------|
+| 통합 테스트의 목적은? | 여러 모듈/서비스가 함께 연결되어 올바르게 동작하는지 검증 |
+| API 테스트에서 검증할 3가지는? | 응답 코드(status), 응답 데이터(body), 에러 처리 |
+| DB 테스트의 트랜잭션 롤백 전략이란? | 테스트마다 트랜잭션을 시작하고, 테스트 후 롤백하여 데이터 원상 복구 |
+| Playwright와 Cypress의 주요 차이는? | Playwright는 크로스 브라우저 지원, Cypress는 Chrome 중심 + 실시간 미리보기 |
+| E2E 테스트란? | 실제 사용자처럼 브라우저에서 전체 시스템 흐름을 테스트 |
+| 테스트 비율 가이드는? | Unit 70% : Integration 20% : E2E 10% |
+| page.fill()의 역할은? (Playwright) | 지정한 입력 필드에 텍스트를 입력 |
+| expect(page).toHaveURL()의 역할은? | 현재 페이지 URL이 기대값과 일치하는지 검증 |
+| 통합 테스트가 단위 테스트보다 느린 이유는? | DB, 네트워크 등 실제 외부 의존성에 접근하기 때문 |
+| E2E 테스트의 "screenshot on failure" 기능의 용도는? | 테스트 실패 시 스크린샷을 저장하여 어떤 화면에서 실패했는지 디버깅 |
