@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -74,8 +75,8 @@ export default function Sidebar() {
       >
         {/* Header */}
         <div className={`border-b border-ink/10 flex items-center ${collapsed ? "p-3 justify-center" : "p-6 gap-3"}`}>
-          <div className="w-9 h-9 rounded-full bg-ink flex items-center justify-center text-paper shadow-md shrink-0">
-            <BookOpen size={16} />
+          <div className="w-9 h-9 rounded-full overflow-hidden shadow-md shrink-0 bg-ink">
+            <Image src="/icon.png" alt="로고" width={36} height={36} />
           </div>
           {!collapsed && (
             <div>
